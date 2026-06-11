@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold text-gray-900 mb-6">Administración</h1>
+
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6 text-sm text-blue-800">
+  Solo los administradores pueden ver esta sección. Gestiona usuarios, tokens de servicio y monitorea los jobs de IA.
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Usuarios ({{ users|length }})</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 border-b">
+      <th class="pb-2">Email</th><th>Nombre</th><th>Rol</th><th>Activo</th>
+    </tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr class="border-b border-gray-100 last:border-0">
+      <td class="py-2">{{ u.email }}</td>
+      <td class="py-2 text-gray-600">{{ u.name }}</td>
+      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if u.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-gray-100{% endif %}">{{ u.role }}</span></td>
+      <td class="py-2">{% if u.is_active %}✓{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Tokens activos ({{ tokens|length }})</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 border-b">
+      <th class="pb-2">Nombre</th><th>Scope</th><th>Último uso</th>
+    </tr></thead>
+    <tbody>
+    {% for t in tokens %}
+    <tr class="border-b border-gray-100 last:border-0">
+      <td class="py-2">{{ t.name }}</td>
+      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-gray-100">{{ t.scopes }}</span></td>
+      <td class="py-2 text-gray-500">{{ t.last_used_at or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5">
+  <h2 class="font-semibold text-gray-800 mb-4">Jobs recientes ({{ runs|length }})</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 border-b">
+      <th class="pb-2">Kind</th><th>Status</th><th>Creado</th>
+    </tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr class="border-b border-gray-100 last:border-0">
+      <td class="py-2 font-mono text-xs">{{ r.kind }}</td>
+      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if r.status=='error' %}bg-red-100 text-red-600{% elif r.status=='ok' %}bg-green-100 text-green-600{% else %}bg-gray-100{% endif %}">{{ r.status }}</span></td>
+      <td class="py-2 text-gray-400 text-xs">{{ r.created_at }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

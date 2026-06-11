@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Pulso{% endblock %} — Eduk3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <a href="/" class="font-bold text-gray-900 text-lg">Pulso</a>
+      <a href="/backlog" class="text-sm text-gray-600 hover:text-gray-900">Backlog</a>
+      <a href="/ideas" class="text-sm text-gray-600 hover:text-gray-900">Ideas</a>
+      {% if user.role == 'admin' %}
+      <a href="/admin" class="text-sm text-gray-600 hover:text-gray-900">Admin</a>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-500">{{ user.name }}</span>
+      <form method="post" action="/auth/logout" class="inline">
+        <button class="text-sm text-gray-500 hover:text-red-600">Salir</button>
+      </form>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-6 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

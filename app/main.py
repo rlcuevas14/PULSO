@@ -2,12 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-
-templates = Jinja2Templates(directory="app/templates")
+from app.templates_config import templates  # noqa: F401 — re-exported for legacy imports
 
 
 @asynccontextmanager

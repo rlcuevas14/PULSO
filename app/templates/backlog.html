@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Backlog{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold text-gray-900">Backlog</h1>
+  <a href="/ideas" class="text-sm bg-blue-600 text-white rounded px-3 py-1.5 hover:bg-blue-700">+ Nueva idea</a>
+</div>
+
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
+  <strong>¿Cómo usar?</strong> Filtra por scope o estado. Los ítems con ⚠ tienen
+  <em>stale_risk</em> y puede que ya estén resueltos — ciérralos si es el caso.
+  Ordena por impacto para ver los quick-wins primero.
+</div>
+
+<form id="filters" class="flex flex-wrap gap-3 mb-5">
+  <select name="scope" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+    <option value="">Todos los scopes</option>
+    {% for s in scopes %}
+    <option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="status" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+    <option value="">Todos los estados</option>
+    {% for s in ['idea','backlog','spec','en-curso','bloqueado','en-revision','hecho','descartado'] %}
+    <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="order" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+    <option value="reciente" {% if filters.order == 'reciente' %}selected{% endif %}>Más reciente</option>
+    <option value="impacto" {% if filters.order == 'impacto' %}selected{% endif %}>Mayor impacto</option>
+  </select>
+
+  <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+    <input type="checkbox" name="stale" value="true"
+           {% if filters.stale %}checked{% endif %}
+           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+    Solo ⚠ stale
+  </label>
+</form>
+
+<div id="items-table">
+  {% include "partials/items_table.html" %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title[:50] }}{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <a href="/backlog" class="text-sm text-blue-600 hover:underline">← Backlog</a>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+  <div class="flex items-start justify-between gap-4 mb-4">
+    <h1 class="text-xl font-bold text-gray-900">{{ item.title }}</h1>
+    <div class="flex items-center gap-2 shrink-0">
+      {% if item.stale_risk %}
+      <span class="text-xs bg-yellow-100 text-yellow-700 rounded px-2 py-1">⚠ Verificar si ya está resuelto</span>
+      {% endif %}
+      <span class="text-xs rounded px-2 py-1
+        {% if item.status == 'bloqueado' %}bg-red-100 text-red-700
+        {% elif item.status == 'en-curso' %}bg-blue-100 text-blue-700
+        {% elif item.status == 'hecho' %}bg-green-100 text-green-700
+        {% else %}bg-gray-100 text-gray-600{% endif %}">{{ item.status }}</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-5">
+    <div><span class="text-gray-400">Tipo</span><br>{{ item.type }}</div>
+    <div><span class="text-gray-400">Scope</span><br>{{ scope.name if scope else '—' }}</div>
+    <div><span class="text-gray-400">Esfuerzo IA</span><br>{{ item.effort_ai or '—' }}</div>
+    <div><span class="text-gray-400">Impacto IA</span><br>{{ item.impact_ai or '—' }}</div>
+    {% if item.effort_declared %}
+    <div><span class="text-gray-400">Esfuerzo declarado</span><br>{{ item.effort_declared }}</div>
+    {% endif %}
+    {% if item.priority %}
+    <div><span class="text-gray-400">Prioridad</span><br>{{ item.priority }}</div>
+    {% endif %}
+  </div>
+
+  {% if item.summary_md %}
+  <div class="prose prose-sm max-w-none text-gray-700 mb-5 whitespace-pre-wrap">{{ item.summary_md }}</div>
+  {% endif %}
+
+  {% if item.impact_rationale %}
+  <div class="bg-gray-50 rounded p-3 text-sm text-gray-600 mb-5">
+    <span class="font-medium">Justificación impacto:</span> {{ item.impact_rationale }}
+  </div>
+  {% endif %}
+
+  <div class="flex gap-3 flex-wrap">
+    <button
+      hx-post="/api/v1/items/{{ item.id }}/enrich"
+      hx-swap="none"
+      hx-on:htmx:after-request="this.textContent = 'Encolado ✓'"
+      class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">
+      Analizar con IA
+    </button>
+    {% if item.status not in ('hecho', 'descartado') %}
+    <button
+      hx-post="/api/v1/items/{{ item.id }}/close"
+      hx-vals='{"status":"hecho","reason":"Cerrado manualmente"}'
+      hx-on:htmx:after-request="window.location.reload()"
+      class="text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700">
+      Marcar como hecho
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-5">
+  <h2 class="font-semibold text-gray-800 mb-4">Comentarios ({{ item.comments|length }})</h2>
+
+  {% for c in item.comments %}
+  <div class="border-b border-gray-100 pb-3 mb-3 last:border-0 last:mb-0">
+    <div class="flex items-center gap-2 mb-1">
+      <span class="text-xs font-medium text-gray-700">{{ c.author }}</span>
+      <span class="text-xs text-gray-400">{{ c.created_at }}</span>
+    </div>
+    <div class="text-sm text-gray-700 whitespace-pre-wrap">{{ c.body_md }}</div>
+  </div>
+  {% endfor %}
+
+  <form hx-post="/api/v1/items/{{ item.id }}/comments"
+        hx-on:htmx:after-request="this.reset(); window.location.reload()"
+        class="mt-4">
+    <textarea name="body_md" rows="3" required placeholder="Agregar comentario..."
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+    <button type="submit"
+      class="mt-2 text-sm bg-blue-600 text-white rounded px-3 py-1.5 hover:bg-blue-700">
+      Comentar
+    </button>
+  </form>
+</div>
+
+{% if item.events %}
+<div class="bg-white rounded-lg border border-gray-200 p-5">
+  <h2 class="font-semibold text-gray-800 mb-4">Historial</h2>
+  <div class="space-y-2">
+    {% for e in item.events|reverse %}
+    <div class="flex items-center gap-3 text-sm">
+      <span class="text-gray-400 text-xs w-36 shrink-0">{{ e.created_at }}</span>
+      <span class="text-gray-600">{{ e.actor }}</span>
+      <span class="text-gray-400">·</span>
+      <span class="text-gray-700">{{ e.action }}</span>
+      {% if e.payload %}<span class="text-xs text-gray-400">{{ e.payload }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Ideas{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-2xl font-bold text-gray-900">Ideas</h1>
+</div>
+
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
+  Captura ideas rápidas aquí. Una idea es un ítem sin compromiso — puedes promoverla a
+  backlog desde su detalle cuando se decida trabajarla.
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-3">Nueva idea</h2>
+  <form hx-post="/api/v1/items"
+        hx-on:htmx:after-request="this.reset(); window.location.reload()"
+        class="space-y-3">
+    <input type="hidden" name="status" value="idea">
+    <div>
+      <input name="title" type="text" required placeholder="Título de la idea"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <select name="scope_id" required class="border border-gray-300 rounded px-3 py-2 text-sm">
+        <option value="">Scope...</option>
+        {% for s in scopes %}
+        <option value="{{ s.id }}">{{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="type" class="border border-gray-300 rounded px-3 py-2 text-sm">
+        <option value="idea">idea</option>
+        <option value="feature">feature</option>
+        <option value="bug">bug</option>
+        <option value="tech-debt">tech-debt</option>
+      </select>
+    </div>
+    <textarea name="summary_md" rows="2" placeholder="Descripción breve (opcional)"
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none"></textarea>
+    <button type="submit"
+      class="text-sm bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">
+      Guardar idea
+    </button>
+  </form>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+  {% for idea in ideas %}
+  <a href="/items/{{ idea.id }}" class="block px-4 py-3 hover:bg-gray-50">
+    <div class="text-sm font-medium text-gray-900">{{ idea.title }}</div>
+    {% if idea.summary_md %}
+    <div class="text-xs text-gray-500 mt-0.5 truncate">{{ idea.summary_md }}</div>
+    {% endif %}
+  </a>
+  {% else %}
+  <div class="px-4 py-8 text-center text-sm text-gray-400">No hay ideas aún. ¡Agrega la primera!</div>
+  {% endfor %}
+</div>
+
+{% endblock %}
