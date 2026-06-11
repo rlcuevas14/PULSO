@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -130,9 +131,6 @@ async def create_item(
     return item
 
 
-from pathlib import Path as FilePath
-
-
 class ImportRequest(BaseModel):
     path: str | None = None
     directory: str | None = None
@@ -151,7 +149,7 @@ async def import_digest(
     if not target:
         raise HTTPException(status_code=422, detail="Proporcionar 'path' o 'directory'")
 
-    p = FilePath(target)
+    p = Path(target)
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"Ruta no encontrada: {target}")
 
