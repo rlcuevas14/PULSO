@@ -1,0 +1,33 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    volumes:
+      - pulso_db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: pulso
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulso"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    image: ghcr.io/rlcuevas14/eduk3-pulso:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pulso:${DB_PASSWORD}@db/pulso
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - /opt/pulso/seed:/seed:ro   # JSONL del digest montado en prod
+
+volumes:
+  pulso_db:
