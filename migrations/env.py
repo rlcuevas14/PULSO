@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.auth.models import ApiToken, User  # noqa: F401
 from app.scopes.models import Scope  # noqa: F401
 from app.items.models import Item, ItemComment, ItemEvent, AiEnrichment  # noqa: F401
+from app.jobs.models import AgentRun  # noqa: F401
 from app.config import settings
 from app.database import Base
 

@@ -315,3 +315,19 @@ async def close_item(
     await db.commit()
     await db.refresh(item)
     return item
+
+
+@router.post("/{item_id}/enrich", status_code=202)
+async def enqueue_enrich(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    auth=Depends(api_or_session_user),
+):
+    from app.jobs.worker import enqueue_job
+
+    result = await db.execute(select(Item).where(Item.id == item_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+
+    run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
+    return {"run_id": str(run.id), "status": "encolado"}

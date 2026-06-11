@@ -1,7 +1,92 @@
-# stub temporal — se reemplaza en F1e
 import asyncio
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.database import SessionFactory
+from app.jobs.handlers import HANDLERS
+from app.jobs.models import AgentRun
 
 
-async def worker_loop():
-    while True:
-        await asyncio.sleep(3600)
+async def enqueue_job(
+    db: AsyncSession,
+    kind: str,
+    ref_type: str | None = None,
+    ref_id: uuid.UUID | None = None,
+) -> AgentRun:
+    run = AgentRun(kind=kind, ref_type=ref_type, ref_id=ref_id, status="pendiente")
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
+async def reclaim_expired_leases(db: AsyncSession) -> int:
+    """Devuelve a 'pendiente' los jobs cuya lease expiró."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        update(AgentRun)
+        .where(AgentRun.status == "corriendo", AgentRun.leased_until < now)
+        .values(status="pendiente", leased_until=None)
+    )
+    await db.commit()
+    return result.rowcount
+
+
+async def process_one(db: AsyncSession) -> bool:
+    """Levanta y procesa un job. Retorna True si procesó algo."""
+    now = datetime.now(timezone.utc)
+    lease_until = now + timedelta(seconds=settings.job_lease_seconds)
+
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.status == "pendiente")
+        .order_by(AgentRun.created_at)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return False
+
+    run.status = "corriendo"
+    run.leased_until = lease_until
+    await db.commit()
+
+    handler = HANDLERS.get(run.kind)
+    try:
+        if handler:
+            result_data = await handler(db, run.ref_id)
+        else:
+            result_data = {"warning": f"Sin handler para kind='{run.kind}'"}
+
+        run.status = "ok"
+        run.result = result_data
+    except Exception as exc:
+        run.status = "error"
+        run.error = str(exc)
+    finally:
+        run.finished_at = datetime.now(timezone.utc)
+        run.leased_until = None
+        await db.commit()
+
+    return True
+
+
+async def worker_loop() -> None:
+    """Loop asyncio que corre en el lifespan de la app. Nunca lanza excepción."""
+    poll_interval = settings.job_poll_interval_seconds
+    async with SessionFactory() as db:
+        while True:
+            try:
+                await reclaim_expired_leases(db)
+                processed = await process_one(db)
+                if not processed:
+                    await asyncio.sleep(poll_interval)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(poll_interval)
