@@ -130,6 +130,40 @@ async def create_item(
     return item
 
 
+from pathlib import Path as FilePath
+
+
+class ImportRequest(BaseModel):
+    path: str | None = None
+    directory: str | None = None
+
+
+@router.post("/import/digest")
+async def import_digest(
+    body: ImportRequest,
+    db: AsyncSession = Depends(get_db),
+    auth=Depends(api_or_session_user),
+):
+    if isinstance(auth, User) and auth.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden importar")
+
+    target = body.path or body.directory
+    if not target:
+        raise HTTPException(status_code=422, detail="Proporcionar 'path' o 'directory'")
+
+    p = FilePath(target)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"Ruta no encontrada: {target}")
+
+    from app.items.importer import import_directory, import_jsonl
+    if p.is_dir():
+        result = await import_directory(db, p)
+    else:
+        result = await import_jsonl(db, p)
+
+    return result
+
+
 @router.get("/{item_id}", response_model=ItemDetail)
 async def get_item(
     item_id: uuid.UUID,
