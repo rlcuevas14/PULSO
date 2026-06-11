@@ -5,6 +5,7 @@ from app.auth.service import (
     authenticate,
     create_api_token,
     create_user,
+    revoke_api_token,
     verify_api_token,
 )
 
@@ -42,8 +43,6 @@ async def test_api_token_create_and_verify(db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_revoked_token_is_rejected(db: AsyncSession):
-    from app.auth.service import revoke_api_token
-
     user = await create_user(db, "revoke@test.cl", "Revoke User", "pass")
     token, raw = await create_api_token(db, "revocable", "read", user.id)
     await revoke_api_token(db, token.id)
@@ -54,10 +53,9 @@ async def test_revoked_token_is_rejected(db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_login_endpoint_sets_cookie(client):
-    from app.auth.service import create_user as svc_create
     from app.database import get_db
     async for db in client.app.dependency_overrides[get_db]():
-        await svc_create(db, "login@test.cl", "Login User", "login123", "admin")
+        await create_user(db, "login@test.cl", "Login User", "login123", "admin")
         break
 
     resp = await client.post(
