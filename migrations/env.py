@@ -4,11 +4,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.auth.models import ApiToken, User  # noqa: F401
 from app.config import settings
 from app.database import Base
-
-# Importar modelos para que Base.metadata los registre
-# (Se irán agregando a medida que se crean en F1b-F1e)
 
 config = context.config
 if config.config_file_name is not None:
