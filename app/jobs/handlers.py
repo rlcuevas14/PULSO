@@ -1,6 +1,7 @@
 """Handlers de jobs. F1: stubs. F2: implementar enrich real."""
 
 import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

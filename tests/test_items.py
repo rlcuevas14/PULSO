@@ -1,12 +1,13 @@
 import uuid
+
 import pytest
 from httpx import AsyncClient
 
 
 async def _setup(client: AsyncClient):
     from app.auth.service import create_user
-    from app.scopes.models import Scope
     from app.database import get_db
+    from app.scopes.models import Scope
 
     suffix = uuid.uuid4().hex[:8]
     scope_obj = None

@@ -3,7 +3,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.auth.service import create_user
 from app.items.models import Item

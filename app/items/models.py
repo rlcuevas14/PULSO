@@ -4,8 +4,17 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, ForeignKey, Integer, JSON,
-    Numeric, SmallInteger, String, TIMESTAMP, Text, func,
+    JSON,
+    TIMESTAMP,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship

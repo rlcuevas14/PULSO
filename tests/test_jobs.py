@@ -4,8 +4,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.jobs.models import AgentRun
-
 
 @pytest.mark.asyncio
 async def test_enqueue_and_process_job(db: AsyncSession):
@@ -40,7 +38,7 @@ async def test_no_double_processing(db: AsyncSession, test_engine):
 @pytest.mark.asyncio
 async def test_expired_lease_is_reclaimed(db: AsyncSession):
     """Un job con lease expirada debe poder ser retomado."""
-    from app.jobs.worker import enqueue_job, process_one, reclaim_expired_leases
+    from app.jobs.worker import enqueue_job, reclaim_expired_leases
 
     run = await enqueue_job(db, kind="enrich")
     run.status = "corriendo"
@@ -56,6 +54,7 @@ async def test_expired_lease_is_reclaimed(db: AsyncSession):
 @pytest.mark.asyncio
 async def test_process_one_returns_false_when_queue_empty(db: AsyncSession):
     from sqlalchemy import text
+
     from app.jobs.worker import process_one
 
     # Asegurar que no queden jobs pendientes de tests anteriores.
