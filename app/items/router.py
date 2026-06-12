@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.auth.deps import api_or_session_user
 from app.auth.models import ApiToken, User
 from app.database import get_db
-from app.items.models import AiEnrichment, Item, ItemComment, ItemEvent
+from app.items.models import Item, ItemComment, ItemEvent
 
 router = APIRouter(prefix="/items", tags=["items"])
 

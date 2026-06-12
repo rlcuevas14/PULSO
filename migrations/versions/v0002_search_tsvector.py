@@ -1,6 +1,5 @@
 """v0002: full-text search — tsvector generado + índice GIN"""
 
-import sqlalchemy as sa
 from alembic import op
 
 revision = "v0002"

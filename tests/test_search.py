@@ -5,6 +5,8 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.service import create_user
+from app.database import get_db
 from app.items.models import Item
 from app.scopes.models import Scope
 
@@ -34,10 +36,6 @@ async def ensure_search_vector(test_engine):
 
 @pytest.mark.asyncio
 async def test_search_finds_by_title(client: AsyncClient, db: AsyncSession):
-    from app.auth.service import create_user
-
-    from app.database import get_db
-
     uid = uuid.uuid4().hex[:8]
     email = f"searchadmin-{uid}@test.cl"
 
