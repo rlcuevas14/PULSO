@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import authenticate
 from app.database import get_db
-from app.main import templates
+from app.templates_config import templates
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def login_page(request: Request):
     if request.session.get("user_id"):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
 @router.post("/login")
@@ -26,8 +26,9 @@ async def login_submit(
     user = await authenticate(db, email, password)
     if user is None:
         return templates.TemplateResponse(
+            request,
             "login.html",
-            {"request": request, "error": "Email o contraseña incorrectos"},
+            {"error": "Email o contraseña incorrectos"},
             status_code=401,
         )
     request.session["user_id"] = str(user.id)

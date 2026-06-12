@@ -51,9 +51,9 @@ async def dashboard(
     monthly_cost = float(cost_q or 0)
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "user": user,
             "counts": counts,
             "recent": recent,
@@ -101,7 +101,6 @@ async def backlog(
     scope_map = {s.id: s.name for s in scopes}
 
     ctx = {
-        "request": request,
         "user": user,
         "items": items,
         "scopes": scopes,
@@ -116,9 +115,9 @@ async def backlog(
     }
 
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("partials/items_table.html", ctx)
+        return templates.TemplateResponse(request, "partials/items_table.html", ctx)
 
-    return templates.TemplateResponse("backlog.html", ctx)
+    return templates.TemplateResponse(request, "backlog.html", ctx)
 
 
 @router.get("/items/{item_id}", response_class=HTMLResponse)
@@ -144,8 +143,9 @@ async def item_detail(
     scope = await db.scalar(select(Scope).where(Scope.id == item.scope_id))
 
     return templates.TemplateResponse(
+        request,
         "item_detail.html",
-        {"request": request, "user": user, "item": item, "scope": scope},
+        {"user": user, "item": item, "scope": scope},
     )
 
 
@@ -169,8 +169,9 @@ async def ideas_page(
     scopes = scopes_q.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "ideas.html",
-        {"request": request, "user": user, "ideas": ideas, "scopes": scopes},
+        {"user": user, "ideas": ideas, "scopes": scopes},
     )
 
 
@@ -204,9 +205,9 @@ async def admin_page(
     runs = runs_q.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "admin.html",
         {
-            "request": request,
             "user": user,
             "users": users,
             "tokens": tokens,
