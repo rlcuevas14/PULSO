@@ -59,6 +59,6 @@ jobs:
             echo "IMAGE_TAG=${{ github.sha }}" > .env.deploy
             docker compose --env-file .env pull app
             docker compose --env-file .env up -d
-            docker compose --env-file .env exec app sh -c 'until pg_isready -h db -U pulso; do sleep 2; done'
+            until docker compose --env-file .env exec db pg_isready -U pulso; do sleep 2; done
             docker compose --env-file .env exec app alembic upgrade head
             echo "Deploy OK: ${{ github.sha }}"
