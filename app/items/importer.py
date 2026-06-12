@@ -29,6 +29,15 @@ def _hash_line(raw_line: str) -> str:
     return hashlib.sha256(raw_line.strip().encode()).hexdigest()
 
 
+def _coerce_str(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, list):
+        joined = ", ".join(str(v) for v in val if v)
+        return joined or None
+    return str(val).strip() or None
+
+
 def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
     """Convierte un item del JSONL al schema de BD. Retorna None si inválido."""
     title = (obj.get("title") or "").strip()
@@ -70,7 +79,7 @@ def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
         "effort_declared": (obj.get("effort_declared") or "").strip() or None,
         "priority_declared": priority_declared or None,
         "trigger_text": (obj.get("trigger") or "").strip() or None,
-        "dependencies": (obj.get("dependencies") or "").strip() or None,
+        "dependencies": _coerce_str(obj.get("dependencies")),
         "stale_risk": bool(obj.get("stale_risk", False)),
         "origen": "digest",
     }
