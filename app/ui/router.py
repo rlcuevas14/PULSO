@@ -100,23 +100,25 @@ async def backlog(
     scopes = scopes_q.scalars().all()
     scope_map = {s.id: s.name for s in scopes}
 
-    return templates.TemplateResponse(
-        "backlog.html",
-        {
-            "request": request,
-            "user": user,
-            "items": items,
-            "scopes": scopes,
-            "scope_map": scope_map,
-            "filters": {
-                "scope": scope,
-                "status": status,
-                "type": item_type,
-                "stale": stale,
-                "order": order,
-            },
+    ctx = {
+        "request": request,
+        "user": user,
+        "items": items,
+        "scopes": scopes,
+        "scope_map": scope_map,
+        "filters": {
+            "scope": scope,
+            "status": status,
+            "type": item_type,
+            "stale": stale,
+            "order": order,
         },
-    )
+    }
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse("partials/items_table.html", ctx)
+
+    return templates.TemplateResponse("backlog.html", ctx)
 
 
 @router.get("/items/{item_id}", response_class=HTMLResponse)
