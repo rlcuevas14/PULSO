@@ -1,126 +1,200 @@
-# Pulso F1.5 + F2.5: MCP-over-HTTP + Hilos de Desarrollo
+# Pulso F1.5 + F2.5: MCP-over-HTTP + Grafo de relaciones + Hilos de Desarrollo
 
-**Goal:** Convertir Pulso en el conducto bidireccional entre sesiones de Claude Code y el backlog de producto, con MCP nativo sobre HTTP y un modelo de Hilos (epics con stages de desarrollo).
+**Goal:** Convertir Pulso en el conducto bidireccional entre sesiones de Claude Code y el backlog de producto. El backlog se modela como un grafo de ítems interconectados; el MCP expone ese grafo al agente en tiempo real sin caché estática ni artefactos de "visión global" — el contexto se construye on-demand a partir del grafo vivo.
 
-**Arquitectura:** Endpoint `/mcp` en la API de Pulso implementando el protocolo MCP Streamable HTTP (spec 2025-03). Los Hilos son una capa encima de los Items existentes: un Hilo agrupa ítems por stage y soporta artifacts por stage (notas, spec, historias). El cliente es Claude Code vía `claude_desktop_config.json`.
+**Arquitectura:** Endpoint `/mcp` (MCP Streamable HTTP 2025-03). Grafo explícito en tabla `item_relationships` (arcos tipados). Contexto de sesión en tres capas: local (scope activo), vecindad (CTE recursiva sobre el grafo, profundidad 2), semántica (pgvector). Hilos como contenedores de stage para features pesadas. Todo en PostgreSQL — sin Neo4j, sin LangGraph, sin actualización periódica.
 
-**Tech Stack:** FastAPI + SSE (`anyio`), MCP protocol JSON-RPC 2.0, `mcp` SDK Python, tablas `threads` + `thread_artifacts`, no cambia el modelo de Items.
+**Tech Stack:** FastAPI + SSE, MCP SDK Python (`mcp>=1.0`), `item_relationships` + `threads` + `thread_artifacts`, pgvector ya instalado, CTEs recursivas PostgreSQL para traversal.
+
+**Principio rector:** el grafo es siempre fresco porque las queries corren contra los datos vivos. No hay snapshot semanal ni artefacto de resumen — `pulso_contexto()` lee el estado real en el momento de la llamada.
 
 ---
 
 ## Contexto y motivación
 
-Hoy cada sesión de Claude Code empieza en frío leyendo BACKLOG.md y termina sin dejar rastro estructurado. Pulso ya tiene los datos; le falta el conducto.
+Hoy cada sesión de Claude Code empieza en frío leyendo BACKLOG.md y termina sin dejar rastro estructurado. El problema no es solo visibilidad — es **context collapse**: el agente optimiza localmente (la feature del día) sin ver tensiones globales (el ítem en otro scope que depende del mismo módulo).
 
-El MCP-over-HTTP resuelve esto: Claude Code se conecta a `pulso.eduk3.cl/mcp` con un API token, y tiene acceso a tools + prompts que le dan contexto pre-sesión y le permiten escribir progreso post-sesión.
-
-Los Hilos resuelven el problema del funnel para features pesadas: una idea no pasa directamente a dev — pasa por investigación, historias de usuario, spec y luego desarrollo. Esto habilita trabajo colaborativo futuro (distintas personas en distintos stages) sin cambiar la arquitectura de Items existente.
+La solución no es GraphRAG sobre corpus no estructurado ni una visión global generada periódicamente (riesgo de desactualización). La solución es un **grafo explícito vivo**: cada arco `blocks`/`requires`/`conflicts` se registra cuando se descubre, y `pulso_contexto()` lo traversa en tiempo real. PostgreSQL con CTEs recursivas maneja grafos de miles de nodos sin infraestructura adicional.
 
 ---
 
-## Parte A: MCP HTTP endpoint
+## Parte A: Grafo de relaciones entre ítems
 
-### A.1 Protocolo
+### A.1 Tabla `item_relationships`
+
+```sql
+CREATE TABLE item_relationships (
+  source_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  target_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  relation   TEXT NOT NULL CHECK (
+    relation IN ('blocks','requires','conflicts','related','part_of')
+  ),
+  note       TEXT,  -- contexto opcional de por qué existe esta relación
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (source_id, target_id, relation)
+);
+
+CREATE INDEX item_rel_target ON item_relationships(target_id);
+```
+
+**Semántica de arcos:**
+
+| Relación | Dirección | Significado |
+|----------|-----------|-------------|
+| `blocks` | A → B | A debe resolverse antes que B pueda avanzar |
+| `requires` | A → B | A necesita que B esté hecho para funcionar correctamente |
+| `conflicts` | A ↔ B | Implementar A puede romper B (simétrico — se almacena solo una dirección, se consulta ambas) |
+| `related` | A ↔ B | Contexto compartido sin dependencia dura |
+| `part_of` | A → B | A es un sub-ítem de B (B es el padre/epic) |
+
+### A.2 Traversal: CTE recursiva para vecindad
+
+La query que usa `pulso_contexto()` para obtener el "cluster de comunidad" de un scope:
+
+```sql
+WITH RECURSIVE neighborhood AS (
+  -- semilla: ítems del scope activo
+  SELECT i.id, i.title, i.status, i.scope_id, i.impact_ai, i.effort_ai, 0 AS depth
+  FROM items i
+  WHERE i.scope_id = :scope_id AND i.status NOT IN ('hecho', 'descartado')
+
+  UNION ALL
+
+  -- vecinos via arcos de cualquier tipo (salientes y entrantes)
+  SELECT i.id, i.title, i.status, i.scope_id, i.impact_ai, i.effort_ai, n.depth + 1
+  FROM items i
+  JOIN (
+    SELECT target_id AS neighbor_id, source_id AS origin_id FROM item_relationships
+    UNION ALL
+    SELECT source_id AS neighbor_id, target_id AS origin_id FROM item_relationships
+  ) r ON r.neighbor_id = i.id
+  JOIN neighborhood n ON n.id = r.origin_id
+  WHERE n.depth < 2  -- profundidad 2 = vecinos directos + sus vecinos
+    AND i.id NOT IN (SELECT id FROM neighborhood)
+    AND i.status NOT IN ('hecho', 'descartado')
+)
+SELECT DISTINCT ON (id) * FROM neighborhood ORDER BY id, depth;
+```
+
+### A.3 Topological sort para `pulso_listar`
+
+Cuando `order=topologico`, los ítems se ordenan respetando arcos `blocks`/`requires`:
+los ítems sin desbloqueadores pendientes aparecen primero. Implementado como Kahn's algorithm sobre el subgrafo filtrado (Python, post-query).
+
+### A.4 Tool nuevo: `pulso_relacionar`
+
+```
+pulso_relacionar(
+  source_id: uuid | source_query: string,
+  target_id: uuid | target_query: string,
+  relation: enum[blocks|requires|conflicts|related|part_of],
+  note?: string
+) → Relationship
+```
+
+Claude Code llama este tool cuando durante el desarrollo descubre que "el ítem X está bloqueado por Y" o "implementar A puede conflictuar con B". El grafo se construye incrementalmente, sesión a sesión.
+
+---
+
+## Parte B: MCP HTTP endpoint
+
+### B.1 Protocolo
 
 MCP Streamable HTTP (2025-03):
-- **Endpoint único**: `POST /mcp` — acepta JSON-RPC requests y devuelve SSE o JSON directo
-- **Autenticación**: `Authorization: Bearer <api_token>` — reutiliza el sistema de ApiToken existente
-- **Sesión stateless**: no hay session ID persistente entre requests (compatible con reverse proxy y múltiples workers)
-- **Content-Type negotiate**: si el cliente acepta `text/event-stream`, responde SSE; si no, JSON directo
+- **Endpoint único**: `POST /mcp` — acepta JSON-RPC requests, devuelve SSE o JSON directo
+- **Autenticación**: `Authorization: Bearer <api_token>` — reutiliza ApiToken existente
+- **Stateless**: sin session ID persistente (compatible con reverse proxy)
+- **Content-Type negotiate**: `text/event-stream` → SSE; `application/json` → JSON directo
 
-### A.2 Capacidades expuestas
+### B.2 Tools
 
-#### Tools (acciones)
+#### `pulso_contexto(scope?: string, work_description?: string) → SessionBriefing`
 
-```
-pulso_contexto(scope?: string) → SessionBriefing
-```
-Retorna el resumen de prioridades para la sesión actual. Incluye: top-5 quickwins (impact≥4, effort∈{XS,S}), bloqueadores activos (status=bloqueado), último ítem tocado por scope, hilos en stage=en-desarrollo. Este es el tool que Claude Code llama al inicio de cada sesión.
+La pieza central. Corre tres queries en paralelo y devuelve un objeto estructurado:
 
-```
-pulso_buscar(q: string, scope?: string, tipo?: string, limit?: int=10) → Item[]
-```
-Búsqueda full-text sobre el índice GIN existente (v0002). Retorna título, summary, status, effort_ai, impact_ai, scope.
+**Capa 1 — Local** (scope activo):
+- Top-5 quickwins: `impact_ai >= 4 AND effort_ai IN ('XS','S') AND status NOT IN ('hecho','descartado')`
+- Bloqueadores activos: `status = 'bloqueado'`
+- Hilos en `stage = 'en-desarrollo'`
 
-```
-pulso_crear(
-  title: string,
-  summary: string,
-  type: enum[bug|feature|tech-debt|infra|docs|ops|seguridad|producto|idea],
-  scope_name: string,
-  effort_ai?: enum[XS|S|M|L|XL],
-  impact_ai?: int[1-5],
-  origen: string = "claude-code"
-) → Item
-```
-Crea un ítem. Si `effort_ai` / `impact_ai` no se pasan, el worker de enriquecimiento los llena después (F2). `scope_name` puede ser existente o nuevo — se crea el scope si no existe.
+**Capa 2 — Vecindad** (grafo, CTE recursiva profundidad 2):
+- Ítems en otros scopes con arcos `blocks`/`conflicts` hacia/desde el scope activo
+- Se muestran agrupados por tipo de relación: "estos ítems bloquean trabajo en este scope", "estos ítems podrían conflictuar"
 
-```
-pulso_completar(
-  item_id: uuid | search_query: string,
-  nota?: string,
-  commit_sha?: string
-) → Item
-```
-Marca un ítem como `hecho`. Si se pasa `search_query` en vez de `item_id`, busca el ítem más relevante por texto. `nota` y `commit_sha` quedan en `source_refs` del ítem para trazabilidad.
+**Capa 3 — Semántica** (pgvector):
+- Solo si `work_description` se pasa (descripción breve de qué se va a trabajar hoy)
+- Top-5 ítems por similitud coseno al embedding de `work_description`
+- Permite: "voy a trabajar en JWT refresh" → Pulso surfacea ítems semánticamente relacionados aunque estén en otros scopes sin arcos explícitos
 
+Retorno (JSON → markdown formateado para el briefing):
+```json
+{
+  "local": { "quickwins": [...], "blockers": [...], "active_threads": [...] },
+  "neighborhood": { "blocks_this_scope": [...], "conflicts": [...] },
+  "semantic": [...],  // solo si work_description fue pasado
+  "graph_stats": { "total_open": 42, "relationships": 17 }
+}
 ```
-pulso_listar(
-  scope?: string,
-  status?: string[],
-  tipo?: string,
-  stage?: string,
-  quickwins?: bool,
-  limit?: int=20
-) → Item[]
-```
-Lista filtrada. `quickwins=true` aplica el filtro `impact_ai>=4 AND effort_ai IN ('XS','S')`.
 
-```
-pulso_hilo_crear(
-  title: string,
-  summary: string,
-  scope_name: string
-) → Thread
-```
-Crea un Hilo nuevo en stage `idea`. El Hilo es el contenedor para el funnel investigación→spec→dev.
+#### `pulso_buscar(q: string, scope?: string, tipo?: string, limit?: int=10) → Item[]`
 
-```
-pulso_hilo_avanzar(
-  thread_id: uuid,
-  artifact?: { stage: string, content: string }
-) → Thread
-```
-Avanza el Hilo al siguiente stage. Si se pasa `artifact`, guarda el contenido (markdown) como artifact del stage actual antes de avanzar. Ejemplo: antes de pasar de `investigación` a `historias`, se guarda el resumen de investigación.
+Full-text sobre índice GIN (v0002). Retorna título, summary, status, effort_ai, impact_ai, scope, relaciones de primer grado.
 
-```
-pulso_hilo_listar(stage?: string, scope?: string) → Thread[]
-```
-Lista Hilos con su stage actual y último artifact.
+#### `pulso_crear(title, summary, type, scope_name, effort_ai?, impact_ai?, origen="claude-code") → Item`
 
-#### Prompts (inyección de contexto)
+Crea ítem. `scope_name` puede ser nuevo (se crea el scope). Si no se pasan `effort_ai`/`impact_ai`, el worker de enriquecimiento los llena (F2).
+
+#### `pulso_completar(item_id|search_query, nota?, commit_sha?) → Item`
+
+Marca `hecho`. Si se pasa `search_query`, busca por full-text y toma el match de mayor rank. `nota` + `commit_sha` quedan en `source_refs` para trazabilidad. Si el ítem tenía arcos `blocks` salientes, Pulso marca automáticamente esos ítems target como "desbloqueados" (el arco no se borra — queda como historial, pero se agrega nota).
+
+#### `pulso_listar(scope?, status[]?, tipo?, order="impacto"|"topologico", quickwins?, limit=20) → Item[]`
+
+`order=topologico` aplica Kahn's algorithm sobre el subgrafo filtrado — los ítems sin dependencias pendientes van primero.
+
+#### `pulso_relacionar(source_id|source_query, target_id|target_query, relation, note?) → Relationship`
+
+Registra un arco en el grafo. Si se pasan queries de texto, resuelve cada uno por full-text (top-1 match). Retorna los dos ítems involucrados y el arco creado.
+
+#### `pulso_hilo_crear(title, summary, scope_name) → Thread`
+
+Crea Hilo en stage `idea`.
+
+#### `pulso_hilo_avanzar(thread_id, artifact?: {stage, content}) → Thread`
+
+Avanza al siguiente stage. El `artifact` se guarda como evidencia del stage actual.
+
+#### `pulso_hilo_listar(stage?, scope?) → Thread[]`
+
+Lista Hilos con stage actual y último artifact.
+
+### B.3 Prompts
 
 ```
 pulso://briefing
 ```
-Un Prompt MCP (no un tool) que Claude Code puede incluir en su contexto al inicio de sesión. Retorna markdown estructurado: estado del backlog, hilos activos, bugs de prod recientes, próximos pasos sugeridos. Se registra en `claude_desktop_config.json` como prompt.
+Prompt MCP preformateado para inyección al inicio de sesión. Claude Code lo incluye en su contexto de sistema. Internamente llama `pulso_contexto()` con las capas local + vecindad (sin semántica — la capa semántica se activa solo si Claude Code pasa `work_description` explícitamente).
 
 ```
 pulso://decision/{topic}
 ```
-Busca en el log de decisiones (ítems con `type=decisión` o items marcados como `decision_log=true`) sobre el topic. Retorna el razonamiento registrado.
+Busca ítems con `type=decisión` o `decision_log=true` sobre el topic. Retorna razonamiento registrado. Claude Code lo consulta antes de tomar decisiones de arquitectura.
 
-#### Resources (lectura pasiva)
+### B.4 Resources
 
 ```
 pulso://scope/{scope_name}
 ```
-Vista completa de un scope: ítems por status, hilos activos, velocidad última semana.
+Vista completa: ítems por status, relaciones de primer grado, hilos activos.
 
-### A.3 Configuración del cliente (Claude Code)
+```
+pulso://graph/{item_id}
+```
+Subgrafo centrado en un ítem: sus vecinos de profundidad 2, tipos de arcos, ítems bloqueados/requeridos.
 
-El usuario agrega en `~/.claude/claude_desktop_config.json`:
+### B.5 Configuración del cliente
 
+`~/.claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -135,133 +209,117 @@ El usuario agrega en `~/.claude/claude_desktop_config.json`:
 }
 ```
 
-El API token se genera desde la pantalla Admin de Pulso (ya existe el sistema de ApiToken).
+El token se genera desde la pantalla Admin (sistema ApiToken existente).
 
-### A.4 Integración en CLAUDE.md del repo efrain
-
-Se agrega una sección al CLAUDE.md de efrain:
+### B.6 Sección a agregar en CLAUDE.md del repo efrain
 
 ```markdown
 ## Pulso — conducto pre/post sesión
 
-Al inicio de sesión:
-1. Llamar `pulso_contexto()` para obtener prioridades y bloqueadores del día.
-2. Si hay hilos en stage `en-desarrollo`, revisar cuál corresponde a la tarea en curso.
+Al **inicio de sesión**:
+1. Llamar `pulso_contexto(scope="<scope_activo>", work_description="<qué se va a trabajar>")`.
+2. Revisar la capa de vecindad: si hay ítems de otros scopes que bloquean o conflictúan, 
+   considerarlos antes de diseñar la solución.
+3. Si hay hilos en `en-desarrollo` para este scope, revisarlos.
 
-Al cierre de sesión (tras push/merge exitoso):
-1. Llamar `pulso_completar(item_id_o_query, nota="<descripción breve>", commit_sha="<sha>")` 
-   para cada ítem resuelto en esta sesión.
-2. Si se descubrió deuda técnica nueva, crear ítems con `pulso_crear(...)`.
-3. Si se inició una feature nueva, crear un Hilo con `pulso_hilo_crear(...)`.
+Durante el **desarrollo**:
+- Si se descubre que un ítem depende de otro: `pulso_relacionar(A, B, "blocks", nota)`.
+- Si se descubre deuda técnica nueva: `pulso_crear(...)`.
+
+Al **cierre de sesión** (tras push/merge exitoso):
+1. `pulso_completar(item_id_o_query, nota="<descripción breve>", commit_sha="<sha>")` 
+   para cada ítem resuelto.
+2. Si un ítem resuelto desbloqueaba otros, verificar que esos ítems quedaron 
+   sin el arco de bloqueo pendiente (Pulso lo marca automáticamente, pero confirmar).
 ```
 
 ---
 
-## Parte B: Hilos de desarrollo (Thread funnel)
+## Parte C: Hilos de desarrollo (Thread funnel)
 
-### B.1 Modelo de datos
+### C.1 Modelo de datos
 
 ```sql
--- thread stages: idea → investigación → historias → spec → en-desarrollo → review → hecho
 CREATE TABLE threads (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scope_id UUID NOT NULL REFERENCES scopes(id),
-  title TEXT NOT NULL,
-  summary_md TEXT,
-  stage TEXT NOT NULL DEFAULT 'idea'
-    CHECK (stage IN ('idea','investigación','historias','spec','en-desarrollo','review','hecho','descartado')),
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope_id         UUID NOT NULL REFERENCES scopes(id),
+  title            TEXT NOT NULL,
+  summary_md       TEXT,
+  stage            TEXT NOT NULL DEFAULT 'idea' CHECK (
+    stage IN ('idea','investigación','historias','spec','en-desarrollo','review','hecho','descartado')
+  ),
   assignee_user_id UUID REFERENCES users(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE thread_artifacts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  thread_id UUID NOT NULL REFERENCES threads(id),
-  stage TEXT NOT NULL,  -- qué stage produjo este artifact
-  kind TEXT NOT NULL CHECK (kind IN ('investigación','historias','spec','notas','decisión')),
-  content_md TEXT NOT NULL,
-  created_by_user_id UUID REFERENCES users(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id           UUID NOT NULL REFERENCES threads(id),
+  stage               TEXT NOT NULL,
+  kind                TEXT NOT NULL CHECK (kind IN ('investigación','historias','spec','notas','decisión')),
+  content_md          TEXT NOT NULL,
+  created_by_user_id  UUID REFERENCES users(id),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Un thread puede tener muchos items asociados (los que se crean durante el dev)
+-- ítems de implementación linkeados al hilo que los originó
 ALTER TABLE items ADD COLUMN thread_id UUID REFERENCES threads(id);
 ```
 
-### B.2 Stages y transiciones
+### C.2 Stages
 
 ```
-idea ──→ investigación ──→ historias ──→ spec ──→ en-desarrollo ──→ review ──→ hecho
-  ↓           ↓               ↓           ↓            ↓              ↓
-descartado  descartado     descartado  descartado   descartado    descartado
+idea → investigación → historias → spec → en-desarrollo → review → hecho
+  ↓          ↓              ↓         ↓           ↓             ↓
+                         descartado (desde cualquier stage)
 ```
 
-**idea**: existe el problema, título y summary breve.
+- **idea**: título + summary. Origen puede ser un ítem existente promovido a Hilo.
+- **investigación**: artifact con contexto — sistemas similares, código relevante, decisiones pasadas que aplican.
+- **historias**: artifact con user stories `Como [rol], quiero [qué], para [por qué]`.
+- **spec**: artifact técnico (equivalente a docs/superpowers/specs/). Claude puede generarlo desde investigación + historias via `elaborate-stage`.
+- **en-desarrollo**: ítems de impl. creados y linkeados con `thread_id`. El hilo sabe si hay trabajo activo.
+- **review**: checklist de QA / eyeball del owner.
+- **hecho**: todos los ítems linkeados en status `hecho`.
 
-**investigación**: se agrega un artifact con notas de contexto — qué sistemas existentes hacen algo similar, qué código en el repo es relevante, qué decisiones pasadas afectan. Claude Code puede generar esto con `pulso_hilo_avanzar(id, {stage: "investigación", content: "..."})`.
+### C.3 Generación AI de artifact (`elaborate-stage`)
 
-**historias**: artifact con user stories en formato `Como [rol], quiero [qué], para [por qué]`. Puede generarse con AI desde el artifact de investigación.
+`POST /api/v1/threads/{id}/elaborate-stage`:
+1. Lee el stage actual y todos los artifacts existentes del hilo
+2. Llama Haiku (para historias) o Sonnet (para spec) con el contexto del hilo
+3. Guarda resultado como artifact draft del siguiente stage
+4. El owner edita y confirma → `pulso_hilo_avanzar()` aplica el avance
 
-**spec**: artifact con la spec técnica completa (equivalente a los docs/superpowers/specs/ actuales). Idealmente generado con AI desde investigación + historias.
+### C.4 Relación Hilos ↔ Grafo
 
-**en-desarrollo**: los ítems de implementación se crean y se linkean al hilo con `thread_id`. El hilo sabe que hay trabajo activo.
+Cuando un Hilo está en `en-desarrollo`, los ítems linkeados (`thread_id`) pueden tener arcos `part_of` hacia el Hilo (si se modela el Hilo como un nodo especial) o simplemente coexistir sin arcos explícitos — el `thread_id` FK ya da la agrupación. La segunda opción es más simple y suficiente.
 
-**review**: code review / QA / eyeball del owner. El hilo puede tener un artifact con checklist de review.
+### C.5 UI
 
-**hecho**: todos los ítems linkeados están en status `hecho`. El hilo se archiva automáticamente si todos sus ítems están completos.
-
-### B.3 UI en Pulso
-
-Una vista nueva `/hilos` (lista tipo Kanban por stage) y `/hilos/{id}` (detalle con artifacts por stage, lista de ítems linkeados). La vista de detalle permite avanzar el stage con un botón y agregar artifacts manualmente o vía AI.
-
-No se reemplaza la vista de backlog — los Hilos son una capa de organización encima, no un reemplazo.
-
-### B.4 Generación de spec AI (bonus)
-
-Un endpoint `POST /api/v1/threads/{id}/elaborate-stage` que:
-1. Toma el stage actual y los artifacts existentes
-2. Llama a Claude (Haiku para historias, Sonnet para spec) con el contexto del hilo
-3. Guarda el resultado como un artifact draft del siguiente stage
-4. El usuario puede editarlo y luego confirmar el avance de stage
-
-Esto hace el funnel semiautomático sin ser completamente autónomo.
+- `/hilos` — lista Kanban por stage, con filtro por scope
+- `/hilos/{id}` — detalle: artifacts por stage (timeline), lista de ítems linkeados, botón avanzar stage, botón elaborate-stage (AI)
 
 ---
 
-## Parte C: Sentry webhook (spec breve, implementación posterior)
+## Parte D: Sentry webhook
 
 `POST /api/v1/webhooks/sentry` — recibe alertas de Sentry.
 
-Lógica:
-1. Si el error ya tiene un ítem en Pulso (por fingerprint): bump `stale_risk=true`, agrega ocurrencia en `source_refs`.
-2. Si es nuevo: crea ítem `type=bug`, `origen=sentry`, con title = error message, summary = stack trace truncado + URL Sentry, `scope_name` derivado de la transaction path.
-3. Haiku triage asíncrono: rellena `impact_ai` (basado en affected users del evento Sentry), `effort_ai`, `impact_rationale` con hipótesis de root cause.
-4. `pulso_contexto()` siempre incluye los últimos 3 bugs de Sentry sin ítem asociado (por si el webhook falló).
+1. Si existe ítem con `source_refs.sentry_fingerprint == event.fingerprint`: bump `stale_risk=true`, agrega ocurrencia.
+2. Si es nuevo: crea ítem `type=bug, origen=sentry`, title = error message, summary = stack trace truncado + URL Sentry, scope derivado de transaction path.
+3. Haiku triage asíncrono (worker): rellena `impact_ai` (affected users), `effort_ai`, `impact_rationale`.
+4. `pulso_contexto()` incluye bugs recientes de Sentry sin ítem asociado en la capa local.
 
 ---
 
-## Parte D: Git webhook → progreso automático
+## Parte E: Git webhook → progreso automático
 
-`POST /api/v1/webhooks/github` — recibe push/PR merge events.
+`POST /api/v1/webhooks/github` — push/PR merge.
 
-Lógica:
-1. Para cada commit, extraer scope del conventional commit prefix (`fix(auth):` → scope `auth`).
-2. Marcar ítems del scope como "recientemente tocados" (campo `last_touched_at`, sin cambiar status).
-3. Si el commit message incluye `pulso:UUID` o `closes pulso:UUID` → marcar el ítem como hecho con el SHA del commit.
-4. PR merged → buscar en el body del PR ítems referenciados y marcarlos.
-
-Este webhook es opcional y no bloquea el flujo — es enriquecimiento pasivo.
-
----
-
-## Alcance de implementación (qué queda fuera del sprint)
-
-- Decision log queryable: se implementa como un tipo de ítem `type=decisión` + el tool `pulso_buscar` ya funciona. No requiere endpoints nuevos.
-- Velocidad / métricas: pantalla futura, datos ya se acumulan.
-- Public roadmap: lectura only, pantalla futura.
-- Autonomous fix agent: post-F3, requiere validar el workflow primero.
-- Multi-usuario / asignación de stages: la columna `assignee_user_id` ya está en el schema pero la UI/lógica es post-MVP.
+1. `fix(auth):` → scope `auth` → ítems del scope marcados `last_touched_at`.
+2. `pulso:UUID` en commit message → `pulso_completar` automático con el SHA.
+3. PR merged con `closes pulso:UUID` en body → mismo efecto.
 
 ---
 
@@ -269,22 +327,48 @@ Este webhook es opcional y no bloquea el flujo — es enriquecimiento pasivo.
 
 | Versión | Descripción |
 |---------|-------------|
-| v0003 | Tabla `threads` + `thread_artifacts` |
-| v0004 | `items.thread_id FK → threads` |
+| v0003 | `item_relationships` + índices |
+| v0004 | `threads` + `thread_artifacts` |
+| v0005 | `items.thread_id` FK + `items.last_touched_at` |
+
+---
+
+## Fuera del sprint
+
+- Kahn's topological sort: implementado en Python post-query (no requiere migración)
+- Embedding automático de ítems nuevos para capa semántica: depende de F2 (enriquecimiento con Haiku)
+- Velocidad / métricas: pantalla futura
+- Public roadmap: pantalla futura
+- Autonomous fix agent (F4): post-validación de F3
+- LangGraph: cuando llegue F4 (agente autónomo con flujo cíclico)
 
 ---
 
 ## Checklist de done
 
-- [ ] `POST /mcp` implementado con protocolo JSON-RPC 2.0 + SSE
-- [ ] 8 tools funcionando (contexto, buscar, crear, completar, listar, hilo_crear, hilo_avanzar, hilo_listar)
-- [ ] 2 prompts (briefing, decision) + 1 resource (scope)
-- [ ] Auth via Bearer token (ApiToken existente)
-- [ ] Tests: 1 test por tool (mock del db), 1 test de auth (token inválido → 401)
-- [ ] `claude_desktop_config.json` ejemplo documentado en README del repo
-- [ ] Sección en CLAUDE.md del repo efrain con protocolo pre/post sesión
-- [ ] Migraciones v0003 + v0004 con downgrade
-- [ ] UI `/hilos` (lista) + `/hilos/{id}` (detalle con stages + artifacts)
-- [ ] Endpoint `POST /api/v1/threads/{id}/elaborate-stage` con AI (Haiku para historias, Sonnet para spec)
-- [ ] Sentry webhook (básico, sin AI triage por ahora)
-- [ ] Documentación del formato `pulso:UUID` en commit messages
+**Grafo (A)**
+- [ ] Migración v0003: tabla `item_relationships` + índices
+- [ ] Endpoints REST: `POST /api/v1/items/relationships`, `GET /api/v1/items/{id}/graph`
+- [ ] CTE recursiva en `pulso_contexto()` capa vecindad
+- [ ] Kahn sort en `pulso_listar(order=topologico)`
+- [ ] Tool `pulso_relacionar` en MCP
+- [ ] Tests: crear arco, traversal (mock DB), ciclo sin bloqueo infinito
+
+**MCP (B)**
+- [ ] `POST /mcp` con protocolo JSON-RPC 2.0 + SSE
+- [ ] 9 tools: contexto (3 capas), buscar, crear, completar, listar, relacionar, hilo_crear, hilo_avanzar, hilo_listar
+- [ ] 2 prompts (briefing, decision) + 2 resources (scope, graph)
+- [ ] Auth Bearer token (ApiToken existente), token inválido → 401
+- [ ] Tests: 1 por tool + auth
+- [ ] `claude_desktop_config.json` documentado en README
+- [ ] Sección CLAUDE.md repo efrain con protocolo pre/post sesión
+
+**Hilos (C)**
+- [ ] Migraciones v0004 + v0005
+- [ ] Endpoints REST CRUD threads + artifacts
+- [ ] `elaborate-stage` con AI (Haiku/Sonnet)
+- [ ] UI `/hilos` + `/hilos/{id}`
+
+**Webhooks (D + E)**
+- [ ] Sentry: crear ítem desde alert, dedup por fingerprint
+- [ ] GitHub: `pulso:UUID` en commit → auto-completar
