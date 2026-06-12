@@ -33,7 +33,7 @@ async def reclaim_expired_leases(db: AsyncSession) -> int:
         .values(status="pendiente", leased_until=None)
     )
     await db.commit()
-    return result.rowcount
+    return result.rowcount  # type: ignore[union-attr]
 
 
 async def process_one(db: AsyncSession) -> bool:
