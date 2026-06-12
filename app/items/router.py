@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -160,6 +160,28 @@ async def import_digest(
         result = await import_jsonl(db, p)
 
     return result
+
+
+@router.get("/search")
+async def search_items(
+    q: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+):
+    result = await db.execute(
+        text("""
+            SELECT id, title, summary_md, type, status, scope_id,
+                   effort_ai, impact_ai, stale_risk,
+                   ts_rank(search_vector, plainto_tsquery('spanish', :q)) AS rank
+            FROM items
+            WHERE search_vector @@ plainto_tsquery('spanish', :q)
+            ORDER BY rank DESC
+            LIMIT 50
+        """),
+        {"q": q},
+    )
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]
 
 
 @router.get("/{item_id}", response_model=ItemDetail)
