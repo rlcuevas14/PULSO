@@ -3,10 +3,9 @@ import uuid
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.service import create_user
-from app.database import get_db
 from app.items.models import Item
 from app.scopes.models import Scope
 
@@ -35,11 +34,12 @@ async def ensure_search_vector(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_search_finds_by_title(client: AsyncClient, db: AsyncSession):
+async def test_search_finds_by_title(client: AsyncClient, test_engine):
     uid = uuid.uuid4().hex[:8]
     email = f"searchadmin-{uid}@test.cl"
 
-    async for s in client.app.dependency_overrides[get_db]():
+    TestSession = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with TestSession() as s:
         await create_user(s, email, "Admin", "pass", "admin")
         scope = Scope(name=f"search-scope-{uid}")
         s.add(scope)
@@ -54,7 +54,6 @@ async def test_search_finds_by_title(client: AsyncClient, db: AsyncSession):
         )
         s.add(item)
         await s.commit()
-        break
 
     login = await client.post(
         "/auth/login",

@@ -181,7 +181,14 @@ async def search_items(
         {"q": q},
     )
     rows = result.mappings().all()
-    return [dict(row) for row in rows]
+    return [
+        {
+            **{k: v for k, v in dict(row).items() if k not in ("id", "scope_id")},
+            "id": str(row["id"]),
+            "scope_id": str(row["scope_id"]) if row["scope_id"] else None,
+        }
+        for row in rows
+    ]
 
 
 @router.get("/{item_id}", response_model=ItemDetail)
