@@ -24,10 +24,15 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://pulso:${DB_PASSWORD}@db/pulso
-    ports:
-      - "127.0.0.1:8001:8000"
     volumes:
-      - /opt/pulso/seed:/seed:ro   # JSONL del digest montado en prod
+      - /opt/pulso/seed:/seed:ro
+    networks:
+      - default
+      - infra_frontnet
+
+networks:
+  infra_frontnet:
+    external: true
 
 volumes:
   pulso_db:
