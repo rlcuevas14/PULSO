@@ -45,6 +45,25 @@
   </table>
 </div>
 
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-4">Scopes ({{ scopes|length }})</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 border-b">
+      <th class="pb-2">Nombre</th><th>Color</th><th>Repo</th><th>Archivado</th>
+    </tr></thead>
+    <tbody>
+    {% for s in scopes %}
+    <tr class="border-b border-gray-100 last:border-0">
+      <td class="py-2 font-medium">{{ s.name }}</td>
+      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-gray-100">{{ s.color or '—' }}</span></td>
+      <td class="py-2 text-gray-500 text-xs">{{ s.source_repo or '—' }}</td>
+      <td class="py-2">{% if s.archived %}Sí{% else %}No{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <div class="bg-white rounded-lg border border-gray-200 p-5">
   <h2 class="font-semibold text-gray-800 mb-4">Jobs recientes ({{ runs|length }})</h2>
   <table class="w-full text-sm">
