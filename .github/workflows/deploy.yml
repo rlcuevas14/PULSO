@@ -14,6 +14,9 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -45,5 +48,6 @@ jobs:
             echo "IMAGE_TAG=${{ github.sha }}" > .env.deploy
             docker compose pull app
             docker compose up -d app
+            docker compose exec app sh -c 'until pg_isready -h db -U pulso; do sleep 2; done'
             docker compose exec app alembic upgrade head
             echo "Deploy OK: ${{ github.sha }}"
