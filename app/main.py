@@ -43,17 +43,9 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router, prefix="/api/v1")
     app.include_router(ui_router)
 
-    _mount_mcp(app)
-    return app
-
-
-def _mount_mcp(app: FastAPI) -> None:
-    """Monta el endpoint MCP-over-HTTP si el SDK está disponible (Sprint 3)."""
-    try:
-        from app.mcp.server import mount_mcp
-    except ImportError:
-        return
+    from app.mcp.server import mount_mcp
     mount_mcp(app)
+    return app
 
 
 app = create_app()
