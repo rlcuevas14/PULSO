@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     resend_api_key: str = ""
 
+    sentry_client_secret: str = ""
+    github_webhook_secret: str = ""
+
     job_poll_interval_seconds: int = 10
     job_lease_seconds: int = 300
 
