@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Prioridad{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold text-gray-900">Prioridad</h1>
+  <form id="pf">
+    <select name="scope" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            hx-get="/prioridad" hx-target="body" hx-push-url="true">
+      <option value="">Todos los scopes</option>
+      {% for s in scopes %}<option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
+  <strong>Matriz impacto × esfuerzo.</strong> El cuadrante superior-izquierdo (alto impacto, bajo esfuerzo)
+  son los <em>quick wins</em>. Si el juicio de la IA está equivocado, corrige impacto/esfuerzo en el ítem —
+  tu estimación declarada gana. Lo sin estimar aparece abajo.
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-4 mb-6 overflow-x-auto">
+  <table class="text-xs w-full">
+    <thead>
+      <tr>
+        <th class="text-gray-400 font-normal p-1">Impacto ↓ / Esfuerzo →</th>
+        {% for e in efforts %}<th class="text-gray-500 font-medium p-1">{{ e }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for imp in impacts %}
+      <tr>
+        <td class="text-gray-500 font-medium p-1">{{ imp }}</td>
+        {% for e in efforts %}
+        {% set quick = (imp >= 4 and e in ['XS','S']) %}
+        <td class="align-top p-1 border border-gray-100 {% if quick %}bg-green-50{% endif %}" style="min-width:7rem;">
+          {% for it in matrix.get((imp, e), []) %}
+          <a href="/items/{{ it.id }}" class="block truncate rounded px-1 py-0.5 mb-0.5
+             {% if it.priority == 'p0' %}bg-red-100 text-red-700{% elif it.priority == 'p1' %}bg-orange-100 text-orange-700{% else %}bg-gray-100 text-gray-700{% endif %}"
+             title="{{ it.title }}">{{ it.title[:22] }}</a>
+          {% endfor %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if unestimated %}
+  <div class="mt-3 pt-3 border-t border-gray-100">
+    <div class="text-gray-400 mb-1">Sin estimar ({{ unestimated|length }}) — usa "Analizar con IA" o estima a mano:</div>
+    <div class="flex flex-wrap gap-1">
+      {% for it in unestimated[:30] %}
+      <a href="/items/{{ it.id }}" class="text-xs bg-gray-100 rounded px-1.5 py-0.5 truncate max-w-[12rem]" title="{{ it.title }}">{{ it.title[:24] }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<h2 class="text-base font-semibold text-gray-700 mb-3">Lista priorizada</h2>
+<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+  {% for it in items %}
+  <div class="flex items-center gap-3 px-4 py-2">
+    <a href="/items/{{ it.id }}" class="flex-1 text-sm text-gray-900 truncate">{{ it.title }}</a>
+    <select class="text-xs border border-gray-200 rounded px-1 py-0.5"
+            hx-post="/ui/items/{{ it.id }}/field" hx-trigger="change" hx-swap="none"
+            hx-vals='{"field":"priority"}' name="value">
+      <option value="" {% if not it.priority %}selected{% endif %}>—</option>
+      {% for p in ['p0','p1','p2','p3'] %}<option value="{{ p }}" {% if it.priority == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+    </select>
+    <span class="text-xs text-gray-400 w-20 text-right">I{{ it.impact_ai or '-' }} {{ it.effort_ai or '-' }}</span>
+    <span class="text-xs rounded px-1.5 py-0.5
+      {% if it.status == 'bloqueado' %}bg-red-100 text-red-600{% elif it.status == 'en-curso' %}bg-blue-100 text-blue-600{% else %}bg-gray-100 text-gray-500{% endif %}">{{ it.status }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

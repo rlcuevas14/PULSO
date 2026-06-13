@@ -7,13 +7,17 @@
   <span class="text-sm text-gray-400">Costo IA del mes: USD {{ "%.4f"|format(monthly_cost) }}</span>
 </div>
 
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-  {% for status, label in [('backlog','Backlog'),('en-curso','En curso'),('bloqueado','Bloqueado'),('hecho','Hecho')] %}
-  <div class="bg-white rounded-lg border border-gray-200 p-4">
-    <div class="text-2xl font-bold text-gray-900">{{ counts.get(status, 0) }}</div>
-    <div class="text-sm text-gray-500 mt-1">{{ label }}</div>
-  </div>
+<div class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-3">
+  {% for status, label in [('backlog','Backlog'),('en-curso','En curso'),('bloqueado','Bloqueado'),('en-revision','En revisión'),('hecho','Hecho'),('','⛔ Por grafo')] %}
+  <a href="{% if status %}/backlog?status={{ status }}{% else %}/backlog?graph_blocked=true{% endif %}"
+     class="bg-white rounded-lg border {% if not status %}border-amber-300{% else %}border-gray-200{% endif %} p-4 hover:bg-gray-50">
+    <div class="text-2xl font-bold {% if not status %}text-amber-600{% else %}text-gray-900{% endif %}">{% if status %}{{ counts.get(status, 0) }}{% else %}{{ blocked_count }}{% endif %}</div>
+    <div class="text-xs text-gray-500 mt-1">{{ label }}</div>
+  </a>
   {% endfor %}
+</div>
+<div class="text-xs text-gray-400 mb-8">
+  Otros: idea {{ counts.get('idea', 0) }} · spec {{ counts.get('spec', 0) }} · descartado {{ counts.get('descartado', 0) }}
 </div>
 
 {% if quick_wins %}

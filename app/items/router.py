@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.auth.deps import api_or_session_user
 from app.auth.models import ApiToken, User
 from app.database import get_db
-from app.items.models import Item, ItemComment, ItemEvent
+from app.items.models import Item, ItemComment
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -36,6 +36,8 @@ class ItemPatch(BaseModel):
     summary_md: str | None = None
     status: str | None = None
     priority: str | None = None
+    impact_ai: int | None = None
+    effort_ai: str | None = None
     stale_risk: bool | None = None
     agent_ready: bool | None = None
 
@@ -48,6 +50,7 @@ class CommentCreate(BaseModel):
 class CloseItem(BaseModel):
     status: str  # "hecho" | "descartado"
     reason: str | None = None
+    commit_sha: str | None = None
 
 
 class ItemOut(BaseModel):
@@ -239,26 +242,29 @@ async def patch_item(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
 ):
-    result = await db.execute(select(Item).where(Item.id == item_id))
-    item = result.scalar_one_or_none()
+    from app.items import service
+
+    item = await service.get_item(db, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item no encontrado")
 
     changes = body.model_dump(exclude_none=True)
-    old_status = item.status
+    actor = _actor(auth)
+
+    # status: pasa por el validador de transiciones (terminales → usar /close).
+    if "status" in changes:
+        try:
+            await service.apply_transition(db, item, changes.pop("status"), actor)
+        except service.TransitionError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # priority: registra priority_declared (lo declarado por el humano).
+    if "priority" in changes:
+        await service.set_priority(db, item, changes.pop("priority"), actor)
+
+    # resto de campos: asignación directa.
     for field, value in changes.items():
         setattr(item, field, value)
-
-    await db.flush()
-
-    if "status" in changes and changes["status"] != old_status:
-        event = ItemEvent(
-            item_id=item_id,
-            actor=_actor(auth),
-            action="status_changed",
-            payload={"from": old_status, "to": changes["status"]},
-        )
-        db.add(event)
 
     await db.commit()
     await db.refresh(item)
@@ -314,31 +320,46 @@ async def add_comment(
     return {"id": str(comment.id), "created_at": comment.created_at.isoformat()}
 
 
-@router.post("/{item_id}/close", response_model=ItemOut)
+@router.post("/{item_id}/close")
 async def close_item(
     item_id: uuid.UUID,
     body: CloseItem,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
 ):
-    if body.status not in ("hecho", "descartado"):
-        raise HTTPException(status_code=422, detail="status debe ser 'hecho' o 'descartado'")
+    from app.items import service
 
-    result = await db.execute(select(Item).where(Item.id == item_id))
-    item = result.scalar_one_or_none()
+    item = await service.get_item(db, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item no encontrado")
 
-    item.status = body.status
-    item.closed_at = datetime.now(timezone.utc)
+    try:
+        unblocked = await service.close_item(
+            db, item, body.status, body.reason, _actor(auth), commit_sha=body.commit_sha
+        )
+    except service.TransitionError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
-    event = ItemEvent(
-        item_id=item_id,
-        actor=_actor(auth),
-        action="closed",
-        payload={"status": body.status, "reason": body.reason},
-    )
-    db.add(event)
+    await db.commit()
+    await db.refresh(item)
+    return {**ItemOut.model_validate(item).model_dump(mode="json"), "unblocked": unblocked}
+
+
+@router.post("/{item_id}/reopen", response_model=ItemOut)
+async def reopen_item_endpoint(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    auth=Depends(api_or_session_user),
+):
+    from app.items import service
+
+    item = await service.get_item(db, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    try:
+        await service.reopen_item(db, item, _actor(auth))
+    except service.TransitionError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     await db.commit()
     await db.refresh(item)
     return item

@@ -1,0 +1,45 @@
+<h2 class="font-semibold text-gray-800 mb-3">Relaciones (grafo)</h2>
+{% set rel_labels = {'blocks':'bloquea a','requires':'requiere','conflicts':'conflictúa con','related':'relacionado con','part_of':'parte de'} %}
+{% set rel_in_labels = {'blocks':'bloqueado por','requires':'requerido por','conflicts':'conflictúa con','related':'relacionado con','part_of':'contiene a'} %}
+
+{% if subgraph and subgraph.arcs %}
+<div class="space-y-1.5 mb-4 text-sm">
+  {% for arc in subgraph.arcs %}
+  {% set outgoing = arc.source_id == item.id|string %}
+  {% set other_title = arc.target_title if outgoing else arc.source_title %}
+  {% set other_id = arc.target_id if outgoing else arc.source_id %}
+  {% set other_status = arc.target_status if outgoing else arc.source_status %}
+  {% set label = rel_labels[arc.relation] if outgoing else rel_in_labels[arc.relation] %}
+  <div class="flex items-center gap-2 {% if other_status in ('hecho','descartado') %}opacity-50 line-through{% endif %}">
+    <span class="text-gray-400 w-32 shrink-0">
+      {% if arc.relation == 'blocks' %}⛔{% elif arc.relation == 'requires' %}🔗{% elif arc.relation == 'conflicts' %}⚡{% elif arc.relation == 'part_of' %}⤴{% else %}◦{% endif %}
+      {{ label }}</span>
+    <a href="/items/{{ other_id }}" class="text-blue-600 hover:underline truncate">{{ other_title }}</a>
+    <span class="text-xs text-gray-400">[{{ other_status }}]</span>
+    <button title="Borrar arco" class="text-gray-300 hover:text-red-500 ml-auto"
+            hx-delete="/api/v1/items/relationships/{{ arc.source_id }}/{{ arc.target_id }}/{{ arc.relation }}"
+            hx-confirm="¿Borrar esta relación?" hx-target="#relations-section" hx-swap="innerHTML">✕</button>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-sm text-gray-400 mb-4">Sin relaciones. Agrega una abajo cuando descubras una dependencia.</p>
+{% endif %}
+
+<form class="flex flex-wrap items-center gap-2 text-sm border-t border-gray-100 pt-3"
+      hx-post="/api/v1/items/{{ item.id }}/relationships"
+      hx-target="#relations-section" hx-swap="innerHTML"
+      hx-on:htmx:after-request="if(event.detail.successful) this.reset()">
+  <span class="text-gray-500">Este ítem</span>
+  <select name="relation" class="border border-gray-300 rounded px-2 py-1">
+    <option value="blocks">bloquea a</option>
+    <option value="requires">requiere</option>
+    <option value="conflicts">conflictúa con</option>
+    <option value="related">relacionado con</option>
+    <option value="part_of">parte de</option>
+  </select>
+  <input name="target_query" placeholder="buscar ítem por título…" required
+         class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
+  <input name="note" placeholder="nota (opcional)" class="border border-gray-300 rounded px-2 py-1">
+  <button type="submit" class="bg-gray-900 text-white rounded px-3 py-1">Agregar arco</button>
+</form>
