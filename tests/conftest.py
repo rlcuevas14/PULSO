@@ -38,6 +38,25 @@ async def test_engine(pg_url):
             await conn.rollback()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # search_vector es una columna GENERATED que vive solo en la migración v0002
+    # (no en el ORM); create_all no la crea. La añadimos aquí para que el full-text
+    # funcione en todos los tests (búsqueda, MCP, resolución de relaciones).
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='items' AND column_name='search_vector'
+                ) THEN
+                    ALTER TABLE items ADD COLUMN search_vector tsvector
+                    GENERATED ALWAYS AS (
+                        setweight(to_tsvector('spanish', coalesce(title, '')), 'A') ||
+                        setweight(to_tsvector('spanish', coalesce(summary_md, '')), 'B')
+                    ) STORED;
+                    CREATE INDEX items_search_gin ON items USING GIN (search_vector);
+                END IF;
+            END $$;
+        """))
     # Truncate auth tables so tests are repeatable across runs.
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE api_tokens, users RESTART IDENTITY CASCADE"))
