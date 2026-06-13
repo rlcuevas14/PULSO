@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Incidentes{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold text-gray-900">Incidentes (Sentry)</h1>
+  <div class="text-sm text-gray-500">
+    {{ counts.new }} nuevos · {{ counts.linked }} en backlog · {{ counts.ignored }} ignorados
+  </div>
+</div>
+
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
+  <strong>Contenedor de errores de producción.</strong> Cada error de Sentry aterriza aquí (deduplicado
+  por issue, con su conteo de eventos). NO entran al backlog automáticamente: el triage IA pre-clasifica
+  el ruido y tú decides cuáles <em>promover al backlog</em> y con qué prioridad. El ruido se auto-oculta.
+</div>
+
+<div class="mb-3">
+  <a href="/incidentes{% if not incluir_ignorados %}?incluir_ignorados=true{% endif %}"
+     class="text-sm text-blue-600 hover:underline">
+    {% if incluir_ignorados %}Ocultar ignorados{% else %}Mostrar ignorados{% endif %}
+  </a>
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+  {% if not issues %}
+  <div class="px-4 py-8 text-center text-sm text-gray-400">
+    Sin incidentes. Cuando Sentry dispare un error y el webhook esté configurado, aparecerá aquí.
+  </div>
+  {% endif %}
+  {% for it in issues %}
+  <div class="flex items-center gap-3 px-4 py-3 {% if it.status == 'ignored' %}opacity-50{% endif %}">
+    <span class="text-xs rounded px-1.5 py-0.5 shrink-0
+      {% if it.level == 'error' %}bg-red-100 text-red-700{% elif it.level == 'warning' %}bg-yellow-100 text-yellow-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ it.level }}</span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-medium text-gray-900 truncate">{{ it.title }}</div>
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span>{{ it.project }}</span>
+        <span>· {{ it.events_count }} eventos</span>
+        {% if it.triage %}<span class="rounded px-1.5 py-0.5
+          {% if it.triage == 'bug-real' %}bg-red-50 text-red-600{% elif it.triage == 'ruido' %}bg-gray-100 text-gray-500{% else %}bg-amber-50 text-amber-600{% endif %}">{{ it.triage }}</span>
+        {% else %}<span class="text-gray-300">sin triage</span>{% endif %}
+        <span>· {{ it.last_seen.strftime('%Y-%m-%d %H:%M') if it.last_seen else '—' }}</span>
+        {% if it.payload and it.payload.get('web_url') %}<a href="{{ it.payload.web_url }}" target="_blank" class="text-blue-500 hover:underline">ver en Sentry ↗</a>{% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      {% if it.status == 'linked' %}
+      <a href="/items?{{ '' }}" class="text-xs text-green-600">✓ en backlog</a>
+      {% elif it.status != 'ignored' %}
+      <form hx-post="/ui/incidentes/{{ it.id }}/promote" hx-swap="none" class="flex items-center gap-1">
+        <select name="priority" class="text-xs border border-gray-200 rounded px-1 py-0.5">
+          <option value="p0">p0</option><option value="p1" selected>p1</option>
+          <option value="p2">p2</option><option value="p3">p3</option>
+        </select>
+        <button class="text-xs bg-gray-900 text-white rounded px-2 py-0.5">Promover al backlog</button>
+      </form>
+      <button hx-post="/ui/incidentes/{{ it.id }}/ignore" hx-swap="none"
+              class="text-xs text-gray-400 hover:text-gray-700">Ignorar</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

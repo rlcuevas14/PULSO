@@ -50,24 +50,107 @@ async def test_sentry_upsert_idempotent(client: AsyncClient, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sentry_promotes_bug_real(client: AsyncClient, monkeypatch):
+async def test_sentry_lands_in_container_not_backlog(client: AsyncClient, monkeypatch):
+    """El error aterriza en sentry_issues (contenedor), NO en el backlog automáticamente."""
     from app.database import get_db
+    from app.items.models import Item
     from app.webhooks.models import SentryIssue
 
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
-    async for db in client.app.dependency_overrides[get_db]():
-        db.add(SentryIssue(sentry_issue_id=sid, project="api", title="bug grave",
-                           level="error", status="new", triage="bug-real", events_count=1,
-                           payload={"sanitized_title": "bug grave"}))
-        await db.commit()
-        break
-    body = json.dumps({"id": sid, "title": "bug grave", "project": "api"}).encode()
+    body = json.dumps({"id": sid, "title": "boom NPE", "project": "efrain-api"}).encode()
     r = await client.post(
         "/api/v1/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
     )
-    assert r.json()["promoted_item"] is not None
+    assert r.status_code == 200
+    assert "promoted_item" not in r.json()  # ya no se promueve automáticamente
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = (await db.execute(
+            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
+        )).scalar_one()
+        assert issue.status == "new"
+        assert issue.item_id is None  # NO hay ítem de backlog todavía
+        n_items = await db.scalar(
+            __import__("sqlalchemy").select(__import__("sqlalchemy").func.count()).select_from(Item)
+            .where(Item.origen == "sentry", Item.title == "boom NPE")
+        )
+        assert n_items == 0
+        break
+
+
+@pytest.mark.asyncio
+async def test_manual_promote_creates_backlog_item(client: AsyncClient, monkeypatch):
+    """Promover manualmente un incidente crea un ítem de backlog con la prioridad elegida."""
+    from app.database import get_db
+    from app.items.models import Item
+    from app.webhooks.models import SentryIssue
+
+    monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
+    sid = f"sentry-{uuid.uuid4().hex[:8]}"
+    body = json.dumps({"id": sid, "title": "bug real grave", "project": "efrain-api"}).encode()
+    await client.post(
+        "/api/v1/webhooks/sentry", content=body,
+        headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
+    )
+    # login admin para la UI
+    from app.auth.service import create_user
+    suffix = uuid.uuid4().hex[:8]
+    issue_id = None
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, f"inc{suffix}@test.cl", "Inc", "pass", "admin")
+        issue = (await db.execute(
+            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
+        )).scalar_one()
+        issue_id = str(issue.id)
+        break
+    login = await client.post(
+        "/auth/login", data={"email": f"inc{suffix}@test.cl", "password": "pass"},
+        follow_redirects=False,
+    )
+    cookies = dict(login.cookies)
+    r = await client.post(f"/ui/incidentes/{issue_id}/promote", data={"priority": "p0"}, cookies=cookies)
+    assert r.status_code == 204
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = await db.get(SentryIssue, uuid.UUID(issue_id))
+        assert issue.status == "linked"
+        item = await db.get(Item, issue.item_id)
+        assert item.priority == "p0"
+        assert item.origen == "sentry"
+        break
+
+
+@pytest.mark.asyncio
+async def test_sentry_triage_hides_noise(client: AsyncClient, monkeypatch):
+    """El triage marca ruido y auto-oculta el incidente (status=ignored), sin tocar el backlog."""
+    from app.ai import llm
+    from app.database import get_db
+    from app.jobs.handlers import handle_triage_sentry
+    from app.webhooks.models import SentryIssue
+
+    monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
+    sid = f"sentry-{uuid.uuid4().hex[:8]}"
+    body = json.dumps({"id": sid, "title": "timeout aislado", "project": "efrain-api"}).encode()
+    await client.post(
+        "/api/v1/webhooks/sentry", content=body,
+        headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
+    )
+
+    async def fake_triage(title, context):
+        return {"triage": "ruido"}
+
+    monkeypatch.setattr(llm, "triage_sentry", fake_triage)
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = (await db.execute(
+            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
+        )).scalar_one()
+        out = await handle_triage_sentry(db, issue.id)
+        await db.commit()
+        assert out["triage"] == "ruido"
+        issue2 = await db.get(SentryIssue, issue.id)
+        assert issue2.status == "ignored"
+        assert issue2.item_id is None
+        break
 
 
 @pytest.mark.asyncio

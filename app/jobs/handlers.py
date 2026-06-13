@@ -62,6 +62,31 @@ async def handle_enrich(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
     return out
 
 
+async def handle_triage_sentry(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
+    """Pre-clasifica un issue de Sentry con Haiku (bug-real / input-malo / 3rd-party / ruido).
+    El ruido se auto-oculta (status=ignored). NO promueve al backlog — esa decisión es del
+    owner desde /incidentes (informado por el triage). Degrada sin API key (queda pendiente)."""
+    from app.webhooks.models import SentryIssue
+
+    if ref_id is None:
+        return {"status": "sin-ref"}
+    issue = (await db.execute(select(SentryIssue).where(SentryIssue.id == ref_id))).scalar_one_or_none()
+    if issue is None:
+        return {"status": "issue-no-encontrado"}
+
+    try:
+        verdict = await llm.triage_sentry(issue.title, str(issue.payload or ""))
+    except llm.LLMUnavailable:
+        return {"status": "sin-api-key", "note": "queda sin triage hasta tener ANTHROPIC_API_KEY"}
+
+    issue.triage = verdict["triage"]
+    if verdict["triage"] == "ruido" and issue.item_id is None:
+        issue.status = "ignored"  # auto-ocultar el ruido del contenedor
+    await db.flush()
+    return {"issue_id": str(ref_id), "triage": verdict["triage"], "status": issue.status}
+
+
 HANDLERS = {
     "enrich": handle_enrich,
+    "triage-sentry": handle_triage_sentry,
 }

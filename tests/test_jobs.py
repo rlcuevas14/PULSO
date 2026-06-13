@@ -7,8 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 @pytest.mark.asyncio
 async def test_enqueue_and_process_job(db: AsyncSession):
+    from sqlalchemy import text
+
     from app.jobs.worker import enqueue_job, process_one
 
+    # Aislar de jobs pendientes de otros tests (el worker procesa el más antiguo global).
+    await db.execute(text("DELETE FROM agent_runs WHERE status = 'pendiente'"))
     run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=None)
     assert run.status == "pendiente"
 
@@ -23,8 +27,12 @@ async def test_enqueue_and_process_job(db: AsyncSession):
 @pytest.mark.asyncio
 async def test_no_double_processing(db: AsyncSession, test_engine):
     """Dos corrutinas concurrentes no deben procesar el mismo job."""
+    from sqlalchemy import text
+
     from app.jobs.worker import enqueue_job, process_one
 
+    # Aislar de jobs pendientes que otros tests pudieran haber dejado (el worker es global).
+    await db.execute(text("DELETE FROM agent_runs WHERE status = 'pendiente'"))
     await enqueue_job(db, kind="enrich")
     await db.commit()
 

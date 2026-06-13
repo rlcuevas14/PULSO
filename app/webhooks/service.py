@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.items.models import Item, ItemEvent
+from app.jobs.models import AgentRun
 from app.webhooks.models import SentryIssue
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -37,8 +38,12 @@ def _sanitize(textval: str | None, limit: int = 4000) -> str:
 
 
 async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
-    """Upsert idempotente en sentry_issues por sentry_issue_id (UNIQUE). Promueve a
-    ítem si triage='bug-real'."""
+    """Upsert idempotente en sentry_issues por sentry_issue_id (UNIQUE).
+
+    Política: el error aterriza en el CONTENEDOR sentry_issues (no en el backlog). La
+    promoción al backlog requiere análisis: la hace el triage IA (clasifica el ruido) y/o
+    el owner manualmente desde /incidentes. Dedup: el mismo issue incrementa events_count.
+    """
     data = payload.get("data", {}).get("issue") or payload.get("issue") or payload
     sentry_id = str(data.get("id") or payload.get("id") or "")
     if not sentry_id:
@@ -50,6 +55,7 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     level = data.get("level", "error")
     if level not in ("error", "warning", "info"):
         level = "error"
+    web_url = data.get("web_url") or data.get("permalink")
 
     issue = (await db.execute(
         select(SentryIssue).where(SentryIssue.sentry_issue_id == sentry_id)
@@ -59,29 +65,36 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
         issue = SentryIssue(
             sentry_issue_id=sentry_id, project=project, title=title, level=level,
             status="new", events_count=1, first_seen=now, last_seen=now,
-            payload={"sanitized_title": title},
+            payload={"sanitized_title": title, "web_url": web_url},
         )
         db.add(issue)
         created = True
+        await db.flush()
+        # Encolar triage IA (pre-clasifica el ruido; corre cuando hay ANTHROPIC_API_KEY).
+        db.add(AgentRun(kind="triage-sentry", ref_type="sentry_issue",
+                        ref_id=issue.id, status="pendiente"))
     else:
         issue.events_count += 1
         issue.last_seen = now
         created = False
     await db.flush()
 
-    promoted = None
-    if issue.triage == "bug-real" and issue.item_id is None:
-        promoted = await _promote_to_item(db, issue)
-
     return {"sentry_issue_id": sentry_id, "created": created,
-            "events_count": issue.events_count, "promoted_item": promoted}
+            "events_count": issue.events_count, "triage": issue.triage, "status": issue.status}
 
 
-async def _promote_to_item(db: AsyncSession, issue: SentryIssue) -> str:
+async def promote_issue(
+    db: AsyncSession, issue: SentryIssue, priority: str = "p1", actor: str = "manual"
+) -> str:
+    """Promueve un issue del contenedor al backlog como ítem bug (decisión con análisis:
+    triage IA o el owner). Idempotente: si ya está linkeado, devuelve el ítem existente."""
+    if issue.item_id is not None:
+        return str(issue.item_id)
     scope = await _get_or_create_scope(db, issue.project)
     item = Item(
         scope_id=scope, title=issue.title[:300], type="bug", status="backlog",
-        summary_md=_sanitize(str(issue.payload), 4000), origen="sentry", stale_risk=True,
+        summary_md=_sanitize(str(issue.payload), 4000), origen="sentry",
+        priority=priority, priority_declared=priority, stale_risk=True,
         source_refs={"sentry_issue_id": issue.sentry_issue_id},
     )
     db.add(item)
@@ -89,7 +102,7 @@ async def _promote_to_item(db: AsyncSession, issue: SentryIssue) -> str:
     issue.item_id = item.id
     issue.status = "linked"
     db.add(ItemEvent(item_id=item.id, actor=f"sentry:{issue.sentry_issue_id}",
-                     action="created", payload={"from": "sentry"}))
+                     action="created", payload={"from": "sentry", "priority": priority, "by": actor}))
     await db.flush()
     return str(item.id)
 

@@ -113,6 +113,43 @@ async def generate_stage(stage: str, title: str, summary: str | None, artifacts:
     return {"content": content, "model": model}
 
 
+_TRIAGE_PROMPT = """Eres un ingeniero de confiabilidad. Clasifica este error de Sentry y
+responde SOLO con JSON.
+
+Título: {title}
+Contexto: {context}
+
+Devuelve {{"triage": "<una de: bug-real, input-malo, 3rd-party, ruido>"}}.
+- bug-real: bug genuino de nuestro código que hay que arreglar.
+- input-malo: error por datos/entrada inválida del usuario, no es bug.
+- 3rd-party: falla de un servicio externo, no de nuestro código.
+- ruido: transitorio/irrelevante (timeout aislado, bot, healthcheck).
+
+JSON:"""
+
+
+async def triage_sentry(title: str, context: str) -> dict[str, Any]:
+    """Clasifica un error de Sentry con Haiku. Lanza LLMUnavailable sin API key."""
+    if not settings.anthropic_api_key:
+        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+    prompt = _TRIAGE_PROMPT.format(title=title, context=context[:2000])
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            _ANTHROPIC_URL,
+            headers={"x-api-key": settings.anthropic_api_key,
+                     "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": _HAIKU_MODEL, "max_tokens": 100,
+                  "messages": [{"role": "user", "content": prompt}]},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    text = "".join(b.get("text", "") for b in data.get("content", []))
+    triage = str(_extract_json(text).get("triage", "")).strip()
+    if triage not in ("bug-real", "input-malo", "3rd-party", "ruido"):
+        triage = "bug-real"  # default seguro: si dudas, trátalo como bug real
+    return {"triage": triage}
+
+
 async def embed_text(content: str) -> list[float] | None:
     """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación)."""
     if not settings.gemini_api_key:

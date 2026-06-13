@@ -545,6 +545,74 @@ async def ui_elaborate_hilo(
     )
 
 
+# ---------- Incidentes (contenedor de errores de Sentry) ----------
+
+@router.get("/incidentes", response_class=HTMLResponse)
+async def incidentes_page(
+    request: Request,
+    incluir_ignorados: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.webhooks.models import SentryIssue
+
+    q = select(SentryIssue).order_by(SentryIssue.last_seen.desc().nulls_last())
+    if not incluir_ignorados:
+        q = q.where(SentryIssue.status != "ignored")
+    issues = list((await db.execute(q.limit(200))).scalars().all())
+    counts = {
+        "new": await db.scalar(
+            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "new")
+        ),
+        "linked": await db.scalar(
+            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "linked")
+        ),
+        "ignored": await db.scalar(
+            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "ignored")
+        ),
+    }
+    return templates.TemplateResponse(
+        request, "incidentes.html",
+        {"user": user, "issues": issues, "counts": counts, "incluir_ignorados": incluir_ignorados},
+    )
+
+
+@router.post("/ui/incidentes/{issue_id}/promote")
+async def ui_promote_issue(
+    issue_id: uuid.UUID,
+    priority: str = Form("p1"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.webhooks import service as wservice
+    from app.webhooks.models import SentryIssue
+
+    issue = await db.get(SentryIssue, issue_id)
+    if issue is None:
+        return Response(status_code=404)
+    if priority not in ("p0", "p1", "p2", "p3"):
+        priority = "p1"
+    await wservice.promote_issue(db, issue, priority=priority, actor=user.email)
+    await db.commit()
+    return _refresh()
+
+
+@router.post("/ui/incidentes/{issue_id}/ignore")
+async def ui_ignore_issue(
+    issue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.webhooks.models import SentryIssue
+
+    issue = await db.get(SentryIssue, issue_id)
+    if issue is None:
+        return Response(status_code=404)
+    issue.status = "ignored"
+    await db.commit()
+    return _refresh()
+
+
 # ---------- Ideas / Admin (sin cambios sustantivos) ----------
 
 @router.get("/ideas", response_class=HTMLResponse)
