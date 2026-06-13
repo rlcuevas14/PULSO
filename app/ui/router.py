@@ -564,6 +564,26 @@ async def ideas_page(
     )
 
 
+@router.post("/ui/admin/tokens", response_class=HTMLResponse)
+async def ui_create_token(
+    request: Request,
+    name: str = Form(...),
+    scopes: str = Form("write"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    if user.role != "admin":
+        return Response(status_code=403)
+    from app.auth.service import create_api_token
+
+    if scopes not in ("read", "write"):
+        scopes = "write"
+    _tok, raw = await create_api_token(db, name, scopes, user.id)
+    return templates.TemplateResponse(
+        request, "partials/token_created.html", {"raw": raw, "name": name, "scopes": scopes}
+    )
+
+
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(
     request: Request,

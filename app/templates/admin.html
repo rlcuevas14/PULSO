@@ -28,8 +28,20 @@
 </div>
 
 <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-  <h2 class="font-semibold text-gray-800 mb-4">Tokens activos ({{ tokens|length }})</h2>
-  <table class="w-full text-sm">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-semibold text-gray-800">Tokens activos ({{ tokens|length }})</h2>
+    <form class="flex items-center gap-2" hx-post="/ui/admin/tokens" hx-target="#token-result" hx-swap="innerHTML">
+      <input name="name" required placeholder="nombre del token"
+             class="border border-gray-300 rounded px-2 py-1 text-sm">
+      <select name="scopes" class="border border-gray-300 rounded px-2 py-1 text-sm">
+        <option value="write">write</option>
+        <option value="read">read</option>
+      </select>
+      <button class="text-sm bg-gray-900 text-white rounded px-3 py-1">Generar token MCP</button>
+    </form>
+  </div>
+  <div id="token-result"></div>
+  <table class="w-full text-sm mt-3">
     <thead><tr class="text-left text-gray-500 border-b">
       <th class="pb-2">Nombre</th><th>Scope</th><th>Último uso</th>
     </tr></thead>
