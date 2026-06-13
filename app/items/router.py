@@ -434,3 +434,26 @@ async def enqueue_enrich(
 
     run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
     return {"run_id": str(run.id), "status": "encolado"}
+
+
+@router.post("/enrich-pending", status_code=202)
+async def enqueue_pending_enrich(
+    limit: int = Query(200),
+    db: AsyncSession = Depends(get_db),
+    auth=Depends(api_or_session_user),
+):
+    """Encola enriquecimiento para todos los ítems abiertos sin impacto estimado (admin)."""
+    if isinstance(auth, User) and auth.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    from app.jobs.worker import enqueue_job
+
+    rows = await db.execute(
+        select(Item.id).where(
+            Item.impact_ai.is_(None),
+            Item.status.not_in(["hecho", "descartado"]),
+        ).limit(limit)
+    )
+    ids = [r[0] for r in rows]
+    for item_id in ids:
+        await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
+    return {"encolados": len(ids)}

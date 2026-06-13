@@ -75,6 +75,13 @@
   </div>
   {% endif %}
 
+  {% if item.dependencies %}
+  <div class="text-xs text-gray-400 mb-3">
+    <span class="font-medium">Dependencias (texto del digest, referencia):</span> {{ item.dependencies }}
+    — el grafo de Relaciones es la fuente estructurada.
+  </div>
+  {% endif %}
+
   {% if blockers %}
   <div class="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800 mb-5">
     ⛔ <strong>Bloqueado por:</strong>
