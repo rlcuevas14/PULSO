@@ -17,7 +17,7 @@
     <a href="/items/{{ other_id }}" class="text-blue-600 hover:underline truncate">{{ other_title }}</a>
     <span class="text-xs text-gray-400">[{{ other_status }}]</span>
     <button title="Borrar arco" class="text-gray-300 hover:text-red-500 ml-auto"
-            hx-delete="/api/v1/items/relationships/{{ arc.source_id }}/{{ arc.target_id }}/{{ arc.relation }}"
+            hx-delete="/ui/items/{{ item.id }}/relationships?source={{ arc.source_id }}&target={{ arc.target_id }}&relation={{ arc.relation }}"
             hx-confirm="¿Borrar esta relación?" hx-target="#relations-section" hx-swap="innerHTML">✕</button>
   </div>
   {% endfor %}
@@ -27,7 +27,7 @@
 {% endif %}
 
 <form class="flex flex-wrap items-center gap-2 text-sm border-t border-gray-100 pt-3"
-      hx-post="/api/v1/items/{{ item.id }}/relationships"
+      hx-post="/ui/items/{{ item.id }}/relationships"
       hx-target="#relations-section" hx-swap="innerHTML"
       hx-on:htmx:after-request="if(event.detail.successful) this.reset()">
   <span class="text-gray-500">Este ítem</span>

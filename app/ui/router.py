@@ -328,6 +328,57 @@ async def ui_set_field(
     return Response(status_code=204, headers={"HX-Refresh": "true"})
 
 
+async def _render_relations(request: Request, db: AsyncSession, item: Item) -> Response:
+    sub = await graph.subgraph(db, item.id)
+    return templates.TemplateResponse(
+        request, "partials/relationship_list.html", {"item": item, "subgraph": sub}
+    )
+
+
+@router.post("/ui/items/{item_id}/relationships")
+async def ui_create_relationship(
+    item_id: uuid.UUID,
+    request: Request,
+    relation: str = Form(...),
+    target_query: str = Form(...),
+    note: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.items import relationships
+
+    item = await service.get_item(db, item_id)
+    if item is None:
+        return Response(status_code=404)
+    try:
+        target_id = await relationships.resolve_query(db, target_query)
+        await relationships.create_relationship(db, item_id, target_id, relation, note or None)
+        await db.commit()
+    except relationships.RelationshipError as e:
+        return Response(content=str(e), status_code=422)
+    return await _render_relations(request, db, item)
+
+
+@router.delete("/ui/items/{item_id}/relationships")
+async def ui_delete_relationship(
+    item_id: uuid.UUID,
+    request: Request,
+    source: uuid.UUID,
+    target: uuid.UUID,
+    relation: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.items import relationships
+
+    item = await service.get_item(db, item_id)
+    if item is None:
+        return Response(status_code=404)
+    await relationships.delete_relationship(db, source, target, relation)
+    await db.commit()
+    return await _render_relations(request, db, item)
+
+
 @router.post("/ui/items/create")
 async def ui_create_item(
     title: str = Form(...),

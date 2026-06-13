@@ -365,6 +365,61 @@ async def reopen_item_endpoint(
     return item
 
 
+class RelationshipCreate(BaseModel):
+    source_id: uuid.UUID
+    target_id: uuid.UUID
+    relation: str
+    note: str | None = None
+
+
+@router.post("/relationships", status_code=201)
+async def create_relationship_endpoint(
+    body: RelationshipCreate,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+):
+    from app.items import relationships
+
+    try:
+        rel = await relationships.create_relationship(
+            db, body.source_id, body.target_id, body.relation, body.note
+        )
+    except relationships.RelationshipError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    await db.commit()
+    return {
+        "source_id": str(rel.source_id),
+        "target_id": str(rel.target_id),
+        "relation": rel.relation,
+    }
+
+
+@router.delete("/relationships/{source_id}/{target_id}/{relation}", status_code=200)
+async def delete_relationship_endpoint(
+    source_id: uuid.UUID,
+    target_id: uuid.UUID,
+    relation: str,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+):
+    from app.items import relationships
+
+    ok = await relationships.delete_relationship(db, source_id, target_id, relation)
+    await db.commit()
+    return {"deleted": ok}
+
+
+@router.get("/{item_id}/graph")
+async def item_graph(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+):
+    from app.items import graph
+
+    return await graph.subgraph(db, item_id)
+
+
 @router.post("/{item_id}/enrich", status_code=202)
 async def enqueue_enrich(
     item_id: uuid.UUID,
