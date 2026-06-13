@@ -24,7 +24,10 @@ def create_app() -> FastAPI:
     from app.auth.router import router as auth_router
     from app.items.router import router as items_router
     from app.scopes.router import router as scopes_router
+    from app.threads import models as _threads_models  # noqa: F401 — registra ORM en Base.metadata
+    from app.threads.router import router as threads_router
     from app.ui.router import router as ui_router
+    from app.webhooks.router import router as webhooks_router
 
     app = FastAPI(title="Pulso — Eduk3", lifespan=lifespan)
     app.add_middleware(
@@ -36,8 +39,21 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(items_router, prefix="/api/v1")
     app.include_router(scopes_router, prefix="/api/v1")
+    app.include_router(threads_router, prefix="/api/v1")
+    app.include_router(webhooks_router, prefix="/api/v1")
     app.include_router(ui_router)
+
+    _mount_mcp(app)
     return app
+
+
+def _mount_mcp(app: FastAPI) -> None:
+    """Monta el endpoint MCP-over-HTTP si el SDK está disponible (Sprint 3)."""
+    try:
+        from app.mcp.server import mount_mcp
+    except ImportError:
+        return
+    mount_mcp(app)
 
 
 app = create_app()

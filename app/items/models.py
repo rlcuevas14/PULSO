@@ -16,7 +16,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -62,7 +62,7 @@ class Item(Base):
     trigger_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     dependencies: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     origen: Mapped[str] = mapped_column(String(20), nullable=False, default="humano")
-    source_refs: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    source_refs: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     stale_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     agent_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -71,12 +71,42 @@ class Item(Base):
         TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    # Tocado por un push/sesión (webhook Git / pulso_completar). Distinto de updated_at
+    # (que dispara con cualquier UPDATE de la fila).
+    last_touched_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    # FK al Hilo que originó este ítem (Sprint 4). Nullable: la mayoría de ítems no son de un hilo.
+    thread_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("threads.id"), nullable=True
+    )
 
     # embedding: vector(768) solo existe en la BD, no en el ORM (se gestiona raw en F2)
 
     comments: Mapped[list["ItemComment"]] = relationship("ItemComment", back_populates="item")
     events: Mapped[list["ItemEvent"]] = relationship("ItemEvent", back_populates="item")
     enrichments: Mapped[list["AiEnrichment"]] = relationship("AiEnrichment", back_populates="item")
+
+
+class ItemRelationship(Base):
+    """Arco tipado del grafo entre dos ítems. El grafo se construye incrementalmente."""
+
+    __tablename__ = "item_relationships"
+    __table_args__ = (
+        CheckConstraint(
+            "relation IN ('blocks','requires','conflicts','related','part_of')",
+            name="item_relationships_relation_check",
+        ),
+        CheckConstraint("source_id <> target_id", name="item_rel_no_self"),
+    )
+
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
+    )
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
+    )
+    relation: Mapped[str] = mapped_column(String(20), primary_key=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
 class ItemComment(Base):
