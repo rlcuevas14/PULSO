@@ -237,3 +237,44 @@ async def pulso_relacionar(db: AsyncSession, token: ApiToken, args: dict) -> dic
     except relationships.RelationshipError as e:
         raise ToolError(str(e)) from e
     return {"source_id": str(rel.source_id), "target_id": str(rel.target_id), "relation": rel.relation}
+
+
+# ---------- Tools de Hilos ----------
+
+def _thread_brief(t: Any) -> dict[str, Any]:
+    return {"id": str(t.id), "title": t.title, "stage": t.stage, "scope_id": str(t.scope_id)}
+
+
+async def pulso_hilo_crear(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    from app.threads import service as tservice
+
+    t = await tservice.create_thread(db, args["scope_name"], args["title"], args.get("summary"))
+    return _thread_brief(t)
+
+
+async def pulso_hilo_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    from app.threads import service as tservice
+
+    t = await tservice.get_thread(db, uuid.UUID(args["thread_id"]))
+    if t is None:
+        raise ToolError("Hilo no encontrado.")
+    artifact = args.get("artifact")
+    content = artifact.get("content") if isinstance(artifact, dict) else None
+    try:
+        await tservice.advance_stage(db, t, content, await actor_user_id(db, token))
+    except tservice.ThreadError as e:
+        raise ToolError(str(e)) from e
+    return _thread_brief(t)
+
+
+async def pulso_hilo_listar(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
+    from app.threads import service as tservice
+
+    threads = await tservice.list_threads(db, args.get("stage"), args.get("scope"))
+    return [_thread_brief(t) for t in threads]
+
+
+async def actor_user_id(db: AsyncSession, token: ApiToken) -> uuid.UUID | None:
+    """user_id del creador del token (para autoría de artefactos), o None."""
+    user = (await db.execute(select(User).where(User.id == token.created_by))).scalar_one_or_none()
+    return user.id if user else None

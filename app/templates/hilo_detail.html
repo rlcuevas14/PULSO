@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.title[:50] }}{% endblock %}
+{% block content %}
+
+<div class="mb-4"><a href="/hilos" class="text-sm text-blue-600 hover:underline">← Hilos</a></div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-6 mb-5">
+  <div class="flex items-start justify-between gap-4 mb-3">
+    <h1 class="text-xl font-bold text-gray-900">{{ thread.title }}</h1>
+    <span class="text-xs bg-indigo-100 text-indigo-700 rounded px-2 py-1 shrink-0">{{ thread.stage }}</span>
+  </div>
+  {% if thread.summary_md %}<p class="text-sm text-gray-600 mb-4 whitespace-pre-wrap">{{ thread.summary_md }}</p>{% endif %}
+
+  {% if thread.stage not in ('hecho','descartado') %}
+  <div class="border border-gray-200 rounded p-4 mb-2">
+    <div class="text-sm font-medium text-gray-700 mb-2">
+      {% if next_stage %}Siguiente stage: <span class="text-indigo-600">{{ next_stage }}</span>{% else %}Stage final{% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2 items-center">
+      {% if next_stage %}
+      <button class="text-sm bg-indigo-600 text-white rounded px-3 py-1.5 hover:bg-indigo-700"
+              hx-post="/ui/hilos/{{ thread.id }}/elaborate" hx-target="#draft-area" hx-swap="innerHTML"
+              hx-indicator="#elab-spin">✨ Elaborar con IA</button>
+      <span id="elab-spin" class="htmx-indicator text-xs text-gray-400">generando…</span>
+      <form action="/ui/hilos/{{ thread.id }}/advance" method="post" class="inline">
+        <button class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">Avanzar a {{ next_stage }} ▸</button>
+      </form>
+      {% endif %}
+      {% if prev_stage %}
+      <form action="/ui/hilos/{{ thread.id }}/stage" method="post" class="inline">
+        <input type="hidden" name="stage" value="{{ prev_stage }}">
+        <button class="text-sm text-gray-500 hover:text-gray-800">◂ Volver a {{ prev_stage }}</button>
+      </form>
+      {% endif %}
+      <form action="/ui/hilos/{{ thread.id }}/stage" method="post" class="inline ml-auto"
+            onsubmit="return confirm('¿Descartar este hilo?')">
+        <input type="hidden" name="stage" value="descartado">
+        <button class="text-sm text-red-500 hover:text-red-700">Descartar hilo</button>
+      </form>
+    </div>
+  </div>
+  <div id="draft-area"></div>
+  {% endif %}
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5 mb-5">
+  <h2 class="font-semibold text-gray-800 mb-4">Artefactos ({{ artifacts|length }})</h2>
+  {% for a in artifacts %}
+  <details class="border-b border-gray-100 pb-2 mb-2 last:border-0">
+    <summary class="cursor-pointer text-sm">
+      <span class="font-medium text-gray-700">{{ a.stage }}</span>
+      <span class="text-xs bg-gray-100 rounded px-1.5">{{ a.kind }}</span>
+      <span class="text-xs text-gray-400">{{ a.created_at }}</span>
+    </summary>
+    <div class="text-sm text-gray-700 whitespace-pre-wrap mt-2 pl-2">{{ a.content_md }}</div>
+  </details>
+  {% else %}
+  <p class="text-sm text-gray-400">Aún no hay artefactos. Avanza el stage guardando uno, o usa "Elaborar con IA".</p>
+  {% endfor %}
+</div>
+
+<div class="bg-white rounded-lg border border-gray-200 p-5">
+  <h2 class="font-semibold text-gray-800 mb-4">Ítems linkeados ({{ linked|length }})</h2>
+  {% for it in linked %}
+  <a href="/items/{{ it.id }}" class="flex items-center gap-2 py-1.5 text-sm hover:bg-gray-50">
+    <span class="text-gray-900 flex-1 truncate">{{ it.title }}</span>
+    <span class="text-xs rounded px-1.5 py-0.5
+      {% if it.status in ('hecho','descartado') %}bg-green-100 text-green-600{% else %}bg-gray-100 text-gray-500{% endif %}">{{ it.status }}</span>
+  </a>
+  {% else %}
+  <p class="text-sm text-gray-400">Sin ítems. Crea uno desde el Backlog y asígnalo a este hilo (futuro), o trabaja el funnel por stages.</p>
+  {% endfor %}
+</div>
+
+{% endblock %}

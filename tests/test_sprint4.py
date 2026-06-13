@@ -1,0 +1,134 @@
+import uuid
+
+import pytest
+from httpx import AsyncClient
+
+
+async def _setup(client: AsyncClient):
+    from app.auth.service import create_user
+    from app.database import get_db
+    from app.scopes.models import Scope
+
+    suffix = uuid.uuid4().hex[:8]
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, f"s4admin{suffix}@test.cl", "Admin", "pass", "admin")
+        scope = Scope(name=f"s4-{suffix}")
+        db.add(scope)
+        await db.commit()
+        await db.refresh(scope)
+        scope_name = scope.name
+        break
+    resp = await client.post(
+        "/auth/login", data={"email": f"s4admin{suffix}@test.cl", "password": "pass"},
+        follow_redirects=False,
+    )
+    return dict(resp.cookies), scope_name
+
+
+@pytest.mark.asyncio
+async def test_thread_lifecycle(client: AsyncClient):
+    cookies, scope_name = await _setup(client)
+    r = await client.post(
+        "/api/v1/threads",
+        json={"scope_name": scope_name, "title": "Auth v2", "summary": "Refactor"}, cookies=cookies,
+    )
+    assert r.status_code == 201
+    tid = r.json()["id"]
+    assert r.json()["stage"] == "idea"
+
+    # avanzar guardando un artefacto del stage idea -> investigacion
+    a = await client.post(
+        f"/api/v1/threads/{tid}/advance",
+        json={"artifact_content": "Notas de investigación."}, cookies=cookies,
+    )
+    assert a.status_code == 200
+    assert a.json()["stage"] == "investigacion"
+
+    detail = await client.get(f"/api/v1/threads/{tid}", cookies=cookies)
+    assert len(detail.json()["artifacts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_advance_to_hecho_blocked_by_open_items(client: AsyncClient):
+    from app.database import get_db
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    cookies, scope_name = await _setup(client)
+    r = await client.post(
+        "/api/v1/threads", json={"scope_name": scope_name, "title": "Hilo con item"}, cookies=cookies,
+    )
+    tid = r.json()["id"]
+    # llevar el hilo hasta review
+    for _ in range(5):  # idea->inv->hist->spec->en-desarrollo->review
+        await client.post(f"/api/v1/threads/{tid}/advance", json={}, cookies=cookies)
+    # linkear un ítem abierto
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(
+            __import__("sqlalchemy").select(Scope).where(Scope.name == scope_name)
+        )).scalar_one()
+        it = Item(scope_id=scope.id, title="abierto", type="feature", status="en-curso",
+                  thread_id=uuid.UUID(tid))
+        db.add(it)
+        await db.commit()
+        break
+    # review -> hecho debe fallar (ítem abierto)
+    bad = await client.post(f"/api/v1/threads/{tid}/advance", json={}, cookies=cookies)
+    assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_elaborate_without_key_graceful(client: AsyncClient):
+    cookies, scope_name = await _setup(client)
+    r = await client.post(
+        "/api/v1/threads", json={"scope_name": scope_name, "title": "Para elaborar"}, cookies=cookies,
+    )
+    tid = r.json()["id"]
+    e = await client.post(f"/api/v1/threads/{tid}/elaborate-stage", cookies=cookies)
+    # sin ANTHROPIC_API_KEY degrada a 422 con mensaje claro
+    assert e.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_hilos_pages_render(client: AsyncClient):
+    cookies, scope_name = await _setup(client)
+    r = await client.post(
+        "/api/v1/threads", json={"scope_name": scope_name, "title": "Render hilo"}, cookies=cookies,
+    )
+    tid = r.json()["id"]
+    page = await client.get("/hilos", cookies=cookies)
+    assert page.status_code == 200
+    assert "Hilos" in page.text
+    detail = await client.get(f"/hilos/{tid}", cookies=cookies)
+    assert detail.status_code == 200
+    assert "Render hilo" in detail.text
+
+
+@pytest.mark.asyncio
+async def test_mcp_thread_tools(client: AsyncClient):
+    from app.auth.service import create_api_token, create_user
+    from app.database import get_db
+
+    cookies, scope_name = await _setup(client)
+    suffix = uuid.uuid4().hex[:8]
+    async for db in client.app.dependency_overrides[get_db]():
+        user = await create_user(db, f"mcpt{suffix}@test.cl", "X", "p", "admin")
+        _t, raw = await create_api_token(db, f"t-{suffix}", "write", user.id)
+        break
+
+    async def rpc(method, params):
+        return await client.post(
+            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+            headers={"Authorization": f"Bearer {raw}"},
+        )
+
+    import json
+    r = await rpc("tools/call", {
+        "name": "pulso_hilo_crear",
+        "arguments": {"title": "Hilo MCP", "scope_name": scope_name},
+    })
+    created = json.loads(r.json()["result"]["content"][0]["text"])
+    assert created["stage"] == "idea"
+    li = await rpc("tools/call", {"name": "pulso_hilo_listar", "arguments": {}})
+    listed = json.loads(li.json()["result"]["content"][0]["text"])
+    assert any(t["title"] == "Hilo MCP" for t in listed)

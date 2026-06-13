@@ -73,6 +73,46 @@ async def enrich_item(title: str, summary: str | None, item_type: str) -> dict[s
     }
 
 
+_SONNET_MODEL = "claude-sonnet-4-6"
+
+_STAGE_PROMPT = """Eres un ingeniero de producto. Genera el artefacto del stage "{stage}" para
+este hilo de desarrollo, en español (tuteo neutro, sin voseo). Devuelve SOLO markdown.
+
+Hilo: {title}
+Resumen: {summary}
+
+Artefactos previos:
+{artifacts}
+
+Genera el contenido del stage "{stage}":"""
+
+
+async def generate_stage(stage: str, title: str, summary: str | None, artifacts: str) -> dict[str, Any]:
+    """Genera el borrador de un stage de hilo (Sonnet para spec, Haiku para el resto)."""
+    if not settings.anthropic_api_key:
+        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+    model = _SONNET_MODEL if stage == "spec" else _HAIKU_MODEL
+    prompt = _STAGE_PROMPT.format(
+        stage=stage, title=title, summary=summary or "(sin resumen)",
+        artifacts=artifacts or "(ninguno)",
+    )
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            _ANTHROPIC_URL,
+            headers={
+                "x-api-key": settings.anthropic_api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={"model": model, "max_tokens": 2000,
+                  "messages": [{"role": "user", "content": prompt}]},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    content = "".join(block.get("text", "") for block in data.get("content", []))
+    return {"content": content, "model": model}
+
+
 async def embed_text(content: str) -> list[float] | None:
     """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación)."""
     if not settings.gemini_api_key:

@@ -91,6 +91,23 @@ TOOLS: dict[str, Tool] = {
                     "target_query": _STR, "relation": _STR, "note": _STR}, ["relation"]),
         tools.pulso_relacionar, write=True,
     ),
+    "pulso_hilo_crear": Tool(
+        "pulso_hilo_crear", "Crea un Hilo (feature pesada) en stage idea.",
+        _scope_obj({"title": _STR, "summary": _STR, "scope_name": _STR}, ["title", "scope_name"]),
+        tools.pulso_hilo_crear, write=True,
+    ),
+    "pulso_hilo_avanzar": Tool(
+        "pulso_hilo_avanzar",
+        "Avanza un Hilo al siguiente stage; opcionalmente guarda un artefacto "
+        "{stage, content} del stage actual.",
+        _scope_obj({"thread_id": _STR, "artifact": {"type": "object"}}, ["thread_id"]),
+        tools.pulso_hilo_avanzar, write=True,
+    ),
+    "pulso_hilo_listar": Tool(
+        "pulso_hilo_listar", "Lista Hilos (filtro opcional por stage y scope).",
+        _scope_obj({"stage": _STR, "scope": _STR}, []),
+        tools.pulso_hilo_listar, write=False,
+    ),
 }
 
 PROMPTS = {

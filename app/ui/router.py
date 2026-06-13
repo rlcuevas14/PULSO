@@ -399,6 +399,152 @@ async def ui_create_item(
     return RedirectResponse(f"/items/{item.id}", status_code=303)
 
 
+# ---------- Hilos ----------
+
+@router.get("/hilos", response_class=HTMLResponse)
+async def hilos_page(
+    request: Request,
+    scope: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.models import THREAD_STAGES
+    from app.threads.service import list_threads
+
+    threads = await list_threads(db, scope_name=scope)
+    by_stage: dict[str, list] = {s: [] for s in THREAD_STAGES}
+    for t in threads:
+        by_stage.setdefault(t.stage, []).append(t)
+    # contar artefactos e ítems por hilo (dos queries agrupadas, sin N+1)
+    art_rows = (await db.execute(text(
+        "SELECT thread_id, count(*) AS n FROM thread_artifacts GROUP BY thread_id"
+    ))).mappings().all()
+    item_rows = (await db.execute(text(
+        "SELECT thread_id, count(*) AS n FROM items WHERE thread_id IS NOT NULL GROUP BY thread_id"
+    ))).mappings().all()
+    art_map = {str(r["thread_id"]): r["n"] for r in art_rows}
+    item_map = {str(r["thread_id"]): r["n"] for r in item_rows}
+    counts = {
+        str(t.id): {"artifacts": art_map.get(str(t.id), 0), "items": item_map.get(str(t.id), 0)}
+        for t in threads
+    }
+    scopes = list((await db.execute(
+        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+    )).scalars().all())
+    stages = [s for s in THREAD_STAGES if s != "descartado"]
+    return templates.TemplateResponse(
+        request, "hilos.html",
+        {"user": user, "by_stage": by_stage, "stages": stages, "counts": counts,
+         "scopes": scopes, "filters": {"scope": scope}},
+    )
+
+
+@router.get("/hilos/{thread_id}", response_class=HTMLResponse)
+async def hilo_detail(
+    thread_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.models import ThreadArtifact, next_stage, prev_stage
+    from app.threads.service import get_thread
+
+    thread = await get_thread(db, thread_id)
+    if thread is None:
+        return Response(status_code=404, content="Hilo no encontrado")
+    arts = list((await db.execute(
+        select(ThreadArtifact).where(ThreadArtifact.thread_id == thread_id)
+        .order_by(ThreadArtifact.created_at)
+    )).scalars().all())
+    linked = list((await db.execute(
+        select(Item).where(Item.thread_id == thread_id).order_by(Item.created_at)
+    )).scalars().all())
+    scope = await db.scalar(select(Scope).where(Scope.id == thread.scope_id))
+    return templates.TemplateResponse(
+        request, "hilo_detail.html",
+        {"user": user, "thread": thread, "artifacts": arts, "linked": linked, "scope": scope,
+         "next_stage": next_stage(thread.stage), "prev_stage": prev_stage(thread.stage)},
+    )
+
+
+@router.post("/ui/hilos/create")
+async def ui_create_hilo(
+    title: str = Form(...),
+    scope_name: str = Form(...),
+    summary: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.service import create_thread
+
+    t = await create_thread(db, scope_name, title, summary or None)
+    await db.commit()
+    return RedirectResponse(f"/hilos/{t.id}", status_code=303)
+
+
+@router.post("/ui/hilos/{thread_id}/advance")
+async def ui_advance_hilo(
+    thread_id: uuid.UUID,
+    artifact_content: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.service import ThreadError, advance_stage, get_thread
+
+    t = await get_thread(db, thread_id)
+    if t is None:
+        return Response(status_code=404)
+    try:
+        await advance_stage(db, t, artifact_content or None, user.id)
+        await db.commit()
+    except ThreadError as e:
+        return Response(content=str(e), status_code=422)
+    return _refresh()
+
+
+@router.post("/ui/hilos/{thread_id}/stage")
+async def ui_set_hilo_stage(
+    thread_id: uuid.UUID,
+    stage: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.service import ThreadError, get_thread, set_stage
+
+    t = await get_thread(db, thread_id)
+    if t is None:
+        return Response(status_code=404)
+    try:
+        await set_stage(db, t, stage)
+        await db.commit()
+    except ThreadError as e:
+        return Response(content=str(e), status_code=422)
+    return _refresh()
+
+
+@router.post("/ui/hilos/{thread_id}/elaborate", response_class=HTMLResponse)
+async def ui_elaborate_hilo(
+    thread_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.threads.service import ThreadError, elaborate_next_stage, get_thread
+
+    t = await get_thread(db, thread_id)
+    if t is None:
+        return Response(status_code=404)
+    try:
+        draft = await elaborate_next_stage(db, t)
+    except ThreadError as e:
+        return HTMLResponse(
+            f'<div class="text-sm text-red-600">{e}</div>', status_code=200
+        )
+    return templates.TemplateResponse(
+        request, "partials/elaborate_draft.html", {"thread": t, "draft": draft}
+    )
+
+
 # ---------- Ideas / Admin (sin cambios sustantivos) ----------
 
 @router.get("/ideas", response_class=HTMLResponse)
