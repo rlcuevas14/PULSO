@@ -295,6 +295,8 @@ async def pulso_incidentes(db: AsyncSession, token: ApiToken, args: dict) -> lis
         {"id": str(i.id), "sentry_issue_id": i.sentry_issue_id, "title": i.title,
          "project": i.project, "level": i.level, "events": i.events_count,
          "triage": i.triage, "status": i.status,
+         "first_seen": i.first_seen.isoformat() if i.first_seen else None,
+         "last_seen": i.last_seen.isoformat() if i.last_seen else None,
          "web_url": (i.payload or {}).get("web_url") if isinstance(i.payload, dict) else None}
         for i in rows
     ]
@@ -311,6 +313,8 @@ async def pulso_incidente(db: AsyncSession, token: ApiToken, args: dict) -> dict
     out = {"id": str(issue.id), "sentry_issue_id": issue.sentry_issue_id, "title": issue.title,
            "project": issue.project, "level": issue.level, "events": issue.events_count,
            "triage": issue.triage, "status": issue.status,
+           "first_seen": issue.first_seen.isoformat() if issue.first_seen else None,
+           "last_seen": issue.last_seen.isoformat() if issue.last_seen else None,
            "web_url": (issue.payload or {}).get("web_url") if isinstance(issue.payload, dict) else None}
     try:
         detail = await wservice.fetch_issue_detail(issue.sentry_issue_id)

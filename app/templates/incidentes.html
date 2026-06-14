@@ -67,7 +67,8 @@
         {% if it.triage %}<span class="rounded px-1.5 py-0.5
           {% if it.triage == 'bug-real' %}bg-red-50 text-red-600{% elif it.triage == 'ruido' %}bg-gray-100 text-gray-500{% else %}bg-amber-50 text-amber-600{% endif %}">{{ it.triage }}</span>
         {% else %}<span class="text-gray-300">sin triage</span>{% endif %}
-        <span>· {{ it.last_seen.strftime('%Y-%m-%d %H:%M') if it.last_seen else '—' }}</span>
+        <span title="Primera vez visto">1ª: {{ it.first_seen.strftime('%Y-%m-%d') if it.first_seen else '—' }}</span>
+        <span title="Última vez visto" class="text-gray-500">últ: {{ it.last_seen.strftime('%Y-%m-%d %H:%M') if it.last_seen else '—' }}</span>
         {% if it.payload and it.payload.get('web_url') %}<a href="{{ it.payload.web_url }}" target="_blank" class="text-blue-500 hover:underline">ver en Sentry ↗</a>{% endif %}
       </div>
     </div>

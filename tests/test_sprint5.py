@@ -230,7 +230,8 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
     async def fake_fetch(token, org, project, query="is:unresolved", limit=100):
         return [
             {"id": sid1, "title": "Error histórico A", "level": "error",
-             "permalink": "https://sentry.io/a", "count": "42"},
+             "permalink": "https://sentry.io/a", "count": "42",
+             "firstSeen": "2026-05-01T10:00:00.000Z", "lastSeen": "2026-06-01T15:30:00.000Z"},
             {"id": sid2, "title": "Error histórico B", "level": "warning",
              "permalink": "https://sentry.io/b", "count": "3"},
         ]
@@ -248,4 +249,6 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
         )).scalar_one()
         assert i1.events_count == 42  # toma el conteo real de la API
         assert i1.item_id is None  # al contenedor, no al backlog
+        assert i1.last_seen.year == 2026 and i1.last_seen.month == 6  # fecha REAL del error
+        assert i1.first_seen.month == 5
         break

@@ -40,6 +40,16 @@ def _sanitize(textval: str | None, limit: int = 4000) -> str:
     return _TAG_RE.sub("", textval)[:limit]
 
 
+def _parse_dt(value: Any) -> datetime | None:
+    """Parsea un timestamp ISO de Sentry (con o sin 'Z'). None si no se puede."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
 async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     """Upsert idempotente en sentry_issues por sentry_issue_id (UNIQUE).
 
@@ -68,10 +78,13 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     except (TypeError, ValueError):
         events = 1
     now = datetime.now(timezone.utc)
+    # Fechas REALES del error en Sentry (no la hora de ingesta).
+    first_seen = _parse_dt(data.get("firstSeen")) or now
+    last_seen = _parse_dt(data.get("lastSeen")) or now
     if issue is None:
         issue = SentryIssue(
             sentry_issue_id=sentry_id, project=project, title=title, level=level,
-            status="new", events_count=events, first_seen=now, last_seen=now,
+            status="new", events_count=events, first_seen=first_seen, last_seen=last_seen,
             payload={"sanitized_title": title, "web_url": web_url},
         )
         db.add(issue)
@@ -82,7 +95,7 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
                         ref_id=issue.id, status="pendiente"))
     else:
         issue.events_count += 1
-        issue.last_seen = now
+        issue.last_seen = last_seen
         created = False
     await db.flush()
 
@@ -181,6 +194,8 @@ async def backfill_issues(db: AsyncSession, issues: list[dict], project: str) ->
             "level": iss.get("level", "error"),
             "web_url": iss.get("permalink"),
             "count": iss.get("count"),
+            "firstSeen": iss.get("firstSeen"),
+            "lastSeen": iss.get("lastSeen"),
         }}}
         try:
             await ingest_sentry(db, payload)
