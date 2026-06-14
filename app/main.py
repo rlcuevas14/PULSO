@@ -40,7 +40,9 @@ def create_app() -> FastAPI:
     app.include_router(items_router, prefix="/api/v1")
     app.include_router(scopes_router, prefix="/api/v1")
     app.include_router(threads_router, prefix="/api/v1")
-    app.include_router(webhooks_router, prefix="/api/v1")
+    # Webhooks en la raíz (/webhooks/sentry, /webhooks/github) — URLs externas limpias,
+    # como /mcp. No van bajo /api/v1 (no son API versionada de cliente).
+    app.include_router(webhooks_router)
     app.include_router(ui_router)
 
     from app.mcp.server import mount_mcp

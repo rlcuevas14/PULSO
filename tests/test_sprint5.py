@@ -20,7 +20,7 @@ def _gh_sig(secret: str, body: bytes) -> str:
 @pytest.mark.asyncio
 async def test_sentry_no_secret_503(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "sentry_client_secret", "")
-    r = await client.post("/api/v1/webhooks/sentry", json={"id": "1"})
+    r = await client.post("/webhooks/sentry", json={"id": "1"})
     assert r.status_code == 503
 
 
@@ -28,7 +28,7 @@ async def test_sentry_no_secret_503(client: AsyncClient, monkeypatch):
 async def test_sentry_invalid_signature_401(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     r = await client.post(
-        "/api/v1/webhooks/sentry", content=b'{"id":"1"}',
+        "/webhooks/sentry", content=b'{"id":"1"}',
         headers={"sentry-hook-signature": "malo"},
     )
     assert r.status_code == 401
@@ -41,10 +41,10 @@ async def test_sentry_upsert_idempotent(client: AsyncClient, monkeypatch):
                        "project": "api", "level": "error"}).encode()
     sig = _sentry_sig("supersecret", body)
     h = {"sentry-hook-signature": sig, "content-type": "application/json"}
-    r1 = await client.post("/api/v1/webhooks/sentry", content=body, headers=h)
+    r1 = await client.post("/webhooks/sentry", content=body, headers=h)
     assert r1.status_code == 200
     assert r1.json()["created"] is True
-    r2 = await client.post("/api/v1/webhooks/sentry", content=body, headers=h)
+    r2 = await client.post("/webhooks/sentry", content=body, headers=h)
     assert r2.json()["created"] is False
     assert r2.json()["events_count"] == 2  # idempotente: incrementa, no duplica
 
@@ -60,7 +60,7 @@ async def test_sentry_lands_in_container_not_backlog(client: AsyncClient, monkey
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
     body = json.dumps({"id": sid, "title": "boom NPE", "project": "efrain-api"}).encode()
     r = await client.post(
-        "/api/v1/webhooks/sentry", content=body,
+        "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
     )
     assert r.status_code == 200
@@ -90,7 +90,7 @@ async def test_manual_promote_creates_backlog_item(client: AsyncClient, monkeypa
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
     body = json.dumps({"id": sid, "title": "bug real grave", "project": "efrain-api"}).encode()
     await client.post(
-        "/api/v1/webhooks/sentry", content=body,
+        "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
     )
     # login admin para la UI
@@ -132,7 +132,7 @@ async def test_sentry_triage_hides_noise(client: AsyncClient, monkeypatch):
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
     body = json.dumps({"id": sid, "title": "timeout aislado", "project": "efrain-api"}).encode()
     await client.post(
-        "/api/v1/webhooks/sentry", content=body,
+        "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
     )
 
@@ -156,7 +156,7 @@ async def test_sentry_triage_hides_noise(client: AsyncClient, monkeypatch):
 @pytest.mark.asyncio
 async def test_github_no_secret_503(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", "")
-    r = await client.post("/api/v1/webhooks/github", json={})
+    r = await client.post("/webhooks/github", json={})
     assert r.status_code == 503
 
 
@@ -182,7 +182,7 @@ async def test_github_completes_item(client: AsyncClient, monkeypatch):
         {"id": "abc123def456", "message": f"fix(auth): resuelto pulso:{item_id}"}
     ]}).encode()
     r = await client.post(
-        "/api/v1/webhooks/github", content=body,
+        "/webhooks/github", content=body,
         headers={"x-hub-signature-256": _gh_sig("ghsecret", body), "x-github-event": "push"},
     )
     assert r.status_code == 200
@@ -190,7 +190,7 @@ async def test_github_completes_item(client: AsyncClient, monkeypatch):
 
     # idempotente: reenvío no recompleta
     r2 = await client.post(
-        "/api/v1/webhooks/github", content=body,
+        "/webhooks/github", content=body,
         headers={"x-hub-signature-256": _gh_sig("ghsecret", body), "x-github-event": "push"},
     )
     assert item_id not in r2.json()["completed"]
@@ -200,7 +200,7 @@ async def test_github_completes_item(client: AsyncClient, monkeypatch):
 async def test_github_invalid_signature_401(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", "ghsecret")
     r = await client.post(
-        "/api/v1/webhooks/github", content=b"{}",
+        "/webhooks/github", content=b"{}",
         headers={"x-hub-signature-256": "sha256=malo", "x-github-event": "push"},
     )
     assert r.status_code == 401
