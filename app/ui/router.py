@@ -613,6 +613,32 @@ async def ui_ignore_issue(
     return _refresh()
 
 
+@router.post("/ui/incidentes/backfill")
+async def ui_backfill_sentry(
+    org: str = Form(...),
+    project: str = Form(...),
+    token: str = Form(...),
+    query: str = Form("is:unresolved"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    """Importa el histórico de errores desde la API de Sentry (solo admin)."""
+    if user.role != "admin":
+        return Response(status_code=403)
+    from app.webhooks import service as wservice
+
+    try:
+        issues = await wservice.fetch_sentry_issues(token, org, project, query)
+    except Exception as e:  # error de red / token / proyecto inválido
+        return HTMLResponse(f'<div class="text-sm text-red-600">Error al consultar Sentry: {e}</div>')
+    result = await wservice.backfill_issues(db, issues, project)
+    await db.commit()
+    return HTMLResponse(
+        f'<div class="text-sm text-green-700">Importados {result["ingested"]} de '
+        f'{result["total"]} incidentes. <a href="/incidentes" class="underline">Recargar</a></div>'
+    )
+
+
 # ---------- Ideas / Admin (sin cambios sustantivos) ----------
 
 @router.get("/ideas", response_class=HTMLResponse)

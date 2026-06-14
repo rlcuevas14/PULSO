@@ -204,3 +204,48 @@ async def test_github_invalid_signature_401(client: AsyncClient, monkeypatch):
         headers={"x-hub-signature-256": "sha256=malo", "x-github-event": "push"},
     )
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
+    """Importa el histórico desde la API de Sentry (mockeada) al contenedor."""
+    from app.auth.service import create_user
+    from app.database import get_db
+    from app.webhooks import service as wservice
+    from app.webhooks.models import SentryIssue
+
+    monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
+    suffix = uuid.uuid4().hex[:8]
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, f"bf{suffix}@test.cl", "Admin", "pass", "admin")
+        break
+    login = await client.post(
+        "/auth/login", data={"email": f"bf{suffix}@test.cl", "password": "pass"},
+        follow_redirects=False,
+    )
+    cookies = dict(login.cookies)
+
+    sid1, sid2 = f"hist-{suffix}-1", f"hist-{suffix}-2"
+
+    async def fake_fetch(token, org, project, query="is:unresolved", limit=100):
+        return [
+            {"id": sid1, "title": "Error histórico A", "level": "error",
+             "permalink": "https://sentry.io/a", "count": "42"},
+            {"id": sid2, "title": "Error histórico B", "level": "warning",
+             "permalink": "https://sentry.io/b", "count": "3"},
+        ]
+
+    monkeypatch.setattr(wservice, "fetch_sentry_issues", fake_fetch)
+    r = await client.post(
+        "/ui/incidentes/backfill",
+        data={"org": "tid", "project": "efrain", "token": "fake"}, cookies=cookies,
+    )
+    assert r.status_code == 200
+    assert "Importados 2 de 2" in r.text
+    async for db in client.app.dependency_overrides[get_db]():
+        i1 = (await db.execute(
+            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid1)
+        )).scalar_one()
+        assert i1.events_count == 42  # toma el conteo real de la API
+        assert i1.item_id is None  # al contenedor, no al backlog
+        break

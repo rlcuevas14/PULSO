@@ -5,7 +5,9 @@ import hmac
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
+import httpx
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,11 +62,15 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     issue = (await db.execute(
         select(SentryIssue).where(SentryIssue.sentry_issue_id == sentry_id)
     )).scalar_one_or_none()
+    try:
+        events = int(str(data.get("count") or 1))
+    except (TypeError, ValueError):
+        events = 1
     now = datetime.now(timezone.utc)
     if issue is None:
         issue = SentryIssue(
             sentry_issue_id=sentry_id, project=project, title=title, level=level,
-            status="new", events_count=1, first_seen=now, last_seen=now,
+            status="new", events_count=events, first_seen=now, last_seen=now,
             payload={"sanitized_title": title, "web_url": web_url},
         )
         db.add(issue)
@@ -146,6 +152,41 @@ async def process_github_push(db: AsyncSession, payload: dict) -> dict:
 
     await db.flush()
     return {"touched_scopes": sorted(touched_scopes), "completed": completed}
+
+
+async def fetch_sentry_issues(
+    token: str, org: str, project: str, query: str = "is:unresolved", limit: int = 100
+) -> list[dict[str, Any]]:
+    """Trae issues del proyecto desde la API de Sentry (para backfill del histórico)."""
+    url = f"https://sentry.io/api/0/projects/{org}/{project}/issues/"
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            url, params={"query": query, "limit": min(limit, 100)},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    return data if isinstance(data, list) else []
+
+
+async def backfill_issues(db: AsyncSession, issues: list[dict], project: str) -> dict:
+    """Ingiere al contenedor cada issue traído de la API de Sentry (dedup por id)."""
+    ingested = 0
+    for iss in issues:
+        payload = {"data": {"issue": {
+            "id": iss.get("id"),
+            "title": iss.get("title") or iss.get("culprit") or "Sentry issue",
+            "project": project,
+            "level": iss.get("level", "error"),
+            "web_url": iss.get("permalink"),
+            "count": iss.get("count"),
+        }}}
+        try:
+            await ingest_sentry(db, payload)
+            ingested += 1
+        except ValueError:
+            continue  # issue sin id → saltar
+    return {"ingested": ingested, "total": len(issues)}
 
 
 async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
