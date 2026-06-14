@@ -60,6 +60,20 @@ TOOLS: dict[str, Tool] = {
                     "limit": _INT}, []),
         tools.pulso_listar, write=False,
     ),
+    "pulso_scopes": Tool(
+        "pulso_scopes",
+        "Lista los scopes (agrupadores del backlog) con nombre, descripción, conteo de ítems "
+        "y ejemplos. ÚSALO antes de crear un ítem para elegir el scope correcto y no duplicar.",
+        _scope_obj({}, []),
+        tools.pulso_scopes, write=False,
+    ),
+    "pulso_mover_scope": Tool(
+        "pulso_mover_scope",
+        "Mueve un ítem a otro scope existente (corrige categorización). "
+        "Acepta item_id o query de texto.",
+        _scope_obj({"item_id": _STR, "query": _STR, "scope_name": _STR}, ["scope_name"]),
+        tools.pulso_mover_scope, write=True,
+    ),
     "pulso_crear": Tool(
         "pulso_crear",
         "Crea un ítem en el backlog (status backlog, origen ia-sesion por defecto). "

@@ -142,6 +142,54 @@ async def test_method_not_found(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_scope_tools(client: AsyncClient):
+    import json as _json
+
+    from app.database import get_db
+    from app.scopes.models import Scope
+
+    raw = await _token(client, "write")
+    sname = f"curric-{uuid.uuid4().hex[:6]}"
+    async for db in client.app.dependency_overrides[get_db]():
+        db.add(Scope(name=sname, description="Currículo y OAs"))
+        await db.commit()
+        break
+
+    # 1) pulso_scopes lista con nombre + descripción
+    sc = await _rpc(client, raw, "tools/call", {"name": "pulso_scopes", "arguments": {}})
+    scopes = _json.loads(sc.json()["result"]["content"][0]["text"])
+    assert any(s["name"] == sname and s["description"] == "Currículo y OAs" for s in scopes)
+
+    # 2) crear con variante de mayúsculas/espacios → matchea el existente, NO duplica
+    cr = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_crear",
+        "arguments": {"title": "OA electivas", "type": "feature", "scope_name": f"  {sname.upper()}  "},
+    })
+    created = _json.loads(cr.json()["result"]["content"][0]["text"])
+    assert created["scope"] == sname  # devuelve el nombre del scope, no solo el id
+    async for db in client.app.dependency_overrides[get_db]():
+        n = await db.scalar(
+            __import__("sqlalchemy").select(__import__("sqlalchemy").func.count())
+            .select_from(Scope).where(__import__("sqlalchemy").func.lower(Scope.name) == sname.lower())
+        )
+        assert n == 1  # no se creó un duplicado por la variante de caso
+        break
+
+    # 3) mover a otro scope existente
+    other = f"otro-{uuid.uuid4().hex[:6]}"
+    async for db in client.app.dependency_overrides[get_db]():
+        db.add(Scope(name=other))
+        await db.commit()
+        break
+    mv = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_mover_scope",
+        "arguments": {"item_id": created["id"], "scope_name": other},
+    })
+    moved = _json.loads(mv.json()["result"]["content"][0]["text"])
+    assert moved["scope"] == other
+
+
+@pytest.mark.asyncio
 async def test_incident_tools_flow(client: AsyncClient, monkeypatch):
     import json as _json
 

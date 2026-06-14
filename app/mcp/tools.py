@@ -7,7 +7,7 @@ divergir de la UI/REST. Las business-errors se propagan como ToolError → isErr
 import uuid
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import ApiToken, User
@@ -30,14 +30,22 @@ async def actor_for(db: AsyncSession, token: ApiToken) -> str:
 
 
 async def _resolve_scope(db: AsyncSession, name: str, create: bool = False) -> Scope:
-    scope = (await db.execute(select(Scope).where(Scope.name == name))).scalar_one_or_none()
+    # Match case-insensitive para no crear duplicados ("Currículo" == "curriculo").
+    scope = (await db.execute(
+        select(Scope).where(func.lower(Scope.name) == name.strip().lower())
+    )).scalar_one_or_none()
     if scope is None:
         if not create:
-            raise ToolError(f"Scope «{name}» no existe.")
-        scope = Scope(name=name, source_repo="mcp")
+            raise ToolError(f"Scope «{name}» no existe. Usa pulso_scopes para ver los disponibles.")
+        scope = Scope(name=name.strip(), source_repo="mcp")
         db.add(scope)
         await db.flush()
     return scope
+
+
+async def _scope_map(db: AsyncSession) -> dict[str, str]:
+    rows = (await db.execute(select(Scope.id, Scope.name))).all()
+    return {str(r[0]): r[1] for r in rows}
 
 
 async def _resolve_item(db: AsyncSession, ref: str) -> Item:
@@ -55,12 +63,15 @@ async def _resolve_item(db: AsyncSession, ref: str) -> Item:
     return item
 
 
-def _item_brief(i: Item) -> dict[str, Any]:
-    return {
+def _item_brief(i: Item, scope_map: dict[str, str] | None = None) -> dict[str, Any]:
+    brief = {
         "id": str(i.id), "title": i.title, "type": i.type, "status": i.status,
         "priority": i.priority, "impact_ai": i.impact_ai, "effort_ai": i.effort_ai,
         "scope_id": str(i.scope_id), "origen": i.origen,
     }
+    if scope_map is not None:
+        brief["scope"] = scope_map.get(str(i.scope_id))
+    return brief
 
 
 # ---------- Tools de lectura ----------
@@ -107,10 +118,11 @@ async def pulso_contexto(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     except Exception:
         active_threads = []
 
+    smap = await _scope_map(db)
     result: dict[str, Any] = {
         "local": {
-            "quickwins": [_item_brief(i) for i in qw],
-            "blockers": [_item_brief(i) for i in blockers],
+            "quickwins": [_item_brief(i, smap) for i in qw],
+            "blockers": [_item_brief(i, smap) for i in blockers],
             "sentry_sin_item": sentry_bugs,
             "hilos_en_desarrollo": active_threads,
         },
@@ -141,15 +153,17 @@ async def pulso_contexto(db: AsyncSession, token: ApiToken, args: dict) -> dict:
 async def pulso_buscar(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
     q = args["q"]
     rows = (await db.execute(text("""
-        SELECT id, title, summary_md, type, status, scope_id, effort_ai, impact_ai,
-               ts_rank(search_vector, plainto_tsquery('spanish', :q)) AS rank
-        FROM items WHERE search_vector @@ plainto_tsquery('spanish', :q)
-        ORDER BY rank DESC, id LIMIT :limit
+        SELECT i.id, i.title, i.summary_md, i.type, i.status, i.scope_id, s.name AS scope,
+               i.effort_ai, i.impact_ai,
+               ts_rank(i.search_vector, plainto_tsquery('spanish', :q)) AS rank
+        FROM items i JOIN scopes s ON s.id = i.scope_id
+        WHERE i.search_vector @@ plainto_tsquery('spanish', :q)
+        ORDER BY rank DESC, i.id LIMIT :limit
     """), {"q": q, "limit": int(args.get("limit", 10))})).mappings().all()
     return [
         {"id": str(r["id"]), "title": r["title"], "summary_md": r["summary_md"],
          "type": r["type"], "status": r["status"], "scope_id": str(r["scope_id"]),
-         "effort_ai": r["effort_ai"], "impact_ai": r["impact_ai"]}
+         "scope": r["scope"], "effort_ai": r["effort_ai"], "impact_ai": r["impact_ai"]}
         for r in rows
     ]
 
@@ -185,7 +199,8 @@ async def pulso_listar(db: AsyncSession, token: ApiToken, args: dict) -> list[di
         items.sort(key=lambda i: (pr.get(i.priority, 9), -(i.impact_ai or 0)))
     else:
         items.sort(key=lambda i: -(i.impact_ai or 0))
-    return [_item_brief(i) for i in items]
+    smap = await _scope_map(db)
+    return [_item_brief(i, smap) for i in items]
 
 
 # ---------- Tools de escritura ----------
@@ -200,7 +215,7 @@ async def pulso_crear(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     )
     db.add(item)
     await db.flush()
-    return _item_brief(item)
+    return _item_brief(item, {str(scope.id): scope.name})
 
 
 async def pulso_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
@@ -212,7 +227,7 @@ async def pulso_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
         await service.apply_transition(db, item, to, await actor_for(db, token))
     except service.TransitionError as e:
         raise ToolError(str(e)) from e
-    return _item_brief(item)
+    return _item_brief(item, await _scope_map(db))
 
 
 async def pulso_completar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
@@ -224,7 +239,38 @@ async def pulso_completar(db: AsyncSession, token: ApiToken, args: dict) -> dict
         )
     except service.TransitionError as e:
         raise ToolError(str(e)) from e
-    return {**_item_brief(item), "unblocked": unblocked}
+    return {**_item_brief(item, await _scope_map(db)), "unblocked": unblocked}
+
+
+async def pulso_scopes(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
+    """Lista los scopes (agrupadores) con su descripción, conteo de ítems y ejemplos —
+    para elegir el scope correcto en vez de adivinar por una palabra."""
+    rows = (await db.execute(text("""
+        SELECT s.name, s.description,
+               count(i.id) FILTER (WHERE i.status NOT IN ('hecho','descartado')) AS abiertos,
+               count(i.id) AS total,
+               (array_agg(i.title ORDER BY i.created_at DESC)
+                FILTER (WHERE i.status NOT IN ('hecho','descartado')))[1:3] AS ejemplos
+        FROM scopes s LEFT JOIN items i ON i.scope_id = s.id
+        WHERE s.archived = false
+        GROUP BY s.id, s.name, s.description
+        ORDER BY abiertos DESC, s.name
+    """))).mappings().all()
+    return [
+        {"name": r["name"], "description": r["description"],
+         "items_abiertos": r["abiertos"], "items_total": r["total"],
+         "ejemplos": list(r["ejemplos"] or [])}
+        for r in rows
+    ]
+
+
+async def pulso_mover_scope(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    """Mueve un ítem a otro scope EXISTENTE (match case-insensitive)."""
+    item = await _resolve_item(db, args.get("item_id") or args["query"])
+    scope = await _resolve_scope(db, args["scope_name"], create=False)
+    item.scope_id = scope.id
+    await db.flush()
+    return _item_brief(item, {str(scope.id): scope.name})
 
 
 async def pulso_relacionar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
