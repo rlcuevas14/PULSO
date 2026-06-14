@@ -139,3 +139,52 @@ async def test_method_not_found(client: AsyncClient):
     raw = await _token(client)
     r = await _rpc(client, raw, "no/existe")
     assert r.json()["error"]["code"] == -32601
+
+
+@pytest.mark.asyncio
+async def test_incident_tools_flow(client: AsyncClient, monkeypatch):
+    import json as _json
+
+    from app.database import get_db
+    from app.webhooks import service as wservice
+    from app.webhooks.models import SentryIssue
+
+    raw = await _token(client, "write")
+    sid = f"inc-{uuid.uuid4().hex[:8]}"
+    issue_id = None
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = SentryIssue(sentry_issue_id=sid, project="python-fastapi",
+                            title="KeyError en /api/x", level="error", status="new",
+                            events_count=5, payload={"web_url": "https://sentry.io/i/1"})
+        db.add(issue)
+        await db.commit()
+        await db.refresh(issue)
+        issue_id = str(issue.id)
+        break
+
+    # 1) listar incidentes
+    li = await _rpc(client, raw, "tools/call", {"name": "pulso_incidentes", "arguments": {}})
+    listed = _json.loads(li.json()["result"]["content"][0]["text"])
+    assert any(i["id"] == issue_id for i in listed)
+
+    # 2) detalle con stack trace (Sentry mockeado → no gasta nada)
+    async def fake_detail(sentry_id):
+        return {"title": "KeyError", "culprit": "app.api.x",
+                "stacktrace": "KeyError: 'foo'\n  app/api/x.py:42 in handler"}
+
+    monkeypatch.setattr(wservice, "fetch_issue_detail", fake_detail)
+    det = await _rpc(client, raw, "tools/call", {"name": "pulso_incidente", "arguments": {"id": issue_id}})
+    detail = _json.loads(det.json()["result"]["content"][0]["text"])
+    assert "x.py:42" in detail["stacktrace"]
+
+    # 3) resolver (sin tocar Sentry)
+    res = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_incidente_resolver",
+        "arguments": {"id": issue_id, "nota": "arreglado", "resolver_en_sentry": False},
+    })
+    out = _json.loads(res.json()["result"]["content"][0]["text"])
+    assert out["status"] == "resolved"
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = await db.get(SentryIssue, uuid.UUID(issue_id))
+        assert issue.status == "resolved"
+        break

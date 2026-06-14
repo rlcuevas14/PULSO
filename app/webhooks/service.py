@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.items.models import Item, ItemEvent
 from app.jobs.models import AgentRun
 from app.webhooks.models import SentryIssue
@@ -187,6 +188,76 @@ async def backfill_issues(db: AsyncSession, issues: list[dict], project: str) ->
         except ValueError:
             continue  # issue sin id → saltar
     return {"ingested": ingested, "total": len(issues)}
+
+
+def _format_stacktrace(event: dict, max_frames: int = 12) -> str:
+    """Extrae un resumen legible (excepción + frames in-app) del evento de Sentry."""
+    if not event:
+        return "(sin evento)"
+    lines: list[str] = []
+    culprit = event.get("culprit")
+    if culprit:
+        lines.append(f"culprit: {culprit}")
+    for entry in event.get("entries", []):
+        if entry.get("type") != "exception":
+            continue
+        for val in entry.get("data", {}).get("values", []):
+            etype = val.get("type", "")
+            evalue = val.get("value", "")
+            lines.append(f"\n{etype}: {evalue}")
+            frames = (val.get("stacktrace") or {}).get("frames") or []
+            # priorizar frames del propio código (in_app)
+            in_app = [f for f in frames if f.get("inApp")] or frames
+            for f in in_app[-max_frames:]:
+                fn = f.get("filename") or f.get("module") or "?"
+                ln = f.get("lineNo")
+                func = f.get("function") or "?"
+                lines.append(f"  {fn}:{ln} in {func}")
+                ctx = f.get("context") or []
+                for _, code in ctx:
+                    if isinstance(code, str) and code.strip():
+                        lines.append(f"      {code.strip()[:160]}")
+    return "\n".join(lines)[:6000] if lines else "(sin stack trace)"
+
+
+async def fetch_issue_detail(issue_id: str) -> dict[str, Any]:
+    """Trae metadata + stack trace del último evento de un issue de Sentry (para el MCP)."""
+    token = settings.sentry_api_token
+    if not token:
+        raise RuntimeError("SENTRY_API_TOKEN no configurado")
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=60) as client:
+        meta_r = await client.get(f"https://sentry.io/api/0/issues/{issue_id}/", headers=headers)
+        meta_r.raise_for_status()
+        meta = meta_r.json()
+        ev_r = await client.get(
+            f"https://sentry.io/api/0/issues/{issue_id}/events/latest/", headers=headers
+        )
+        event = ev_r.json() if ev_r.status_code == 200 else {}
+    return {
+        "title": meta.get("title"),
+        "culprit": meta.get("culprit"),
+        "level": meta.get("level"),
+        "count": meta.get("count"),
+        "first_seen": meta.get("firstSeen"),
+        "last_seen": meta.get("lastSeen"),
+        "permalink": meta.get("permalink"),
+        "stacktrace": _format_stacktrace(event),
+    }
+
+
+async def resolve_in_sentry(issue_id: str) -> bool:
+    """Marca el issue como resuelto en Sentry (requiere token con Issue&Event: Write)."""
+    token = settings.sentry_api_token
+    if not token:
+        return False
+    headers = {"Authorization": f"Bearer {token}", "content-type": "application/json"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.put(
+            f"https://sentry.io/api/0/issues/{issue_id}/", headers=headers,
+            json={"status": "resolved"},
+        )
+        return r.status_code in (200, 202)
 
 
 async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:

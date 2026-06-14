@@ -278,3 +278,71 @@ async def actor_user_id(db: AsyncSession, token: ApiToken) -> uuid.UUID | None:
     """user_id del creador del token (para autoría de artefactos), o None."""
     user = (await db.execute(select(User).where(User.id == token.created_by))).scalar_one_or_none()
     return user.id if user else None
+
+
+# ---------- Tools de Incidentes (errores de Sentry) ----------
+
+async def pulso_incidentes(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
+    """Lista los incidentes del contenedor de errores de Sentry."""
+    from app.webhooks.models import SentryIssue
+
+    q = select(SentryIssue).order_by(SentryIssue.last_seen.desc().nulls_last())
+    status = args.get("status", "new")
+    if status and status != "todos":
+        q = q.where(SentryIssue.status == status)
+    rows = (await db.execute(q.limit(int(args.get("limit", 30))))).scalars().all()
+    return [
+        {"id": str(i.id), "sentry_issue_id": i.sentry_issue_id, "title": i.title,
+         "project": i.project, "level": i.level, "events": i.events_count,
+         "triage": i.triage, "status": i.status,
+         "web_url": (i.payload or {}).get("web_url") if isinstance(i.payload, dict) else None}
+        for i in rows
+    ]
+
+
+async def pulso_incidente(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    """Detalle de un incidente con stack trace (lo trae de la API de Sentry)."""
+    from app.webhooks import service as wservice
+    from app.webhooks.models import SentryIssue
+
+    issue = await db.get(SentryIssue, uuid.UUID(args["id"]))
+    if issue is None:
+        raise ToolError("Incidente no encontrado.")
+    out = {"id": str(issue.id), "sentry_issue_id": issue.sentry_issue_id, "title": issue.title,
+           "project": issue.project, "level": issue.level, "events": issue.events_count,
+           "triage": issue.triage, "status": issue.status,
+           "web_url": (issue.payload or {}).get("web_url") if isinstance(issue.payload, dict) else None}
+    try:
+        detail = await wservice.fetch_issue_detail(issue.sentry_issue_id)
+        out["stacktrace"] = detail.get("stacktrace")
+        out["culprit"] = detail.get("culprit")
+    except Exception as e:
+        out["stacktrace"] = None
+        out["detail_error"] = f"No se pudo traer el stack trace: {str(e)[:160]}"
+    return out
+
+
+async def pulso_incidente_resolver(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    """Marca un incidente como resuelto en Pulso y (opcional) en Sentry."""
+    from app.webhooks import service as wservice
+    from app.webhooks.models import SentryIssue
+
+    issue = await db.get(SentryIssue, uuid.UUID(args["id"]))
+    if issue is None:
+        raise ToolError("Incidente no encontrado.")
+    issue.status = "resolved"
+    sentry_done = False
+    if args.get("resolver_en_sentry", True):
+        sentry_done = await wservice.resolve_in_sentry(issue.sentry_issue_id)
+    # Si tenía ítem de backlog asociado, cerrarlo también.
+    if issue.item_id is not None:
+        item = await service.get_item(db, issue.item_id)
+        if item is not None and item.status not in ("hecho", "descartado"):
+            try:
+                await service.close_item(
+                    db, item, "hecho", args.get("nota") or "resuelto desde incidente",
+                    await actor_for(db, token), commit_sha=args.get("commit_sha"),
+                )
+            except service.TransitionError:
+                pass
+    return {"id": str(issue.id), "status": "resolved", "resuelto_en_sentry": sentry_done}

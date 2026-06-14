@@ -108,6 +108,28 @@ TOOLS: dict[str, Tool] = {
         _scope_obj({"stage": _STR, "scope": _STR}, []),
         tools.pulso_hilo_listar, write=False,
     ),
+    "pulso_incidentes": Tool(
+        "pulso_incidentes",
+        "Lista los errores de Sentry del contenedor de incidentes. status: new|linked|"
+        "resolved|ignored|todos (default new).",
+        _scope_obj({"status": _STR, "limit": _INT}, []),
+        tools.pulso_incidentes, write=False,
+    ),
+    "pulso_incidente": Tool(
+        "pulso_incidente",
+        "Detalle de un incidente CON stack trace (excepción, archivo:línea, código) traído "
+        "de Sentry — lo que necesitas para localizar y arreglar el error. id = id del incidente.",
+        _scope_obj({"id": _STR}, ["id"]),
+        tools.pulso_incidente, write=False,
+    ),
+    "pulso_incidente_resolver": Tool(
+        "pulso_incidente_resolver",
+        "Marca un incidente como resuelto en Pulso y (por defecto) en Sentry. Úsalo tras "
+        "arreglar el bug. resolver_en_sentry: bool (default true).",
+        _scope_obj({"id": _STR, "nota": _STR, "commit_sha": _STR,
+                    "resolver_en_sentry": {"type": "boolean"}}, ["id"]),
+        tools.pulso_incidente_resolver, write=True,
+    ),
 }
 
 PROMPTS = {
