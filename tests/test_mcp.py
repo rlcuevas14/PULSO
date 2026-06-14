@@ -135,6 +135,51 @@ async def test_pulso_contexto_runs(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_hilo_item_linking(client: AsyncClient):
+    import json as _json
+
+    from app.database import get_db
+    from app.scopes.models import Scope
+
+    raw = await _token(client, "write")
+    sname = f"billing-{uuid.uuid4().hex[:6]}"
+    async for db in client.app.dependency_overrides[get_db]():
+        db.add(Scope(name=sname))
+        await db.commit()
+        break
+
+    # crear hilo
+    h = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_hilo_crear", "arguments": {"title": "Módulo Financiero", "scope_name": sname}})
+    hilo = _json.loads(h.json()["result"]["content"][0]["text"])
+    hid = hilo["id"]
+
+    # crear ítem colgado del hilo (hilo_id en pulso_crear)
+    c = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_crear",
+        "arguments": {"title": "F0 núcleo cobranza", "type": "feature", "scope_name": sname, "hilo_id": hid}})
+    f0 = _json.loads(c.json()["result"]["content"][0]["text"])
+    assert f0["thread_id"] == hid
+
+    # crear ítem suelto y vincularlo después
+    c2 = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_crear",
+        "arguments": {"title": "F1 pasarela chile", "type": "feature", "scope_name": sname}})
+    f1 = _json.loads(c2.json()["result"]["content"][0]["text"])
+    assert "thread_id" not in f1  # suelto
+    v = await _rpc(client, raw, "tools/call", {
+        "name": "pulso_hilo_vincular", "arguments": {"hilo_id": hid, "item_id": f1["id"]}})
+    linked = _json.loads(v.json()["result"]["content"][0]["text"])
+    assert linked["thread_id"] == hid
+
+    # pulso_hilo detalle muestra los 2 ítems vinculados
+    d = await _rpc(client, raw, "tools/call", {"name": "pulso_hilo", "arguments": {"id": hid}})
+    detail = _json.loads(d.json()["result"]["content"][0]["text"])
+    titles = {i["title"] for i in detail["items"]}
+    assert titles == {"F0 núcleo cobranza", "F1 pasarela chile"}
+
+
+@pytest.mark.asyncio
 async def test_method_not_found(client: AsyncClient):
     raw = await _token(client)
     r = await _rpc(client, raw, "no/existe")

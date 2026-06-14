@@ -77,9 +77,9 @@ TOOLS: dict[str, Tool] = {
     "pulso_crear": Tool(
         "pulso_crear",
         "Crea un ítem en el backlog (status backlog, origen ia-sesion por defecto). "
-        "Crea el scope si no existe.",
+        "Crea el scope si no existe. hilo_id (opcional): lo cuelga de ese Hilo.",
         _scope_obj({"title": _STR, "summary": _STR, "type": _STR, "scope_name": _STR,
-                    "effort_ai": _STR, "impact_ai": _INT, "origen": _STR},
+                    "effort_ai": _STR, "impact_ai": _INT, "origen": _STR, "hilo_id": _STR},
                    ["title", "type", "scope_name"]),
         tools.pulso_crear, write=True,
     ),
@@ -121,6 +121,18 @@ TOOLS: dict[str, Tool] = {
         "pulso_hilo_listar", "Lista Hilos (filtro opcional por stage y scope).",
         _scope_obj({"stage": _STR, "scope": _STR}, []),
         tools.pulso_hilo_listar, write=False,
+    ),
+    "pulso_hilo": Tool(
+        "pulso_hilo", "Detalle de un Hilo: stage, artefactos e ítems vinculados.",
+        _scope_obj({"id": _STR}, ["id"]),
+        tools.pulso_hilo, write=False,
+    ),
+    "pulso_hilo_vincular": Tool(
+        "pulso_hilo_vincular",
+        "Cuelga un ítem existente de un Hilo (set thread_id). Acepta item_id o query "
+        "de texto, y hilo_id.",
+        _scope_obj({"hilo_id": _STR, "item_id": _STR, "query": _STR}, ["hilo_id"]),
+        tools.pulso_hilo_vincular, write=True,
     ),
     "pulso_incidentes": Tool(
         "pulso_incidentes",

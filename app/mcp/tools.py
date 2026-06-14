@@ -71,6 +71,8 @@ def _item_brief(i: Item, scope_map: dict[str, str] | None = None) -> dict[str, A
     }
     if scope_map is not None:
         brief["scope"] = scope_map.get(str(i.scope_id))
+    if i.thread_id is not None:
+        brief["thread_id"] = str(i.thread_id)
     return brief
 
 
@@ -207,11 +209,20 @@ async def pulso_listar(db: AsyncSession, token: ApiToken, args: dict) -> list[di
 
 async def pulso_crear(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     scope = await _resolve_scope(db, args["scope_name"], create=True)
+    thread_id = None
+    ref = args.get("hilo_id") or args.get("thread_id")
+    if ref:
+        from app.threads.models import Thread
+        thread = await db.get(Thread, uuid.UUID(ref))
+        if thread is None:
+            raise ToolError(f"Hilo no encontrado: {ref}")
+        thread_id = thread.id
     item = Item(
         scope_id=scope.id, title=args["title"], type=args["type"],
         summary_md=args.get("summary"), status="backlog",
         impact_ai=args.get("impact_ai"), effort_ai=args.get("effort_ai"),
         origen=args.get("origen", "ia-sesion"), created_by=await actor_for(db, token),
+        thread_id=thread_id,
     )
     db.add(item)
     await db.flush()
@@ -318,6 +329,44 @@ async def pulso_hilo_listar(db: AsyncSession, token: ApiToken, args: dict) -> li
 
     threads = await tservice.list_threads(db, args.get("stage"), args.get("scope"))
     return [_thread_brief(t) for t in threads]
+
+
+async def pulso_hilo(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    """Detalle de un Hilo: stage, artefactos e ítems vinculados (por thread_id)."""
+    from app.threads.models import Thread, ThreadArtifact
+
+    thread = await db.get(Thread, uuid.UUID(args["id"]))
+    if thread is None:
+        raise ToolError("Hilo no encontrado.")
+    arts = (await db.execute(
+        select(ThreadArtifact).where(ThreadArtifact.thread_id == thread.id)
+        .order_by(ThreadArtifact.created_at)
+    )).scalars().all()
+    items = (await db.execute(
+        select(Item).where(Item.thread_id == thread.id).order_by(Item.created_at)
+    )).scalars().all()
+    smap = await _scope_map(db)
+    return {
+        **_thread_brief(thread),
+        "summary_md": thread.summary_md,
+        "artefactos": [{"stage": a.stage, "kind": a.kind, "content_md": a.content_md} for a in arts],
+        "items": [_item_brief(i, smap) for i in items],
+    }
+
+
+async def pulso_hilo_vincular(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    """Vincula un ítem existente a un Hilo (set thread_id). Acepta item_id o query."""
+    from app.threads.models import Thread
+
+    ref = args.get("hilo_id") or args["thread_id"]
+    thread = await db.get(Thread, uuid.UUID(ref))
+    if thread is None:
+        raise ToolError(f"Hilo no encontrado: {ref}")
+    item = await _resolve_item(db, args.get("item_id") or args["query"])
+    item.thread_id = thread.id
+    await db.flush()
+    return {**_item_brief(item, await _scope_map(db)), "hilo_id": str(thread.id),
+            "hilo_title": thread.title}
 
 
 async def actor_user_id(db: AsyncSession, token: ApiToken) -> uuid.UUID | None:
