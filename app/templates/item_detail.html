@@ -13,12 +13,7 @@
       {% if item.stale_risk %}
       <span class="text-xs bg-yellow-100 text-yellow-700 rounded px-2 py-1">⚠ Verificar si ya está resuelto</span>
       {% endif %}
-      <span class="text-xs rounded px-2 py-1
-        {% if item.status == 'bloqueado' %}bg-red-100 text-red-700
-        {% elif item.status == 'en-curso' %}bg-blue-100 text-blue-700
-        {% elif item.status == 'hecho' %}bg-green-100 text-green-700
-        {% elif item.status == 'en-revision' %}bg-purple-100 text-purple-700
-        {% else %}bg-gray-100 text-gray-600{% endif %}">{{ item.status }}</span>
+      {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
     </div>
   </div>
 
@@ -29,7 +24,7 @@
     <div>
       <span class="text-gray-400">Estado</span><br>
       {% if transitions %}
-      <select class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
+      <select aria-label="Cambiar estado del ítem" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
               hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
         <option value="">{{ item.status }} →</option>
         {% for t in transitions %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
@@ -38,7 +33,7 @@
     </div>
     <div>
       <span class="text-gray-400">Esfuerzo</span><br>
-      <select class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
+      <select aria-label="Esfuerzo estimado" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
               hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
               hx-vals='{"field":"effort_ai"}' name="value">
         <option value="" {% if not item.effort_ai %}selected{% endif %}>—</option>
@@ -47,7 +42,7 @@
     </div>
     <div>
       <span class="text-gray-400">Impacto</span><br>
-      <select class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
+      <select aria-label="Impacto estimado" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
               hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
               hx-vals='{"field":"impact_ai"}' name="value">
         <option value="" {% if not item.impact_ai %}selected{% endif %}>—</option>
@@ -56,12 +51,9 @@
     </div>
     <div>
       <span class="text-gray-400">Prioridad</span><br>
-      <select class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
-              hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
-              hx-vals='{"field":"priority"}' name="value">
-        <option value="" {% if not item.priority %}selected{% endif %}>—</option>
-        {% for p in ['p0','p1','p2','p3'] %}<option value="{{ p }}" {% if item.priority == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
-      </select>
+      {% with select_class = 'border border-gray-300 rounded px-2 py-1 text-sm mt-0.5' %}
+      {% include "partials/_priority_select.html" %}
+      {% endwith %}
     </div>
   </div>
 
@@ -92,11 +84,13 @@
 
   <div class="flex gap-3 flex-wrap items-center">
     <button hx-post="/api/v1/items/{{ item.id }}/enrich" hx-swap="none"
-      hx-on:htmx:after-request="this.textContent = 'Encolado ✓'"
+      hx-indicator="#enrich-spin"
+      hx-on:htmx:after-request="if(event.detail.successful){ this.textContent = 'Encolado ✓'; }"
       class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">Analizar con IA</button>
+    <span id="enrich-spin" class="htmx-indicator text-xs text-gray-400">encolando…</span>
 
     {% if item.status not in ('hecho','descartado') %}
-    <button onclick="document.getElementById('close-modal').classList.remove('hidden')"
+    <button onclick="openModal('close-modal')"
       class="text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700">Marcar hecho / Descartar ▸</button>
     {% else %}
     <form action="/ui/items/{{ item.id }}/reopen" method="post" class="inline"
@@ -118,15 +112,15 @@
   <div class="border-b border-gray-100 pb-3 mb-3 last:border-0 last:mb-0">
     <div class="flex items-center gap-2 mb-1">
       <span class="text-xs font-medium text-gray-700">{{ c.author }}</span>
-      <span class="text-xs text-gray-400">{{ c.created_at }}</span>
+      <span class="text-xs text-gray-400">{{ c.created_at | fecha }}</span>
       {% if c.kind == 'decision' %}<span class="text-xs bg-indigo-100 text-indigo-700 rounded px-1.5">decisión</span>{% endif %}
     </div>
     <div class="text-sm text-gray-700 whitespace-pre-wrap">{{ c.body_md }}</div>
   </div>
   {% endfor %}
   <form hx-post="/api/v1/items/{{ item.id }}/comments"
-        hx-on:htmx:after-request="this.reset(); window.location.reload()" class="mt-4">
-    <textarea name="body_md" rows="3" required placeholder="Agregar comentario..."
+        hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }" class="mt-4">
+    <textarea name="body_md" rows="3" required placeholder="Agregar comentario..." aria-label="Nuevo comentario"
       class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
     <button type="submit" class="mt-2 text-sm bg-blue-600 text-white rounded px-3 py-1.5 hover:bg-blue-700">Comentar</button>
   </form>
@@ -138,7 +132,7 @@
   <div class="space-y-2">
     {% for e in item.events|reverse %}
     <div class="flex items-center gap-3 text-sm">
-      <span class="text-gray-400 text-xs w-36 shrink-0">{{ e.created_at }}</span>
+      <span class="text-gray-400 text-xs w-36 shrink-0">{{ e.created_at | fecha }}</span>
       <span class="text-gray-600">{{ e.actor }}</span>
       <span class="text-gray-400">·</span>
       <span class="text-gray-700">{{ e.action }}</span>
@@ -150,20 +144,21 @@
 {% endif %}
 
 <!-- Modal cerrar/descartar -->
-<div id="close-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+<div id="close-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="close-modal-title"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
   <div class="bg-white rounded-lg p-6 w-full max-w-md">
-    <h2 class="font-semibold text-gray-900 mb-4">Cerrar ítem</h2>
+    <h2 id="close-modal-title" class="font-semibold text-gray-900 mb-4">Cerrar ítem</h2>
     <form action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
       <div class="flex gap-4 text-sm">
         <label class="flex items-center gap-2"><input type="radio" name="status" value="hecho" checked> Hecho</label>
         <label class="flex items-center gap-2"><input type="radio" name="status" value="descartado"> Descartado</label>
       </div>
-      <input name="reason" placeholder="Motivo (queda en el historial)"
+      <input name="reason" placeholder="Motivo (queda en el historial)" aria-label="Motivo del cierre"
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-      <input name="commit_sha" placeholder="commit/SHA (opcional)"
+      <input name="commit_sha" placeholder="commit/SHA (opcional)" aria-label="Commit o SHA"
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
       <div class="flex justify-end gap-2">
-        <button type="button" onclick="document.getElementById('close-modal').classList.add('hidden')"
+        <button type="button" onclick="closeModal('close-modal')"
                 class="text-sm border border-gray-300 rounded px-3 py-1.5">Cancelar</button>
         <button type="submit" class="text-sm bg-green-600 text-white rounded px-3 py-1.5">Confirmar cierre</button>
       </div>

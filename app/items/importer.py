@@ -8,8 +8,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import EFFORTS, ITEM_TYPES
 from app.items.models import Item
 from app.scopes.models import Scope
+from app.scopes.service import resolve_scope
 
 _STATUS_MAP = {
     "abierto": "backlog",
@@ -17,12 +19,6 @@ _STATUS_MAP = {
     "en-curso": "en-curso",
     "bloqueado": "bloqueado",
 }
-
-_VALID_TYPES = {
-    "bug", "feature", "tech-debt", "infra", "docs",
-    "ops", "seguridad", "producto", "idea"
-}
-_VALID_EFFORTS = {"XS", "S", "M", "L", "XL"}
 
 
 def _hash_line(raw_line: str) -> str:
@@ -44,7 +40,7 @@ def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
     scope_name = (obj.get("scope") or "").strip().lower()
     item_type = (obj.get("type") or "").strip()
 
-    if not title or not scope_name or item_type not in _VALID_TYPES:
+    if not title or not scope_name or item_type not in ITEM_TYPES:
         return None
 
     raw_status = (obj.get("status") or "abierto").strip()
@@ -57,7 +53,7 @@ def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
         priority_declared = "DIFERIDO"
 
     raw_effort = (obj.get("effort_ai") or "").strip()
-    effort_ai = raw_effort if raw_effort in _VALID_EFFORTS else None
+    effort_ai = raw_effort if raw_effort in EFFORTS else None
 
     raw_impact = obj.get("impact_ai")
     try:
@@ -83,16 +79,6 @@ def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
         "stale_risk": bool(obj.get("stale_risk", False)),
         "origen": "digest",
     }
-
-
-async def _get_or_create_scope(db: AsyncSession, name: str) -> Scope:
-    result = await db.execute(select(Scope).where(Scope.name == name))
-    scope = result.scalar_one_or_none()
-    if scope is None:
-        scope = Scope(name=name, source_repo="efrain")
-        db.add(scope)
-        await db.flush()
-    return scope
 
 
 async def import_jsonl(db: AsyncSession, path: Path) -> dict[str, int]:
@@ -131,7 +117,9 @@ async def import_jsonl(db: AsyncSession, path: Path) -> dict[str, int]:
 
         scope_name = normalized.pop("scope_name")
         if scope_name not in scope_cache:
-            scope_cache[scope_name] = await _get_or_create_scope(db, scope_name)
+            scope_cache[scope_name] = await resolve_scope(
+                db, scope_name, create=True, source_repo="efrain"
+            )
         scope = scope_cache[scope_name]
 
         item = Item(

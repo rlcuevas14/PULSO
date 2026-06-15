@@ -20,35 +20,38 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.enums import (
+    COMMENT_KINDS,
+    EFFORTS,
+    ITEM_STATUSES,
+    ITEM_TYPES,
+    ORIGENES,
+    PRIORITIES,
+    RELATIONS,
+    check_in,
+)
 
 
 class Item(Base):
     __tablename__ = "items"
     __table_args__ = (
+        CheckConstraint(check_in("type", ITEM_TYPES), name="items_type_check"),
+        CheckConstraint(check_in("status", ITEM_STATUSES), name="items_status_check"),
         CheckConstraint(
-            "type IN ('bug','feature','tech-debt','infra','docs','ops','seguridad','producto','idea')",
-            name="items_type_check",
-        ),
-        CheckConstraint(
-            "status IN ('idea','backlog','spec','en-curso','bloqueado','en-revision','hecho','descartado')",
-            name="items_status_check",
-        ),
-        CheckConstraint(
-            "priority IS NULL OR priority IN ('p0','p1','p2','p3')",
+            f"priority IS NULL OR {check_in('priority', PRIORITIES)}",
             name="items_priority_check",
         ),
         CheckConstraint(
-            "effort_ai IS NULL OR effort_ai IN ('XS','S','M','L','XL')",
+            f"effort_ai IS NULL OR {check_in('effort_ai', EFFORTS)}",
             name="items_effort_ai_check",
         ),
-        CheckConstraint(
-            "origen IN ('digest','humano','ia-sesion','sentry','agente')",
-            name="items_origen_check",
-        ),
+        CheckConstraint(check_in("origen", ORIGENES), name="items_origen_check"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    scope_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("scopes.id"), nullable=False)
+    scope_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scopes.id", ondelete="RESTRICT"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     summary_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -76,7 +79,7 @@ class Item(Base):
     last_touched_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     # FK al Hilo que originó este ítem (Sprint 4). Nullable: la mayoría de ítems no son de un hilo.
     thread_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("threads.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("threads.id", ondelete="SET NULL"), nullable=True
     )
 
     # embedding: vector(768) solo existe en la BD, no en el ORM (se gestiona raw en F2)
@@ -92,7 +95,7 @@ class ItemRelationship(Base):
     __tablename__ = "item_relationships"
     __table_args__ = (
         CheckConstraint(
-            "relation IN ('blocks','requires','conflicts','related','part_of')",
+            check_in("relation", RELATIONS),
             name="item_relationships_relation_check",
         ),
         CheckConstraint("source_id <> target_id", name="item_rel_no_self"),
@@ -104,7 +107,8 @@ class ItemRelationship(Base):
     target_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
     )
-    relation: Mapped[str] = mapped_column(String(20), primary_key=True)
+    # DB es TEXT (v0003); el ORM debe coincidir (DM-09).
+    relation: Mapped[str] = mapped_column(Text, primary_key=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
@@ -112,14 +116,13 @@ class ItemRelationship(Base):
 class ItemComment(Base):
     __tablename__ = "item_comments"
     __table_args__ = (
-        CheckConstraint(
-            "kind IN ('comentario','analisis-ia','decision','cambio-estado')",
-            name="item_comments_kind_check",
-        ),
+        CheckConstraint(check_in("kind", COMMENT_KINDS), name="item_comments_kind_check"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=False)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
     author: Mapped[str] = mapped_column(String(255), nullable=False)
     body_md: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(30), nullable=False, default="comentario")
@@ -132,7 +135,9 @@ class ItemEvent(Base):
     __tablename__ = "item_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=False)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
     actor: Mapped[str] = mapped_column(String(255), nullable=False)
     action: Mapped[str] = mapped_column(String(60), nullable=False)
     payload: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
@@ -145,7 +150,9 @@ class AiEnrichment(Base):
     __tablename__ = "ai_enrichments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=False)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
     model: Mapped[str] = mapped_column(String(60), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(20), nullable=False)
     effort: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)

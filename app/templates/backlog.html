@@ -5,7 +5,7 @@
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-bold text-gray-900">Backlog</h1>
   <div class="flex gap-2">
-    <button onclick="document.getElementById('new-item-modal').classList.remove('hidden')"
+    <button onclick="openModal('new-item-modal')"
             class="text-sm bg-gray-900 text-white rounded px-3 py-1.5 hover:bg-gray-700">+ Nuevo ítem</button>
     <a href="/ideas" class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">+ Idea</a>
   </div>
@@ -19,7 +19,7 @@
 </div>
 
 <form id="filters" class="flex flex-wrap gap-3 mb-5">
-  <select name="scope" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+  <select name="scope" aria-label="Filtrar por scope" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los scopes</option>
     {% for s in scopes %}
@@ -27,7 +27,7 @@
     {% endfor %}
   </select>
 
-  <select name="status" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+  <select name="status" aria-label="Filtrar por estado" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los estados</option>
     {% for s in ['idea','backlog','spec','en-curso','bloqueado','en-revision','hecho','descartado'] %}
@@ -35,7 +35,7 @@
     {% endfor %}
   </select>
 
-  <select name="item_type" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+  <select name="item_type" aria-label="Filtrar por tipo" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los tipos</option>
     {% for t in ['bug','feature','tech-debt','infra','docs','ops','seguridad','producto','idea'] %}
@@ -43,7 +43,7 @@
     {% endfor %}
   </select>
 
-  <select name="origen" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+  <select name="origen" aria-label="Filtrar por origen" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los orígenes</option>
     {% for o in ['digest','humano','ia-sesion','sentry','agente'] %}
@@ -51,7 +51,7 @@
     {% endfor %}
   </select>
 
-  <select name="order" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+  <select name="order" aria-label="Ordenar por" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="prioridad" {% if filters.order == 'prioridad' %}selected{% endif %}>Prioridad</option>
     <option value="impacto" {% if filters.order == 'impacto' %}selected{% endif %}>Mayor impacto</option>
@@ -60,11 +60,11 @@
   </select>
 
   <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-    <input type="checkbox" name="stale" value="true" {% if filters.stale %}checked{% endif %}
+    <input type="checkbox" name="stale" value="true" aria-label="Mostrar solo ítems stale" {% if filters.stale %}checked{% endif %}
            hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⚠ stale
   </label>
   <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-    <input type="checkbox" name="graph_blocked" value="true" {% if filters.graph_blocked %}checked{% endif %}
+    <input type="checkbox" name="graph_blocked" value="true" aria-label="Mostrar solo ítems bloqueados" {% if filters.graph_blocked %}checked{% endif %}
            hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⛔ bloqueados
   </label>
 </form>
@@ -74,26 +74,27 @@
 </div>
 
 <!-- Modal Nuevo ítem -->
-<div id="new-item-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+<div id="new-item-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="new-item-title"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
   <div class="bg-white rounded-lg p-6 w-full max-w-md">
-    <h2 class="font-semibold text-gray-900 mb-4">Nuevo ítem</h2>
+    <h2 id="new-item-title" class="font-semibold text-gray-900 mb-4">Nuevo ítem</h2>
     <form action="/ui/items/create" method="post" class="space-y-3">
-      <input name="title" required placeholder="Título"
+      <input name="title" required placeholder="Título" aria-label="Título del ítem"
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
       <div class="flex gap-2">
-        <select name="scope_id" required class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm">
+        <select name="scope_id" required aria-label="Scope del ítem" class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm">
           {% for s in scopes %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
         </select>
-        <select name="type" required class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm">
+        <select name="type" required aria-label="Tipo del ítem" class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm">
           {% for t in ['feature','bug','tech-debt','infra','docs','ops','seguridad','producto'] %}
           <option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
       </div>
-      <textarea name="summary_md" rows="3" placeholder="Resumen (opcional)"
+      <textarea name="summary_md" rows="3" placeholder="Resumen (opcional)" aria-label="Resumen del ítem"
                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
       <p class="text-xs text-gray-400">Se crea en estado <strong>backlog</strong>. Para una idea cruda sin scope, usa + Idea.</p>
       <div class="flex justify-end gap-2">
-        <button type="button" onclick="document.getElementById('new-item-modal').classList.add('hidden')"
+        <button type="button" onclick="closeModal('new-item-modal')"
                 class="text-sm border border-gray-300 rounded px-3 py-1.5">Cancelar</button>
         <button type="submit" class="text-sm bg-gray-900 text-white rounded px-3 py-1.5">Crear</button>
       </div>

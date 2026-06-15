@@ -4,7 +4,7 @@
 
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-bold text-gray-900">Hilos</h1>
-  <button onclick="document.getElementById('new-hilo-modal').classList.remove('hidden')"
+  <button onclick="openModal('new-hilo-modal')"
           class="text-sm bg-gray-900 text-white rounded px-3 py-1.5 hover:bg-gray-700">+ Nuevo hilo</button>
 </div>
 
@@ -33,19 +33,20 @@
   {% endfor %}
 </div>
 
-<div id="new-hilo-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+<div id="new-hilo-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="new-hilo-title"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
   <div class="bg-white rounded-lg p-6 w-full max-w-md">
-    <h2 class="font-semibold text-gray-900 mb-4">Nuevo hilo</h2>
+    <h2 id="new-hilo-title" class="font-semibold text-gray-900 mb-4">Nuevo hilo</h2>
     <form action="/ui/hilos/create" method="post" class="space-y-3">
-      <input name="title" required placeholder="Título del hilo"
+      <input name="title" required placeholder="Título del hilo" aria-label="Título del hilo"
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-      <select name="scope_name" required class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+      <select name="scope_name" required aria-label="Scope del hilo" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
         {% for s in scopes %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
       </select>
-      <textarea name="summary" rows="3" placeholder="Resumen (opcional)"
+      <textarea name="summary" rows="3" placeholder="Resumen (opcional)" aria-label="Resumen del hilo"
                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
       <div class="flex justify-end gap-2">
-        <button type="button" onclick="document.getElementById('new-hilo-modal').classList.add('hidden')"
+        <button type="button" onclick="closeModal('new-hilo-modal')"
                 class="text-sm border border-gray-300 rounded px-3 py-1.5">Cancelar</button>
         <button type="submit" class="text-sm bg-gray-900 text-white rounded px-3 py-1.5">Crear (idea)</button>
       </div>

@@ -8,17 +8,15 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.enums import AGENT_RUN_KINDS, AGENT_RUN_STATUSES, check_in
 
 
 class AgentRun(Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
+        CheckConstraint(check_in("kind", AGENT_RUN_KINDS), name="agent_runs_kind_check"),
         CheckConstraint(
-            "kind IN ('enrich','dedup','triage-sentry','digest-email','fix-externo')",
-            name="agent_runs_kind_check",
-        ),
-        CheckConstraint(
-            "status IN ('pendiente','corriendo','ok','error')",
+            check_in("status", AGENT_RUN_STATUSES),
             name="agent_runs_status_check",
         ),
     )

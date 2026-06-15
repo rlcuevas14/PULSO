@@ -1,24 +1,18 @@
 """Máquina de estados del ciclo de vida de un ítem.
 
-Única fuente de verdad de las transiciones válidas, consumida por UI, REST y MCP.
+Única fuente de verdad de las TRANSICIONES válidas (la matriz `TRANSITIONS`), consumida
+por UI, REST y MCP. El dominio de estados vive en `app.enums` (ITEM_STATUSES / TERMINAL);
+aquí se reexporta con los nombres históricos `STATUSES` y `TERMINAL` para no romper imports.
 Los 8 estados del enum real de items.status:
     idea, backlog, spec, en-curso, bloqueado, en-revision, hecho, descartado
 """
 
-# Todos los estados válidos (coincide con items_status_check).
-STATUSES: tuple[str, ...] = (
-    "idea",
-    "backlog",
-    "spec",
-    "en-curso",
-    "bloqueado",
-    "en-revision",
-    "hecho",
-    "descartado",
-)
+from app.enums import ITEM_STATUSES as STATUSES  # alias histórico (tupla, ordenada)
+from app.enums import TERMINAL as _ENUM_TERMINAL
 
 # Estados terminales: el cierre pasa por POST /close (pide motivo), no por PATCH directo.
-TERMINAL: frozenset[str] = frozenset({"hecho", "descartado"})
+# Se expone como frozenset (contrato histórico) a partir del dominio de app.enums.
+TERMINAL: frozenset[str] = frozenset(_ENUM_TERMINAL)
 
 # Matriz de transiciones válidas: origen -> destinos permitidos.
 TRANSITIONS: dict[str, frozenset[str]] = {

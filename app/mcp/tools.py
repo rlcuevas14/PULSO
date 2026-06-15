@@ -4,6 +4,7 @@ Cada tool reutiliza la lógica de servicio (lifecycle, grafo, relaciones) para n
 divergir de la UI/REST. Las business-errors se propagan como ToolError → isError.
 """
 
+import logging
 import uuid
 from typing import Any
 
@@ -11,16 +12,34 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import ApiToken, User
+from app.enums import EFFORTS, ITEM_TYPES, OPEN_STATUSES, ORIGENES
 from app.items import graph, relationships, service
 from app.items.lifecycle import valid_transition
 from app.items.models import Item
+from app.items.search import search_items
+from app.scopes import service as scopes_service
 from app.scopes.models import Scope
 
-_OPEN = ["idea", "backlog", "spec", "en-curso", "bloqueado", "en-revision"]
+logger = logging.getLogger("pulso.mcp.tools")
+
+# Estados abiertos (no terminales), tomados de la única fuente de verdad de dominios.
+_OPEN = list(OPEN_STATUSES)
 
 
 class ToolError(Exception):
     """Error de negocio de una tool (se devuelve como isError, no error JSON-RPC)."""
+
+
+def _uuid_or_error(ref: Any, field: str = "id") -> uuid.UUID:
+    """Convierte `ref` a UUID o lanza ToolError con un mensaje accionable.
+
+    Centraliza el parseo de UUID de las tools que reciben un id explícito (hilo_id,
+    thread_id, id de incidente, etc.), para no propagar un ValueError crudo.
+    """
+    try:
+        return uuid.UUID(str(ref))
+    except (ValueError, AttributeError, TypeError) as e:
+        raise ToolError(f"{field} no es un UUID válido: «{ref}».") from e
 
 
 async def actor_for(db: AsyncSession, token: ApiToken) -> str:
@@ -30,17 +49,28 @@ async def actor_for(db: AsyncSession, token: ApiToken) -> str:
 
 
 async def _resolve_scope(db: AsyncSession, name: str, create: bool = False) -> Scope:
-    # Match case-insensitive para no crear duplicados ("Currículo" == "curriculo").
-    scope = (await db.execute(
-        select(Scope).where(func.lower(Scope.name) == name.strip().lower())
-    )).scalar_one_or_none()
-    if scope is None:
-        if not create:
-            raise ToolError(f"Scope «{name}» no existe. Usa pulso_scopes para ver los disponibles.")
-        scope = Scope(name=name.strip(), source_repo="mcp")
-        db.add(scope)
-        await db.flush()
-    return scope
+    """Resuelve/crea un scope reutilizando el servicio único (case-insensitive).
+
+    Traduce ScopeError (nombre vacío / no existe) a ToolError para que llegue como
+    isError con un mensaje útil, no como excepción cruda.
+    """
+    try:
+        return await scopes_service.resolve_scope(
+            db, name, create=create, source_repo="mcp" if create else None
+        )
+    except scopes_service.ScopeError as e:
+        raise ToolError(str(e)) from e
+
+
+async def _scope_exists(db: AsyncSession, name: str) -> bool:
+    """True si ya existe un scope con ese nombre (match case-insensitive)."""
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return False
+    found = (await db.execute(
+        select(Scope.id).where(func.lower(Scope.name) == cleaned.lower())
+    )).first()
+    return found is not None
 
 
 async def _scope_map(db: AsyncSession) -> dict[str, str]:
@@ -51,8 +81,8 @@ async def _scope_map(db: AsyncSession) -> dict[str, str]:
 async def _resolve_item(db: AsyncSession, ref: str) -> Item:
     """Acepta un UUID o una query de texto (resuelta por full-text con abort por ambigüedad)."""
     try:
-        item_id = uuid.UUID(ref)
-    except (ValueError, AttributeError):
+        item_id = uuid.UUID(str(ref))
+    except (ValueError, AttributeError, TypeError):
         try:
             item_id = await relationships.resolve_query(db, ref)
         except relationships.RelationshipError as e:
@@ -63,17 +93,44 @@ async def _resolve_item(db: AsyncSession, ref: str) -> Item:
     return item
 
 
+async def _resolve_item_verbose(db: AsyncSession, item_id: str | None, query: str | None,
+                                *, what: str = "item_id o query") -> tuple[Item, str | None]:
+    """Resuelve un ítem por id o por texto, devolviendo (item, advertencia_o_None).
+
+    Si llega un item_id explícito, se usa tal cual (sin advertencia). Si llega una query
+    de texto, se resuelve con `resolve_query_verbose`: aborta ante ambigüedad exacta y, si
+    el match es de baja confianza, devuelve una advertencia (no aborta) para que el caller
+    la incluya en el resultado.
+    """
+    if item_id:
+        return await _resolve_item(db, item_id), None
+    if not query:
+        raise ToolError(f"Debes pasar {what}.")
+    try:
+        resolved = await relationships.resolve_query_verbose(db, query)
+    except relationships.RelationshipError as e:
+        raise ToolError(str(e)) from e
+    item = await service.get_item(db, resolved["id"])
+    if item is None:
+        raise ToolError(f"Ítem no encontrado: {query}")
+    warning = None
+    if resolved.get("low_confidence"):
+        warning = (
+            f"resolví «{query}» → «{resolved['title']}» con baja confianza; "
+            "pasa item_id para confirmar."
+        )
+    return item, warning
+
+
 def _item_brief(i: Item, scope_map: dict[str, str] | None = None) -> dict[str, Any]:
-    brief = {
+    """DTO consistente de un ítem (RET-01): SIEMPRE incluye thread_id y scope (null si no)."""
+    return {
         "id": str(i.id), "title": i.title, "type": i.type, "status": i.status,
         "priority": i.priority, "impact_ai": i.impact_ai, "effort_ai": i.effort_ai,
         "scope_id": str(i.scope_id), "origen": i.origen,
+        "scope": scope_map.get(str(i.scope_id)) if scope_map is not None else None,
+        "thread_id": str(i.thread_id) if i.thread_id is not None else None,
     }
-    if scope_map is not None:
-        brief["scope"] = scope_map.get(str(i.scope_id))
-    if i.thread_id is not None:
-        brief["thread_id"] = str(i.thread_id)
-    return brief
 
 
 # ---------- Tools de lectura ----------
@@ -83,23 +140,27 @@ async def pulso_contexto(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     work = args.get("work_description")
     scope = None
     if scope_name:
-        scope = (await db.execute(select(Scope).where(Scope.name == scope_name))).scalar_one_or_none()
+        scope = (await db.execute(
+            select(Scope).where(func.lower(Scope.name) == str(scope_name).strip().lower())
+        )).scalar_one_or_none()
 
-    base = select(Item).where(Item.status.in_(_OPEN))
-    if scope:
-        base = base.where(Item.scope_id == scope.id)
+    scope_id = scope.id if scope else None
 
     # Quickwins (con fallback a prioridad humana si no hay impacto IA — degradación sin F2).
-    qw = (await db.execute(
-        base.where(Item.impact_ai >= 4, Item.effort_ai.in_(["XS", "S"]))
-        .order_by(Item.impact_ai.desc()).limit(5)
-    )).scalars().all()
+    qw = await service.list_items(
+        db, scope=scope_id, statuses=_OPEN, quickwins=True, order="impacto", limit=5
+    )
     if not qw:
-        qw = (await db.execute(
+        base = select(Item).where(Item.status.in_(_OPEN))
+        if scope_id:
+            base = base.where(Item.scope_id == scope_id)
+        qw = list((await db.execute(
             base.where(Item.priority.in_(["p0", "p1"])).order_by(Item.priority).limit(5)
-        )).scalars().all()
+        )).scalars().all())
 
-    blockers = (await db.execute(base.where(Item.status == "bloqueado").limit(10))).scalars().all()
+    blockers = await service.list_items(
+        db, scope=scope_id, statuses=["bloqueado"], order="impacto", limit=10
+    )
 
     # Bugs de Sentry sin ítem asociado (la tabla existe; consulta defensiva).
     try:
@@ -154,53 +215,40 @@ async def pulso_contexto(db: AsyncSession, token: ApiToken, args: dict) -> dict:
 
 async def pulso_buscar(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
     q = args["q"]
-    rows = (await db.execute(text("""
-        SELECT i.id, i.title, i.summary_md, i.type, i.status, i.scope_id, s.name AS scope,
-               i.effort_ai, i.impact_ai,
-               ts_rank(i.search_vector, plainto_tsquery('spanish', :q)) AS rank
-        FROM items i JOIN scopes s ON s.id = i.scope_id
-        WHERE i.search_vector @@ plainto_tsquery('spanish', :q)
-        ORDER BY rank DESC, i.id LIMIT :limit
-    """), {"q": q, "limit": int(args.get("limit", 10))})).mappings().all()
+    limit = int(args.get("limit", 10))
+    scope_name = (args.get("scope") or "").strip() or None
+    tipo = (args.get("tipo") or "").strip() or None
+
+    # FTS único (app.items.search). Pedimos de más cuando hay filtros post-query, para no
+    # devolver menos de `limit` por haber filtrado parte del top-N por scope/tipo.
+    fetch = limit * 4 if (scope_name or tipo) else limit
+    rows = await search_items(db, q, limit=max(fetch, limit), with_scope=True)
+
+    if scope_name:
+        rows = [r for r in rows if (r.get("scope") or "").lower() == scope_name.lower()]
+    if tipo:
+        rows = [r for r in rows if r.get("type") == tipo]
+    rows = rows[:limit]
+
     return [
-        {"id": str(r["id"]), "title": r["title"], "summary_md": r["summary_md"],
-         "type": r["type"], "status": r["status"], "scope_id": str(r["scope_id"]),
-         "scope": r["scope"], "effort_ai": r["effort_ai"], "impact_ai": r["impact_ai"]}
+        {"id": r["id"], "title": r["title"], "summary_md": r.get("summary_md"),
+         "type": r["type"], "status": r["status"], "scope_id": r.get("scope_id"),
+         "scope": r.get("scope"), "effort_ai": r.get("effort_ai"),
+         "impact_ai": r.get("impact_ai")}
         for r in rows
     ]
 
 
 async def pulso_listar(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
-    q = select(Item)
-    if args.get("scope"):
-        scope = (await db.execute(select(Scope).where(Scope.name == args["scope"]))).scalar_one_or_none()
-        if scope:
-            q = q.where(Item.scope_id == scope.id)
-    statuses = args.get("status")
-    if statuses:
-        q = q.where(Item.status.in_(statuses))
-    if args.get("tipo"):
-        q = q.where(Item.type == args["tipo"])
-    if args.get("quickwins"):
-        q = q.where(Item.impact_ai >= 4, Item.effort_ai.in_(["XS", "S"]))
-    items = list((await db.execute(q.limit(int(args.get("limit", 20))))).scalars().all())
-
-    order = args.get("order", "impacto")
-    if order == "topologico":
-        ids = [str(i.id) for i in items]
-        rels = (await db.execute(text(
-            "SELECT source_id, target_id, relation FROM item_relationships "
-            "WHERE source_id = ANY(:ids) AND target_id = ANY(:ids)"
-        ), {"ids": ids})).mappings().all()
-        edges = [(str(r["source_id"]), str(r["target_id"]), r["relation"]) for r in rels]
-        ranked = graph.topological_order(ids, edges, {str(i.id): (i.impact_ai or 0) for i in items})
-        rank = {x: n for n, x in enumerate(ranked["order"])}
-        items.sort(key=lambda i: rank.get(str(i.id), 10**6))
-    elif order == "prioridad":
-        pr = {"p0": 0, "p1": 1, "p2": 2, "p3": 3, None: 9}
-        items.sort(key=lambda i: (pr.get(i.priority, 9), -(i.impact_ai or 0)))
-    else:
-        items.sort(key=lambda i: -(i.impact_ai or 0))
+    items = await service.list_items(
+        db,
+        scope=(args.get("scope") or None),
+        statuses=args.get("status") or None,
+        type=(args.get("tipo") or None),
+        order=args.get("order", "impacto"),
+        quickwins=bool(args.get("quickwins")),
+        limit=int(args.get("limit", 20)),
+    )
     smap = await _scope_map(db)
     return [_item_brief(i, smap) for i in items]
 
@@ -208,29 +256,76 @@ async def pulso_listar(db: AsyncSession, token: ApiToken, args: dict) -> list[di
 # ---------- Tools de escritura ----------
 
 async def pulso_crear(db: AsyncSession, token: ApiToken, args: dict) -> dict:
-    scope = await _resolve_scope(db, args["scope_name"], create=True)
+    # --- Validación temprana (mejor mensaje que el catch-all de IntegrityError) ---
+    title = (args.get("title") or "").strip()
+    if not title:
+        raise ToolError("El título (title) no puede estar vacío.")
+    scope_name = (args.get("scope_name") or "").strip()
+    if not scope_name:
+        raise ToolError("El scope (scope_name) no puede estar vacío.")
+
+    item_type = args.get("type")
+    if item_type not in ITEM_TYPES:
+        raise ToolError(f"type inválido «{item_type}»; usa uno de: {', '.join(ITEM_TYPES)}.")
+
+    origen = args.get("origen", "ia-sesion")
+    if origen not in ORIGENES:
+        raise ToolError(f"origen inválido «{origen}»; usa uno de: {', '.join(ORIGENES)}.")
+
+    effort_ai = args.get("effort_ai")
+    if effort_ai is not None and effort_ai not in EFFORTS:
+        raise ToolError(f"effort_ai inválido «{effort_ai}»; usa uno de: {', '.join(EFFORTS)} (o null).")
+
+    impact_ai = args.get("impact_ai")
+    if impact_ai is not None:
+        if not isinstance(impact_ai, int) or isinstance(impact_ai, bool) or not (1 <= impact_ai <= 5):
+            raise ToolError("impact_ai debe ser un entero entre 1 y 5 (o null).")
+
+    # --- Resolución de scope (registrando si se creó uno nuevo) ---
+    scope_existed = await _scope_exists(db, scope_name)
+    scope = await _resolve_scope(db, scope_name, create=True)
+    scope_creado = not scope_existed
+
+    # --- Resolución del hilo (opcional) ---
     thread_id = None
     ref = args.get("hilo_id") or args.get("thread_id")
     if ref:
         from app.threads.models import Thread
-        thread = await db.get(Thread, uuid.UUID(ref))
+        thread = await db.get(Thread, _uuid_or_error(ref, "hilo_id"))
         if thread is None:
             raise ToolError(f"Hilo no encontrado: {ref}")
         thread_id = thread.id
+
+    # --- IDEM-01: idempotencia. Si ya hay un ítem ABIERTO con el mismo title+scope,
+    #     devolverlo en vez de duplicar (protege ante reintentos). ---
+    existing = (await db.execute(
+        select(Item).where(
+            Item.scope_id == scope.id,
+            func.lower(Item.title) == title.lower(),
+            Item.status.in_(_OPEN),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if existing is not None:
+        return {**_item_brief(existing, {str(scope.id): scope.name}),
+                "ya_existia": True, "scope_creado": scope_creado}
+
     item = Item(
-        scope_id=scope.id, title=args["title"], type=args["type"],
+        scope_id=scope.id, title=title, type=item_type,
         summary_md=args.get("summary"), status="backlog",
-        impact_ai=args.get("impact_ai"), effort_ai=args.get("effort_ai"),
-        origen=args.get("origen", "ia-sesion"), created_by=await actor_for(db, token),
+        impact_ai=impact_ai, effort_ai=effort_ai,
+        origen=origen, created_by=await actor_for(db, token),
         thread_id=thread_id,
     )
     db.add(item)
     await db.flush()
-    return _item_brief(item, {str(scope.id): scope.name})
+    return {**_item_brief(item, {str(scope.id): scope.name}),
+            "ya_existia": False, "scope_creado": scope_creado}
 
 
 async def pulso_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
-    item = await _resolve_item(db, args.get("item_id") or args["query"])
+    if "to_status" not in args:
+        raise ToolError("Falta to_status (estado destino).")
+    item, warning = await _resolve_item_verbose(db, args.get("item_id"), args.get("query"))
     to = args["to_status"]
     if not valid_transition(item.status, to):
         raise ToolError(f"Transición inválida: {item.status} → {to}")
@@ -238,11 +333,16 @@ async def pulso_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
         await service.apply_transition(db, item, to, await actor_for(db, token))
     except service.TransitionError as e:
         raise ToolError(str(e)) from e
-    return _item_brief(item, await _scope_map(db))
+    out = _item_brief(item, await _scope_map(db))
+    if warning:
+        out["advertencia"] = warning
+    return out
 
 
 async def pulso_completar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
-    item = await _resolve_item(db, args.get("item_id") or args["search_query"])
+    item, warning = await _resolve_item_verbose(
+        db, args.get("item_id"), args.get("search_query"), what="item_id o search_query"
+    )
     try:
         unblocked = await service.close_item(
             db, item, "hecho", args.get("nota"), await actor_for(db, token),
@@ -250,7 +350,10 @@ async def pulso_completar(db: AsyncSession, token: ApiToken, args: dict) -> dict
         )
     except service.TransitionError as e:
         raise ToolError(str(e)) from e
-    return {**_item_brief(item, await _scope_map(db)), "unblocked": unblocked}
+    out = {**_item_brief(item, await _scope_map(db)), "unblocked": unblocked}
+    if warning:
+        out["advertencia"] = warning
+    return out
 
 
 async def pulso_scopes(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
@@ -277,23 +380,39 @@ async def pulso_scopes(db: AsyncSession, token: ApiToken, args: dict) -> list[di
 
 async def pulso_mover_scope(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     """Mueve un ítem a otro scope EXISTENTE (match case-insensitive)."""
-    item = await _resolve_item(db, args.get("item_id") or args["query"])
+    if not (args.get("scope_name") or "").strip():
+        raise ToolError("Falta scope_name (scope destino).")
+    item, warning = await _resolve_item_verbose(db, args.get("item_id"), args.get("query"))
     scope = await _resolve_scope(db, args["scope_name"], create=False)
     item.scope_id = scope.id
     await db.flush()
-    return _item_brief(item, {str(scope.id): scope.name})
+    out = _item_brief(item, {str(scope.id): scope.name})
+    if warning:
+        out["advertencia"] = warning
+    return out
 
 
 async def pulso_relacionar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
-    source = await _resolve_item(db, args.get("source_id") or args["source_query"])
-    target = await _resolve_item(db, args.get("target_id") or args["target_query"])
+    if "relation" not in args:
+        raise ToolError("Falta relation (tipo de arco).")
+    source, w_src = await _resolve_item_verbose(
+        db, args.get("source_id"), args.get("source_query"), what="source_id o source_query"
+    )
+    target, w_tgt = await _resolve_item_verbose(
+        db, args.get("target_id"), args.get("target_query"), what="target_id o target_query"
+    )
     try:
         rel = await relationships.create_relationship(
             db, source.id, target.id, args["relation"], args.get("note")
         )
     except relationships.RelationshipError as e:
         raise ToolError(str(e)) from e
-    return {"source_id": str(rel.source_id), "target_id": str(rel.target_id), "relation": rel.relation}
+    out = {"source_id": str(rel.source_id), "target_id": str(rel.target_id),
+           "relation": rel.relation}
+    advertencias = [w for w in (w_src, w_tgt) if w]
+    if advertencias:
+        out["advertencia"] = " | ".join(advertencias)
+    return out
 
 
 # ---------- Tools de Hilos ----------
@@ -312,7 +431,7 @@ async def pulso_hilo_crear(db: AsyncSession, token: ApiToken, args: dict) -> dic
 async def pulso_hilo_avanzar(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     from app.threads import service as tservice
 
-    t = await tservice.get_thread(db, uuid.UUID(args["thread_id"]))
+    t = await tservice.get_thread(db, _uuid_or_error(args.get("thread_id"), "thread_id"))
     if t is None:
         raise ToolError("Hilo no encontrado.")
     artifact = args.get("artifact")
@@ -335,7 +454,7 @@ async def pulso_hilo(db: AsyncSession, token: ApiToken, args: dict) -> dict:
     """Detalle de un Hilo: stage, artefactos e ítems vinculados (por thread_id)."""
     from app.threads.models import Thread, ThreadArtifact
 
-    thread = await db.get(Thread, uuid.UUID(args["id"]))
+    thread = await db.get(Thread, _uuid_or_error(args.get("id"), "id"))
     if thread is None:
         raise ToolError("Hilo no encontrado.")
     arts = (await db.execute(
@@ -358,15 +477,20 @@ async def pulso_hilo_vincular(db: AsyncSession, token: ApiToken, args: dict) -> 
     """Vincula un ítem existente a un Hilo (set thread_id). Acepta item_id o query."""
     from app.threads.models import Thread
 
-    ref = args.get("hilo_id") or args["thread_id"]
-    thread = await db.get(Thread, uuid.UUID(ref))
+    ref = args.get("hilo_id") or args.get("thread_id")
+    if not ref:
+        raise ToolError("Falta hilo_id (id del Hilo al que vincular).")
+    thread = await db.get(Thread, _uuid_or_error(ref, "hilo_id"))
     if thread is None:
         raise ToolError(f"Hilo no encontrado: {ref}")
-    item = await _resolve_item(db, args.get("item_id") or args["query"])
+    item, warning = await _resolve_item_verbose(db, args.get("item_id"), args.get("query"))
     item.thread_id = thread.id
     await db.flush()
-    return {**_item_brief(item, await _scope_map(db)), "hilo_id": str(thread.id),
-            "hilo_title": thread.title}
+    out = {**_item_brief(item, await _scope_map(db)), "hilo_id": str(thread.id),
+           "hilo_title": thread.title}
+    if warning:
+        out["advertencia"] = warning
+    return out
 
 
 async def actor_user_id(db: AsyncSession, token: ApiToken) -> uuid.UUID | None:
@@ -402,7 +526,7 @@ async def pulso_incidente(db: AsyncSession, token: ApiToken, args: dict) -> dict
     from app.webhooks import service as wservice
     from app.webhooks.models import SentryIssue
 
-    issue = await db.get(SentryIssue, uuid.UUID(args["id"]))
+    issue = await db.get(SentryIssue, _uuid_or_error(args.get("id"), "id"))
     if issue is None:
         raise ToolError("Incidente no encontrado.")
     out = {"id": str(issue.id), "sentry_issue_id": issue.sentry_issue_id, "title": issue.title,
@@ -416,32 +540,29 @@ async def pulso_incidente(db: AsyncSession, token: ApiToken, args: dict) -> dict
         out["stacktrace"] = detail.get("stacktrace")
         out["culprit"] = detail.get("culprit")
     except Exception as e:
+        logger.warning("pulso_incidente: fallo al traer stack trace de %s: %s",
+                       issue.sentry_issue_id, e)
         out["stacktrace"] = None
         out["detail_error"] = f"No se pudo traer el stack trace: {str(e)[:160]}"
     return out
 
 
 async def pulso_incidente_resolver(db: AsyncSession, token: ApiToken, args: dict) -> dict:
-    """Marca un incidente como resuelto en Pulso y (opcional) en Sentry."""
+    """Marca un incidente como resuelto en Pulso y (opcional) en Sentry.
+
+    Reutiliza la lógica de servicio única (ARCH-2: webhooks.service.resolve_issue) para no
+    duplicar la cascada (resolver en Sentry + cerrar el ítem de backlog ligado).
+    """
     from app.webhooks import service as wservice
     from app.webhooks.models import SentryIssue
 
-    issue = await db.get(SentryIssue, uuid.UUID(args["id"]))
+    issue = await db.get(SentryIssue, _uuid_or_error(args.get("id"), "id"))
     if issue is None:
         raise ToolError("Incidente no encontrado.")
-    issue.status = "resolved"
-    sentry_done = False
-    if args.get("resolver_en_sentry", True):
-        sentry_done = await wservice.resolve_in_sentry(issue.sentry_issue_id)
-    # Si tenía ítem de backlog asociado, cerrarlo también.
-    if issue.item_id is not None:
-        item = await service.get_item(db, issue.item_id)
-        if item is not None and item.status not in ("hecho", "descartado"):
-            try:
-                await service.close_item(
-                    db, item, "hecho", args.get("nota") or "resuelto desde incidente",
-                    await actor_for(db, token), commit_sha=args.get("commit_sha"),
-                )
-            except service.TransitionError:
-                pass
-    return {"id": str(issue.id), "status": "resolved", "resuelto_en_sentry": sentry_done}
+    return await wservice.resolve_issue(
+        db, issue,
+        in_sentry=bool(args.get("resolver_en_sentry", True)),
+        nota=args.get("nota"),
+        actor=await actor_for(db, token),
+        commit_sha=args.get("commit_sha"),
+    )

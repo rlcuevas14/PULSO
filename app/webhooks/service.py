@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -12,9 +13,13 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.items import service
 from app.items.models import Item, ItemEvent
 from app.jobs.models import AgentRun
+from app.scopes.service import resolve_scope
 from app.webhooks.models import SentryIssue
+
+logger = logging.getLogger("pulso.webhooks")
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _PULSO_RE = re.compile(r"(?:closes\s+)?pulso:([0-9a-fA-F-]{36})")
@@ -60,6 +65,7 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     data = payload.get("data", {}).get("issue") or payload.get("issue") or payload
     sentry_id = str(data.get("id") or payload.get("id") or "")
     if not sentry_id:
+        logger.warning("ingest_sentry: payload sin id de issue, se descarta")
         raise ValueError("Falta el id del issue de Sentry")
 
     title = _sanitize(data.get("title") or data.get("culprit") or "Sentry issue", 500)
@@ -110,9 +116,9 @@ async def promote_issue(
     triage IA o el owner). Idempotente: si ya está linkeado, devuelve el ítem existente."""
     if issue.item_id is not None:
         return str(issue.item_id)
-    scope = await _get_or_create_scope(db, issue.project)
+    scope = await resolve_scope(db, issue.project, create=True, source_repo="sentry")
     item = Item(
-        scope_id=scope, title=issue.title[:300], type="bug", status="backlog",
+        scope_id=scope.id, title=issue.title[:300], type="bug", status="backlog",
         summary_md=_sanitize(str(issue.payload), 4000), origen="sentry",
         priority=priority, priority_declared=priority, stale_risk=True,
         source_refs={"sentry_issue_id": issue.sentry_issue_id},
@@ -127,14 +133,58 @@ async def promote_issue(
     return str(item.id)
 
 
-async def _get_or_create_scope(db: AsyncSession, name: str) -> uuid.UUID:
-    from app.scopes.models import Scope
-    scope = (await db.execute(select(Scope).where(Scope.name == name))).scalar_one_or_none()
-    if scope is None:
-        scope = Scope(name=name[:60], source_repo="sentry")
-        db.add(scope)
-        await db.flush()
-    return scope.id
+async def resolve_issue(
+    db: AsyncSession,
+    issue: SentryIssue,
+    *,
+    in_sentry: bool,
+    nota: str | None,
+    actor: str,
+    commit_sha: str | None = None,
+) -> dict[str, Any]:
+    """Resuelve un incidente: lo marca resuelto en Pulso, opcionalmente en Sentry, y
+    cierra el ítem de backlog ligado (si lo hay y sigue abierto).
+
+    Lógica de servicio extraída de la tool MCP pulso_incidente_resolver (ARCH-2) para que
+    UI / REST / MCP la consuman sin duplicar. Solo flush; el commit lo hace el borde.
+
+    Devuelve {"id", "status", "resuelto_en_sentry", "item_cerrado"}.
+    """
+    issue.status = "resolved"
+    sentry_done = False
+    if in_sentry:
+        try:
+            sentry_done = await resolve_in_sentry(issue.sentry_issue_id)
+        except Exception as e:  # error de red / API de Sentry: no debe bloquear el cierre local
+            logger.warning(
+                "resolve_issue: fallo al resolver %s en Sentry: %s",
+                issue.sentry_issue_id, e,
+            )
+            sentry_done = False
+
+    item_cerrado = False
+    if issue.item_id is not None:
+        item = await service.get_item(db, issue.item_id)
+        if item is not None and item.status not in ("hecho", "descartado"):
+            try:
+                await service.close_item(
+                    db, item, "hecho", nota or "resuelto desde incidente",
+                    actor, commit_sha=commit_sha,
+                )
+                item_cerrado = True
+            except service.TransitionError as e:
+                logger.warning(
+                    "resolve_issue: no se pudo cerrar el ítem %s ligado al incidente %s: %s",
+                    issue.item_id, issue.id, e,
+                )
+
+    await db.flush()
+    return {
+        "id": str(issue.id),
+        "status": "resolved",
+        "resuelto_en_sentry": sentry_done,
+        "item_cerrado": item_cerrado,
+    }
 
 
 async def process_github_push(db: AsyncSession, payload: dict) -> dict:
@@ -276,10 +326,10 @@ async def resolve_in_sentry(issue_id: str) -> bool:
 
 
 async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
-    from app.items import service
     try:
         item = await service.get_item(db, uuid.UUID(item_id))
     except (ValueError, AttributeError):
+        logger.warning("_complete_by_ref: item_id inválido en commit %s: %r", sha[:12], item_id)
         return False
     if item is None:
         return False
@@ -288,6 +338,7 @@ async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
     try:
         await service.close_item(db, item, "hecho", f"cerrado por commit {sha[:12]}",
                                  f"github:{sha[:12]}", commit_sha=sha)
-    except service.TransitionError:
+    except service.TransitionError as e:
+        logger.warning("_complete_by_ref: transición inválida al cerrar %s: %s", item_id, e)
         return False
     return True

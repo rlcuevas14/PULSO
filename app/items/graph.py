@@ -10,9 +10,12 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import TERMINAL, sql_list
+
 # Relaciones que cuentan como dependencia dura para el orden topológico.
 _PRECEDENCE = ("blocks", "requires")
-_OPEN_STATUSES_EXCLUDED = ("hecho", "descartado")
+# Fragmento SQL reutilizable: estados terminales (cerrados), desde enums (DUP-4).
+_TERMINAL_SQL = sql_list(TERMINAL)
 
 
 async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, Any]]:
@@ -22,7 +25,7 @@ async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, 
     Devuelve cada ítem una vez con su menor profundidad (0 = semilla, 1, 2).
     """
     result = await db.execute(
-        text("""
+        text(f"""
             WITH edges AS (
                 SELECT source_id AS a, target_id AS b FROM item_relationships
                 UNION ALL
@@ -30,7 +33,7 @@ async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, 
             ),
             seed AS (
                 SELECT id FROM items
-                WHERE scope_id = :scope_id AND status NOT IN ('hecho','descartado')
+                WHERE scope_id = :scope_id AND status NOT IN ({_TERMINAL_SQL})
             ),
             hop1 AS (SELECT DISTINCT e.b AS id, 1 AS depth FROM edges e JOIN seed s ON e.a = s.id),
             hop2 AS (SELECT DISTINCT e.b AS id, 2 AS depth FROM edges e JOIN hop1 h ON e.a = h.id)
@@ -40,7 +43,7 @@ async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, 
                   UNION ALL SELECT id, depth FROM hop1
                   UNION ALL SELECT id, depth FROM hop2) d
             JOIN items i ON i.id = d.id
-            WHERE i.status NOT IN ('hecho','descartado')
+            WHERE i.status NOT IN ({_TERMINAL_SQL})
             ORDER BY i.id, d.depth
         """),
         {"scope_id": str(scope_id)},
@@ -62,12 +65,12 @@ async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, 
 async def blockers_of(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, Any]]:
     """Ítems que bloquean EFECTIVAMENTE a item_id: arco `blocks` entrante con source abierto."""
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT s.id, s.title, s.status
             FROM item_relationships r
             JOIN items s ON s.id = r.source_id
             WHERE r.target_id = :item_id AND r.relation = 'blocks'
-              AND s.status NOT IN ('hecho','descartado')
+              AND s.status NOT IN ({_TERMINAL_SQL})
         """),
         {"item_id": str(item_id)},
     )
@@ -81,18 +84,18 @@ async def unblocked_by(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, A
     no se escribe estado en el target, solo se reporta/audita).
     """
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT t.id, t.title
             FROM item_relationships r
             JOIN items t ON t.id = r.target_id
             WHERE r.source_id = :item_id AND r.relation = 'blocks'
-              AND t.status NOT IN ('hecho','descartado')
+              AND t.status NOT IN ({_TERMINAL_SQL})
               AND NOT EXISTS (
                   SELECT 1 FROM item_relationships r2
                   JOIN items s2 ON s2.id = r2.source_id
                   WHERE r2.target_id = t.id AND r2.relation = 'blocks'
                     AND r2.source_id <> :item_id
-                    AND s2.status NOT IN ('hecho','descartado')
+                    AND s2.status NOT IN ({_TERMINAL_SQL})
               )
         """),
         {"item_id": str(item_id)},
@@ -103,14 +106,14 @@ async def unblocked_by(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, A
 async def graph_blocked_ids(db: AsyncSession) -> set[str]:
     """Ids de todos los ítems efectivamente bloqueados por el grafo (para badges/filtro)."""
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT DISTINCT r.target_id AS id
             FROM item_relationships r
             JOIN items s ON s.id = r.source_id
             JOIN items t ON t.id = r.target_id
             WHERE r.relation = 'blocks'
-              AND s.status NOT IN ('hecho','descartado')
-              AND t.status NOT IN ('hecho','descartado')
+              AND s.status NOT IN ({_TERMINAL_SQL})
+              AND t.status NOT IN ({_TERMINAL_SQL})
         """)
     )
     return {str(r["id"]) for r in result.mappings().all()}
@@ -119,14 +122,14 @@ async def graph_blocked_ids(db: AsyncSession) -> set[str]:
 async def unblocker_ids(db: AsyncSession) -> set[str]:
     """Ids de ítems que bloquean a otros aún abiertos (badge 🔓 = desbloqueador)."""
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT DISTINCT r.source_id AS id
             FROM item_relationships r
             JOIN items s ON s.id = r.source_id
             JOIN items t ON t.id = r.target_id
             WHERE r.relation = 'blocks'
-              AND s.status NOT IN ('hecho','descartado')
-              AND t.status NOT IN ('hecho','descartado')
+              AND s.status NOT IN ({_TERMINAL_SQL})
+              AND t.status NOT IN ({_TERMINAL_SQL})
         """)
     )
     return {str(r["id"]) for r in result.mappings().all()}

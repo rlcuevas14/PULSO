@@ -34,18 +34,21 @@
     <code>Issue&amp;Event: Read</code> (el "Token" de la integración Pulso, o un token personal).
   </p>
   <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
+        hx-indicator="#backfill-spin"
         class="flex flex-wrap items-center gap-2 text-sm">
-    <input name="org" required placeholder="org slug (ej: tid-analytics)"
+    <input name="org" required placeholder="org slug (ej: tid-analytics)" aria-label="Slug de la organización en Sentry"
            class="border border-gray-300 rounded px-2 py-1">
-    <input name="project" required placeholder="project slug (ej: efrain)"
+    <input name="project" required placeholder="project slug (ej: efrain)" aria-label="Slug del proyecto en Sentry"
            class="border border-gray-300 rounded px-2 py-1">
-    <input name="token" type="password" required placeholder="Sentry token"
+    <input name="token" type="password" required placeholder="Sentry token" aria-label="Token de Sentry"
            class="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[12rem]">
-    <input name="query" value="is:unresolved" class="border border-gray-300 rounded px-2 py-1 w-40"
+    <input name="query" value="is:unresolved" aria-label="Filtro de búsqueda en Sentry"
+           class="border border-gray-300 rounded px-2 py-1 w-40"
            title="Filtro Sentry; deja is:unresolved para traer solo los abiertos">
     <button class="bg-gray-900 text-white rounded px-3 py-1">Importar</button>
+    <span id="backfill-spin" class="htmx-indicator text-xs text-gray-400">importando…</span>
   </form>
-  <div id="backfill-result" class="mt-2"></div>
+  <div id="backfill-result" aria-live="polite" class="mt-2"></div>
 </div>
 {% endif %}
 
@@ -74,14 +77,16 @@
     </div>
     <div class="flex items-center gap-2 shrink-0">
       {% if it.status == 'linked' %}
-      <a href="/items?{{ '' }}" class="text-xs text-green-600">✓ en backlog</a>
+      <a href="/backlog?origen=sentry" class="text-xs text-green-600">✓ en backlog</a>
       {% elif it.status != 'ignored' %}
-      <form hx-post="/ui/incidentes/{{ it.id }}/promote" hx-swap="none" class="flex items-center gap-1">
-        <select name="priority" class="text-xs border border-gray-200 rounded px-1 py-0.5">
+      <form hx-post="/ui/incidentes/{{ it.id }}/promote" hx-swap="none"
+            hx-indicator="#promote-spin-{{ it.id }}" class="flex items-center gap-1">
+        <select name="priority" aria-label="Prioridad al promover" class="text-xs border border-gray-200 rounded px-1 py-0.5">
           <option value="p0">p0</option><option value="p1" selected>p1</option>
           <option value="p2">p2</option><option value="p3">p3</option>
         </select>
         <button class="text-xs bg-gray-900 text-white rounded px-2 py-0.5">Promover al backlog</button>
+        <span id="promote-spin-{{ it.id }}" class="htmx-indicator text-xs text-gray-400">…</span>
       </form>
       <button hx-post="/ui/incidentes/{{ it.id }}/ignore" hx-swap="none"
               class="text-xs text-gray-400 hover:text-gray-700">Ignorar</button>

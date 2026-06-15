@@ -233,15 +233,14 @@ async def prioridad_page(
         select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
     )).scalars().all())
 
-    return templates.TemplateResponse(
-        request,
-        "prioridad.html",
-        {
-            "user": user, "items": ranked, "matrix": matrix, "efforts": efforts,
-            "impacts": [5, 4, 3, 2, 1], "unestimated": unestimated,
-            "scopes": scopes, "filters": {"scope": scope},
-        },
-    )
+    ctx = {
+        "user": user, "items": ranked, "matrix": matrix, "efforts": efforts,
+        "impacts": [5, 4, 3, 2, 1], "unestimated": unestimated,
+        "scopes": scopes, "filters": {"scope": scope},
+    }
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/prioridad_body.html", ctx)
+    return templates.TemplateResponse(request, "prioridad.html", ctx)
 
 
 # ---------- Acciones de UI (HTMX, form-encoded) ----------
@@ -624,7 +623,9 @@ async def ui_backfill_sentry(
 ):
     """Importa el histórico de errores desde la API de Sentry (solo admin)."""
     if user.role != "admin":
-        return Response(status_code=403)
+        return HTMLResponse(
+            '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
+        )
     from app.webhooks import service as wservice
 
     try:
@@ -667,7 +668,9 @@ async def ui_create_token(
     user: User = Depends(current_user_ui),
 ):
     if user.role != "admin":
-        return Response(status_code=403)
+        return HTMLResponse(
+            '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
+        )
     from app.auth.service import create_api_token
 
     if scopes not in ("read", "write"):

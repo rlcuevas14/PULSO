@@ -1,29 +1,45 @@
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.deps import api_or_session_user
+from app.auth.deps import api_or_session_user, require_admin_strict, require_write
 from app.auth.models import ApiToken, User
 from app.database import get_db
+from app.enums import (
+    COMMENT_KINDS,
+    EFFORTS,
+    ITEM_STATUSES,
+    ITEM_TYPES,
+    PRIORITIES,
+)
 from app.items.models import Item, ItemComment
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+# Tipos cerrados (Literal) derivados del módulo único de enums. Pydantic valida en el
+# borde (422 automático con la lista de valores válidos) antes de tocar la BD.
+ItemTypeLit = Literal[ITEM_TYPES]  # type: ignore[valid-type]
+ItemStatusLit = Literal[ITEM_STATUSES]  # type: ignore[valid-type]
+PriorityLit = Literal[PRIORITIES]  # type: ignore[valid-type]
+EffortLit = Literal[EFFORTS]  # type: ignore[valid-type]
+CommentKindLit = Literal[COMMENT_KINDS]  # type: ignore[valid-type]
 
 
 class ItemCreate(BaseModel):
     scope_id: uuid.UUID
     title: str
-    type: str
+    type: ItemTypeLit
     summary_md: str | None = None
-    status: str = "backlog"
-    priority: str | None = None
+    status: ItemStatusLit = "backlog"
+    priority: PriorityLit | None = None
     effort_declared: str | None = None
     priority_declared: str | None = None
     trigger_text: str | None = None
@@ -34,17 +50,17 @@ class ItemCreate(BaseModel):
 class ItemPatch(BaseModel):
     title: str | None = None
     summary_md: str | None = None
-    status: str | None = None
-    priority: str | None = None
+    status: ItemStatusLit | None = None
+    priority: PriorityLit | None = None
     impact_ai: int | None = None
-    effort_ai: str | None = None
+    effort_ai: EffortLit | None = None
     stale_risk: bool | None = None
     agent_ready: bool | None = None
 
 
 class CommentCreate(BaseModel):
     body_md: str
-    kind: str = "comentario"
+    kind: CommentKindLit = "comentario"
 
 
 class CloseItem(BaseModel):
@@ -94,6 +110,11 @@ def _actor(auth) -> str:
     return "unknown"
 
 
+# PERF-04: paginación con tope duro para no devolver el backlog entero sin querer.
+_LIST_DEFAULT_LIMIT = 50
+_LIST_MAX_LIMIT = 200
+
+
 @router.get("", response_model=list[ItemOut])
 async def list_items(
     scope_id: uuid.UUID | None = Query(None),
@@ -101,24 +122,28 @@ async def list_items(
     type: str | None = Query(None),
     stale_risk: bool | None = Query(None),
     order: str = Query("reciente"),
+    limit: int = Query(_LIST_DEFAULT_LIMIT, ge=1, le=_LIST_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
 ):
-    q = select(Item)
-    if scope_id:
-        q = q.where(Item.scope_id == scope_id)
-    if status:
-        q = q.where(Item.status == status)
-    if type:
-        q = q.where(Item.type == type)
-    if stale_risk is not None:
-        q = q.where(Item.stale_risk == stale_risk)
-    if order == "impacto":
-        q = q.order_by(Item.impact_ai.desc().nulls_last())
-    else:
-        q = q.order_by(Item.created_at.desc())
-    result = await db.execute(q)
-    return result.scalars().all()
+    """DUP-1: consume la implementación única `items.service.list_items` (REST/UI/MCP).
+
+    PERF-04: `limit` por defecto 50, tope duro 200; `offset` para paginar.
+    """
+    from app.items import service
+
+    items = await service.list_items(
+        db,
+        scope=scope_id,
+        statuses=[status] if status else None,
+        type=type,
+        order=order,
+        stale_risk=stale_risk,
+        limit=limit,
+        offset=offset,
+    )
+    return items
 
 
 @router.post("", response_model=ItemOut, status_code=201)
@@ -126,10 +151,15 @@ async def create_item(
     body: ItemCreate,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     item = Item(**body.model_dump(), created_by=_actor(auth), origen="humano")
     db.add(item)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
     await db.refresh(item)
     return item
 
@@ -143,11 +173,8 @@ class ImportRequest(BaseModel):
 async def import_digest(
     body: ImportRequest,
     db: AsyncSession = Depends(get_db),
-    auth=Depends(api_or_session_user),
+    _admin: User = Depends(require_admin_strict),
 ):
-    if isinstance(auth, User) and auth.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores pueden importar")
-
     target = body.path or body.directory
     if not target:
         raise HTTPException(status_code=422, detail="Proporcionar 'path' o 'directory'")
@@ -165,33 +192,23 @@ async def import_digest(
     return result
 
 
+_SEARCH_MAX_LIMIT = 200
+
+
 @router.get("/search")
 async def search_items(
     q: str = Query(..., min_length=1),
+    limit: int = Query(50, ge=1, le=_SEARCH_MAX_LIMIT),
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
 ):
-    result = await db.execute(
-        text("""
-            SELECT id, title, summary_md, type, status, scope_id,
-                   effort_ai, impact_ai, stale_risk,
-                   ts_rank(search_vector, plainto_tsquery('spanish', :q)) AS rank
-            FROM items
-            WHERE search_vector @@ plainto_tsquery('spanish', :q)
-            ORDER BY rank DESC
-            LIMIT 50
-        """),
-        {"q": q},
-    )
-    rows = result.mappings().all()
-    return [
-        {
-            **{k: v for k, v in dict(row).items() if k not in ("id", "scope_id")},
-            "id": str(row["id"]),
-            "scope_id": str(row["scope_id"]) if row["scope_id"] else None,
-        }
-        for row in rows
-    ]
+    """DUP-1: consume la implementación única del FTS (`items.search.search_items`).
+
+    PERF-04: `limit` por defecto 50, tope duro 200.
+    """
+    from app.items import search
+
+    return await search.search_items(db, q, limit=limit)
 
 
 @router.get("/{item_id}", response_model=ItemDetail)
@@ -241,6 +258,7 @@ async def patch_item(
     body: ItemPatch,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.items import service
 
@@ -266,7 +284,11 @@ async def patch_item(
     for field, value in changes.items():
         setattr(item, field, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
     await db.refresh(item)
     return item
 
@@ -303,6 +325,7 @@ async def add_comment(
     body: CommentCreate,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     result = await db.execute(select(Item).where(Item.id == item_id))
     if result.scalar_one_or_none() is None:
@@ -315,7 +338,11 @@ async def add_comment(
         kind=body.kind,
     )
     db.add(comment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
     await db.refresh(comment)
     return {"id": str(comment.id), "created_at": comment.created_at.isoformat()}
 
@@ -326,6 +353,7 @@ async def close_item(
     body: CloseItem,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.items import service
 
@@ -350,6 +378,7 @@ async def reopen_item_endpoint(
     item_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.items import service
 
@@ -377,6 +406,7 @@ async def create_relationship_endpoint(
     body: RelationshipCreate,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.items import relationships
 
@@ -384,9 +414,13 @@ async def create_relationship_endpoint(
         rel = await relationships.create_relationship(
             db, body.source_id, body.target_id, body.relation, body.note
         )
+        await db.commit()
     except relationships.RelationshipError as e:
+        await db.rollback()
         raise HTTPException(status_code=422, detail=str(e)) from e
-    await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
     return {
         "source_id": str(rel.source_id),
         "target_id": str(rel.target_id),
@@ -401,6 +435,7 @@ async def delete_relationship_endpoint(
     relation: str,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.items import relationships
 
@@ -425,6 +460,7 @@ async def enqueue_enrich(
     item_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     from app.jobs.worker import enqueue_job
 
@@ -440,11 +476,9 @@ async def enqueue_enrich(
 async def enqueue_pending_enrich(
     limit: int = Query(200),
     db: AsyncSession = Depends(get_db),
-    auth=Depends(api_or_session_user),
+    _admin: User = Depends(require_admin_strict),
 ):
     """Encola enriquecimiento para todos los ítems abiertos sin impacto estimado (admin)."""
-    if isinstance(auth, User) and auth.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
     from app.jobs.worker import enqueue_job
 
     rows = await db.execute(

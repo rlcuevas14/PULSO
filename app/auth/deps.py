@@ -74,3 +74,36 @@ async def api_or_session_user(
         if user:
             return user
     raise HTTPException(status_code=401, detail="No autenticado")
+
+
+async def require_write(
+    auth: User | ApiToken = Depends(api_or_session_user),
+) -> User | ApiToken:
+    """SEC-01: autoriza una operación de ESCRITURA sobre cookie de sesión o Bearer token.
+
+    - ApiToken: debe tener scope 'write'. Un token de solo lectura recibe 403.
+    - User de sesión: pasa (la autorización por rol, si aplica, la hace require_admin*).
+
+    Úsala como dependency en todos los endpoints que mutan estado. Devuelve el actor
+    (User o ApiToken) para que el handler lo use (p. ej. atribución/auditoría).
+    """
+    if isinstance(auth, ApiToken) and auth.scopes != "write":
+        raise HTTPException(status_code=403, detail="El token es de solo lectura")
+    return auth
+
+
+async def require_admin_strict(
+    auth: User | ApiToken = Depends(api_or_session_user),
+) -> User:
+    """RBAC-1: SOLO un User de sesión con rol 'admin'. Un ApiToken NUNCA es admin.
+
+    Corrige el bug del patrón anterior (`isinstance(auth, User) and role != 'admin'`),
+    que dejaba pasar a los ApiToken porque la condición de rechazo solo evaluaba Users.
+    Aquí la regla es positiva e invertida: si no es un User admin, se rechaza —
+    cualquier ApiToken cae en el 403 sin importar su scope.
+    """
+    if not isinstance(auth, User):
+        raise HTTPException(status_code=403, detail="Solo administradores (sesión de usuario)")
+    if auth.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    return auth

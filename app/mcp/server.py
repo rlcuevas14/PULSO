@@ -6,20 +6,84 @@ Auth obligatoria por Bearer (ApiToken); las tools de escritura exigen scope 'wri
 """
 
 import json
+import logging
 from typing import Any, Callable
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import ApiToken
 from app.auth.service import verify_api_token
 from app.database import get_db
+from app.enums import (
+    EFFORTS,
+    ITEM_STATUSES,
+    ITEM_TYPES,
+    LIST_ORDERS,
+    ORIGENES,
+    RELATIONS,
+    SENTRY_STATUSES,
+    TERMINAL,
+    THREAD_STAGES,
+)
 from app.mcp import tools
+
+logger = logging.getLogger("pulso.mcp")
 
 PROTOCOL_VERSION = "2025-03-26"
 _ALLOWED_ORIGINS = {"https://pulso.eduk3.cl"}
+
+# Estados a los que se puede AVANZAR por PATCH (los terminales van por pulso_completar).
+_AVANZAR_STATUSES: tuple[str, ...] = tuple(s for s in ITEM_STATUSES if s not in TERMINAL)
+# status de incidentes para el filtro de pulso_incidentes (incluye el comodín "todos").
+_INCIDENT_STATUSES: tuple[str, ...] = tuple(SENTRY_STATUSES) + ("todos",)
+
+
+# Mapa constraint CHECK → mensaje accionable (lista de valores válidos). Se usa para
+# traducir un IntegrityError de Postgres a algo que el agente pueda corregir solo.
+_CONSTRAINT_HELP: dict[str, str] = {
+    "items_type_check": f"type inválido; usa uno de: {', '.join(ITEM_TYPES)}",
+    "items_status_check": f"status inválido; usa uno de: {', '.join(ITEM_STATUSES)}",
+    "items_origen_check": f"origen inválido; usa uno de: {', '.join(ORIGENES)}",
+    "items_effort_ai_check": f"effort_ai inválido; usa uno de: {', '.join(EFFORTS)} (o null)",
+    "items_priority_check": "priority inválida; usa una de: p0, p1, p2, p3 (o null)",
+    "item_comments_kind_check": (
+        "kind de comentario inválido; usa uno de: comentario, analisis-ia, decision, cambio-estado"
+    ),
+    "item_relationships_relation_check": (
+        f"relation inválida; usa una de: {', '.join(RELATIONS)}"
+    ),
+    "item_rel_no_self": "un ítem no puede relacionarse consigo mismo (source y target iguales)",
+    "threads_stage_check": f"stage de hilo inválido; usa uno de: {', '.join(THREAD_STAGES)}",
+    "thread_artifacts_stage_check": (
+        f"stage de artefacto inválido; usa uno de: {', '.join(THREAD_STAGES)}"
+    ),
+    "thread_artifacts_kind_check": (
+        "kind de artefacto inválido; usa uno de: investigacion, historias, spec, notas, decision"
+    ),
+    "scopes_name_key": "ya existe un scope con ese nombre (el nombre del scope es único)",
+}
+
+
+def _humanize_integrity_error(e: IntegrityError) -> str:
+    """Traduce un IntegrityError de Postgres a un mensaje accionable.
+
+    Detecta el nombre del constraint (CHECK / UNIQUE / FK) en el texto del error de
+    Postgres y devuelve la lista de valores válidos o la causa concreta. Si no reconoce
+    el constraint, cae a un genérico que igual nombra la restricción violada.
+    """
+    detail = str(getattr(e, "orig", e)) or str(e)
+    for constraint, help_text in _CONSTRAINT_HELP.items():
+        if constraint in detail:
+            return f"Dato inválido ({constraint}): {help_text}."
+    # FK más comunes (scope/thread inexistente) sin constraint nombrado en _CONSTRAINT_HELP.
+    low = detail.lower()
+    if "foreign key" in low or "llave foránea" in low:
+        return f"Referencia inválida: apuntas a una fila que no existe. Detalle: {detail[:200]}"
+    return f"Violación de integridad en la base de datos: {detail[:200]}"
 
 
 class Tool:
@@ -33,6 +97,13 @@ class Tool:
 
 def _scope_obj(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required}
+
+
+def _enum(values: tuple[str, ...] | list[str], description: str | None = None) -> dict:
+    schema: dict[str, Any] = {"type": "string", "enum": list(values)}
+    if description:
+        schema["description"] = description
+    return schema
 
 
 _STR = {"type": "string"}
@@ -49,14 +120,19 @@ TOOLS: dict[str, Tool] = {
     ),
     "pulso_buscar": Tool(
         "pulso_buscar", "Búsqueda full-text de ítems del backlog.",
-        _scope_obj({"q": _STR, "scope": _STR, "tipo": _STR, "limit": _INT}, ["q"]),
+        _scope_obj({"q": _STR, "scope": {**_STR, "description": "nombre del scope para filtrar"},
+                    "tipo": _enum(ITEM_TYPES, "filtra por tipo de ítem"), "limit": _INT}, ["q"]),
         tools.pulso_buscar, write=False,
     ),
     "pulso_listar": Tool(
         "pulso_listar",
-        "Lista filtrada de ítems. order: impacto|prioridad|topologico. quickwins: bool.",
-        _scope_obj({"scope": _STR, "status": {"type": "array", "items": _STR},
-                    "tipo": _STR, "order": _STR, "quickwins": {"type": "boolean"},
+        "Lista filtrada de ítems. order: impacto|prioridad|topologico|reciente. quickwins: bool.",
+        _scope_obj({"scope": _STR,
+                    "status": {"type": "array", "items": _enum(ITEM_STATUSES),
+                               "description": "estados a incluir (todos si se omite)"},
+                    "tipo": _enum(ITEM_TYPES, "filtra por tipo de ítem"),
+                    "order": _enum(LIST_ORDERS, "orden del resultado (default impacto)"),
+                    "quickwins": {"type": "boolean"},
                     "limit": _INT}, []),
         tools.pulso_listar, write=False,
     ),
@@ -78,8 +154,14 @@ TOOLS: dict[str, Tool] = {
         "pulso_crear",
         "Crea un ítem en el backlog (status backlog, origen ia-sesion por defecto). "
         "Crea el scope si no existe. hilo_id (opcional): lo cuelga de ese Hilo.",
-        _scope_obj({"title": _STR, "summary": _STR, "type": _STR, "scope_name": _STR,
-                    "effort_ai": _STR, "impact_ai": _INT, "origen": _STR, "hilo_id": _STR},
+        _scope_obj({"title": _STR, "summary": _STR,
+                    "type": _enum(ITEM_TYPES, "tipo del ítem"),
+                    "scope_name": _STR,
+                    "effort_ai": _enum(EFFORTS, "esfuerzo estimado (opcional)"),
+                    "impact_ai": {**_INT, "description": "impacto 1-5 (opcional)",
+                                  "minimum": 1, "maximum": 5},
+                    "origen": _enum(ORIGENES, "origen del ítem (default ia-sesion)"),
+                    "hilo_id": _STR},
                    ["title", "type", "scope_name"]),
         tools.pulso_crear, write=True,
     ),
@@ -87,7 +169,10 @@ TOOLS: dict[str, Tool] = {
         "pulso_avanzar",
         "Cambia el estado de un ítem (transición validada; terminales van por pulso_completar). "
         "Acepta item_id o query de texto.",
-        _scope_obj({"item_id": _STR, "query": _STR, "to_status": _STR}, ["to_status"]),
+        _scope_obj({"item_id": _STR, "query": _STR,
+                    "to_status": _enum(_AVANZAR_STATUSES,
+                                       "estado destino (no terminal; cierra con pulso_completar)")},
+                   ["to_status"]),
         tools.pulso_avanzar, write=True,
     ),
     "pulso_completar": Tool(
@@ -102,7 +187,9 @@ TOOLS: dict[str, Tool] = {
         "Crea un arco del grafo entre dos ítems. relation: blocks|requires|conflicts|related|part_of. "
         "Acepta ids o queries de texto.",
         _scope_obj({"source_id": _STR, "source_query": _STR, "target_id": _STR,
-                    "target_query": _STR, "relation": _STR, "note": _STR}, ["relation"]),
+                    "target_query": _STR,
+                    "relation": _enum(RELATIONS, "tipo de arco del grafo"),
+                    "note": _STR}, ["relation"]),
         tools.pulso_relacionar, write=True,
     ),
     "pulso_hilo_crear": Tool(
@@ -119,7 +206,8 @@ TOOLS: dict[str, Tool] = {
     ),
     "pulso_hilo_listar": Tool(
         "pulso_hilo_listar", "Lista Hilos (filtro opcional por stage y scope).",
-        _scope_obj({"stage": _STR, "scope": _STR}, []),
+        _scope_obj({"stage": _enum(THREAD_STAGES, "filtra por stage del hilo"),
+                    "scope": _STR}, []),
         tools.pulso_hilo_listar, write=False,
     ),
     "pulso_hilo": Tool(
@@ -138,7 +226,8 @@ TOOLS: dict[str, Tool] = {
         "pulso_incidentes",
         "Lista los errores de Sentry del contenedor de incidentes. status: new|linked|"
         "resolved|ignored|todos (default new).",
-        _scope_obj({"status": _STR, "limit": _INT}, []),
+        _scope_obj({"status": _enum(_INCIDENT_STATUSES, "filtra por estado (default new)"),
+                    "limit": _INT}, []),
         tools.pulso_incidentes, write=False,
     ),
     "pulso_incidente": Tool(
@@ -240,6 +329,19 @@ async def _dispatch(msg: dict, token: ApiToken, db: AsyncSession) -> dict | None
         except KeyError as e:
             await db.rollback()
             return _ok(rpc_id, _tool_result(f"Falta argumento requerido: {e}", is_error=True))
+        except IntegrityError as e:
+            await db.rollback()
+            logger.warning("tool %s args=%s violó integridad: %s", name, arguments, e)
+            return _ok(rpc_id, _tool_result(_humanize_integrity_error(e), is_error=True))
+        except (ValueError, LookupError) as e:
+            await db.rollback()
+            logger.warning("tool %s args=%s argumento inválido: %s", name, arguments, e)
+            return _ok(rpc_id, _tool_result(f"Argumento inválido: {e}", is_error=True))
+        except Exception as e:  # red de seguridad: NUNCA dejar escapar un HTTP 500 desde /mcp
+            await db.rollback()
+            logger.exception("tool %s args=%s falló", name, arguments)
+            return _ok(rpc_id, _tool_result(
+                f"Error interno de la tool '{name}': {type(e).__name__}", is_error=True))
 
     if method == "prompts/list":
         return _ok(rpc_id, {"prompts": list(PROMPTS.values())})
@@ -340,5 +442,12 @@ def mount_mcp(app: FastAPI) -> None:
 
     @app.get("/mcp")
     async def mcp_get() -> Response:
-        # Modo stateless sin streams server→cliente: el transporte responde 405 al GET.
-        return Response(status_code=405)
+        # Modo stateless sin streams server→cliente (no SSE): el GET no está soportado.
+        # Devolvemos 405 con Allow: POST + un cuerpo JSON-RPC explicando el contrato.
+        return JSONResponse(
+            _err(None, -32600,
+                 "El endpoint /mcp solo acepta POST (JSON-RPC sobre HTTP). "
+                 "Este transporte no expone stream SSE server→cliente vía GET."),
+            status_code=405,
+            headers={"Allow": "POST"},
+        )

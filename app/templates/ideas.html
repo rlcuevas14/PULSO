@@ -14,28 +14,28 @@
 <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
   <h2 class="font-semibold text-gray-800 mb-3">Nueva idea</h2>
   <form hx-post="/api/v1/items"
-        hx-on:htmx:after-request="this.reset(); window.location.reload()"
+        hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }"
         class="space-y-3">
     <input type="hidden" name="status" value="idea">
     <div>
-      <input name="title" type="text" required placeholder="Título de la idea"
+      <input name="title" type="text" required placeholder="Título de la idea" aria-label="Título de la idea"
         class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
     <div class="grid grid-cols-2 gap-3">
-      <select name="scope_id" required class="border border-gray-300 rounded px-3 py-2 text-sm">
+      <select name="scope_id" required aria-label="Scope de la idea" class="border border-gray-300 rounded px-3 py-2 text-sm">
         <option value="">Scope...</option>
         {% for s in scopes %}
         <option value="{{ s.id }}">{{ s.name }}</option>
         {% endfor %}
       </select>
-      <select name="type" class="border border-gray-300 rounded px-3 py-2 text-sm">
+      <select name="type" aria-label="Tipo de la idea" class="border border-gray-300 rounded px-3 py-2 text-sm">
         <option value="idea">idea</option>
         <option value="feature">feature</option>
         <option value="bug">bug</option>
         <option value="tech-debt">tech-debt</option>
       </select>
     </div>
-    <textarea name="summary_md" rows="2" placeholder="Descripción breve (opcional)"
+    <textarea name="summary_md" rows="2" placeholder="Descripción breve (opcional)" aria-label="Descripción breve"
       class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none"></textarea>
     <button type="submit"
       class="text-sm bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">

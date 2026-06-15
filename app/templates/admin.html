@@ -10,6 +10,7 @@
 
 <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
   <h2 class="font-semibold text-gray-800 mb-4">Usuarios ({{ users|length }})</h2>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-gray-500 border-b">
       <th class="pb-2">Email</th><th>Nombre</th><th>Rol</th><th>Activo</th>
@@ -25,22 +26,26 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
   <div class="flex items-center justify-between mb-4">
     <h2 class="font-semibold text-gray-800">Tokens activos ({{ tokens|length }})</h2>
-    <form class="flex items-center gap-2" hx-post="/ui/admin/tokens" hx-target="#token-result" hx-swap="innerHTML">
-      <input name="name" required placeholder="nombre del token"
+    <form class="flex items-center gap-2" hx-post="/ui/admin/tokens" hx-target="#token-result" hx-swap="innerHTML"
+          hx-indicator="#token-spin">
+      <input name="name" required placeholder="nombre del token" aria-label="Nombre del token"
              class="border border-gray-300 rounded px-2 py-1 text-sm">
-      <select name="scopes" class="border border-gray-300 rounded px-2 py-1 text-sm">
+      <select name="scopes" aria-label="Scope del token" class="border border-gray-300 rounded px-2 py-1 text-sm">
         <option value="write">write</option>
         <option value="read">read</option>
       </select>
       <button class="text-sm bg-gray-900 text-white rounded px-3 py-1">Generar token MCP</button>
+      <span id="token-spin" class="htmx-indicator text-xs text-gray-400">generando…</span>
     </form>
   </div>
-  <div id="token-result"></div>
+  <div id="token-result" aria-live="polite"></div>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm mt-3">
     <thead><tr class="text-left text-gray-500 border-b">
       <th class="pb-2">Nombre</th><th>Scope</th><th>Último uso</th>
@@ -50,15 +55,17 @@
     <tr class="border-b border-gray-100 last:border-0">
       <td class="py-2">{{ t.name }}</td>
       <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-gray-100">{{ t.scopes }}</span></td>
-      <td class="py-2 text-gray-500">{{ t.last_used_at or '—' }}</td>
+      <td class="py-2 text-gray-500">{{ t.last_used_at | fecha }}</td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
   <h2 class="font-semibold text-gray-800 mb-4">Scopes ({{ scopes|length }})</h2>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-gray-500 border-b">
       <th class="pb-2">Nombre</th><th>Color</th><th>Repo</th><th>Archivado</th>
@@ -74,10 +81,12 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="bg-white rounded-lg border border-gray-200 p-5">
   <h2 class="font-semibold text-gray-800 mb-4">Jobs recientes ({{ runs|length }})</h2>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-gray-500 border-b">
       <th class="pb-2">Kind</th><th>Status</th><th>Creado</th>
@@ -87,11 +96,12 @@
     <tr class="border-b border-gray-100 last:border-0">
       <td class="py-2 font-mono text-xs">{{ r.kind }}</td>
       <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if r.status=='error' %}bg-red-100 text-red-600{% elif r.status=='ok' %}bg-green-100 text-green-600{% else %}bg-gray-100{% endif %}">{{ r.status }}</span></td>
-      <td class="py-2 text-gray-400 text-xs">{{ r.created_at }}</td>
+      <td class="py-2 text-gray-400 text-xs">{{ r.created_at | fecha }}</td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 {% endblock %}

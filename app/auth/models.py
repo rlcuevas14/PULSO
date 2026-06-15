@@ -7,11 +7,12 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.enums import TOKEN_SCOPES, USER_ROLES, check_in
 
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("role IN ('admin','viewer')", name="users_role_check"),)
+    __table_args__ = (CheckConstraint(check_in("role", USER_ROLES), name="users_role_check"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -32,7 +33,7 @@ class User(Base):
 class ApiToken(Base):
     __tablename__ = "api_tokens"
     __table_args__ = (
-        CheckConstraint("scopes IN ('read','write')", name="api_tokens_scopes_check"),
+        CheckConstraint(check_in("scopes", TOKEN_SCOPES), name="api_tokens_scopes_check"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -40,6 +41,10 @@ class ApiToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     scopes: Mapped[str] = mapped_column(String(20), nullable=False, default="read")
     last_used_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    # SEC-03: expiración opcional del token (NULL = sin expiración).
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )
     revoked_at: Mapped[Optional[datetime]] = mapped_column(

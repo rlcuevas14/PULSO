@@ -1,15 +1,34 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.templates_config import templates  # noqa: F401 — re-exported for legacy imports
 
+# OBS-1/OBS-2 — Logging centralizado.
+# Configuramos el logging raíz una sola vez aquí (al importar el módulo de arranque) para
+# que CUALQUIER otro módulo pueda emitir logs sin reconfigurar nada:
+#
+#     import logging
+#     logger = logging.getLogger("pulso.<modulo>")   # p. ej. "pulso.items", "pulso.mcp"
+#     logger.info("..."); logger.warning("..."); logger.exception("...")
+#
+# basicConfig es idempotente (no hace nada si el root ya tiene handlers), así que reimportar
+# este módulo no duplica salida. El nivel sube a DEBUG cuando settings.debug está activo.
+logging.basicConfig(
+    level=logging.DEBUG if settings.debug else logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("pulso.app")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Pulso arrancando (debug=%s)", settings.debug)
     from app.jobs.worker import worker_loop
     task = asyncio.create_task(worker_loop())
     yield
@@ -18,6 +37,22 @@ async def lifespan(app: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
+    logger.info("Pulso detenido")
+
+
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Red de último recurso para rutas REST/UI (OBS + manejo de errores).
+
+    Loguea la excepción con stack trace (incluye método + path) y devuelve un 500
+    genérico sin filtrar detalles internos al cliente.
+
+    NOTA: este handler NO interfiere con el endpoint MCP — el endpoint /mcp atrapa sus
+    propios errores y responde 200 con isError ANTES de que la excepción escape, así que
+    nunca llega aquí. Tampoco captura HTTPException ni RequestValidationError: esos van
+    registrados aparte para conservar su comportamiento normal (status + detail correctos).
+    """
+    logger.exception("Excepción no manejada en %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "error interno"})
 
 
 def create_app() -> FastAPI:
@@ -35,6 +70,9 @@ def create_app() -> FastAPI:
         secret_key=settings.secret_key,
         session_cookie="pulso_session",
         https_only=not settings.debug,
+        # SEC-04: endurecer la cookie de sesión.
+        same_site="strict",        # corta envío cross-site (mitiga CSRF sobre la sesión).
+        max_age=604800,            # 7 días — la sesión expira aunque la cookie persista.
     )
     app.include_router(auth_router)
     app.include_router(items_router, prefix="/api/v1")
@@ -47,6 +85,13 @@ def create_app() -> FastAPI:
 
     from app.mcp.server import mount_mcp
     mount_mcp(app)
+
+    # Manejo de errores: catch-all de Exception como red de último recurso (REST/UI).
+    # Un handler para `Exception` SOLO se invoca cuando ningún handler más específico
+    # matchea: FastAPI ya trae handlers built-in para HTTPException (devuelve su status +
+    # detail) y RequestValidationError (422 con los errores de validación), que tienen
+    # prioridad sobre este. Así, este solo atrapa los errores 500 inesperados.
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
     return app
 
 

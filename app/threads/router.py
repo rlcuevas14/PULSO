@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import api_or_session_user
+from app.auth.deps import api_or_session_user, require_write
 from app.database import get_db
 from app.threads import service
 from app.threads.models import ThreadArtifact
@@ -43,7 +43,10 @@ def _thread_out(t) -> dict:
 
 @router.post("", status_code=201)
 async def create_thread(
-    body: ThreadCreate, db: AsyncSession = Depends(get_db), _auth=Depends(api_or_session_user)
+    body: ThreadCreate,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     t = await service.create_thread(db, body.scope_name, body.title, body.summary)
     await db.commit()
@@ -85,6 +88,7 @@ async def get_thread(
 async def advance(
     thread_id: uuid.UUID, body: AdvanceBody,
     db: AsyncSession = Depends(get_db), _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     t = await service.get_thread(db, thread_id)
     if t is None:
@@ -101,6 +105,7 @@ async def advance(
 async def set_stage(
     thread_id: uuid.UUID, body: StageBody,
     db: AsyncSession = Depends(get_db), _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     t = await service.get_thread(db, thread_id)
     if t is None:
@@ -117,6 +122,7 @@ async def set_stage(
 async def add_artifact(
     thread_id: uuid.UUID, body: ArtifactBody,
     db: AsyncSession = Depends(get_db), _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     t = await service.get_thread(db, thread_id)
     if t is None:
@@ -128,7 +134,10 @@ async def add_artifact(
 
 @router.post("/{thread_id}/elaborate-stage")
 async def elaborate_stage(
-    thread_id: uuid.UUID, db: AsyncSession = Depends(get_db), _auth=Depends(api_or_session_user)
+    thread_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(api_or_session_user),
+    _=Depends(require_write),
 ):
     t = await service.get_thread(db, thread_id)
     if t is None:

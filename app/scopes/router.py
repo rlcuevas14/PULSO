@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import api_or_session_user
 from app.database import get_db
+from app.scopes import service
 from app.scopes.models import Scope
 
 router = APIRouter(prefix="/scopes", tags=["scopes"])
@@ -55,11 +56,13 @@ async def create_scope(
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
 ):
-    scope = Scope(**body.model_dump())
-    db.add(scope)
     try:
+        scope = await service.create_scope(db, body.model_dump())
         await db.commit()
         await db.refresh(scope)
+    except service.ScopeError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail=f"El scope '{body.name}' ya existe")
@@ -73,12 +76,11 @@ async def patch_scope(
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
 ):
-    result = await db.execute(select(Scope).where(Scope.id == scope_id))
-    scope = result.scalar_one_or_none()
-    if scope is None:
-        raise HTTPException(status_code=404, detail="Scope no encontrado")
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(scope, field, value)
-    await db.commit()
-    await db.refresh(scope)
+    try:
+        scope = await service.update_scope(db, scope_id, body.model_dump(exclude_none=True))
+        await db.commit()
+        await db.refresh(scope)
+    except service.ScopeError as e:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail=str(e)) from e
     return scope

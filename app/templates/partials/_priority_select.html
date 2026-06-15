@@ -1,0 +1,16 @@
+{#
+  Selector inline de prioridad reutilizable (HTMX, swap=none, recarga vía HX-Refresh).
+  Parámetros:
+    item        — ítem con .id y .priority (obligatorio).
+    select_class — clases CSS para el <select> (opcional; default = variante de fila).
+  Uso: {% with item = it %}{% include "partials/_priority_select.html" %}{% endwith %}
+#}
+<select aria-label="Prioridad del ítem" title="Prioridad"
+        class="{{ select_class | default('text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600') }}"
+        hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
+        hx-vals='{"field":"priority"}' name="value">
+  <option value="" {% if not item.priority %}selected{% endif %}>—</option>
+  {% for p in ['p0','p1','p2','p3'] %}
+  <option value="{{ p }}" {% if item.priority == p %}selected{% endif %}>{{ p }}</option>
+  {% endfor %}
+</select>

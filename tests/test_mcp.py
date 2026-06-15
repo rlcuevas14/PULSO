@@ -109,15 +109,30 @@ async def test_read_token_cannot_write(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_pulso_completar_ambiguous_aborts(client: AsyncClient):
+    from app.database import get_db
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
     raw = await _token(client, "write")
-    # Dos ítems con el MISMO título → empate de rank → ambiguo.
-    for _ in range(2):
-        await _rpc(client, raw, "tools/call", {
-            "name": "pulso_crear",
-            "arguments": {"title": "titulo identico ambiguo", "type": "feature", "scope_name": "amb"},
-        })
+    # pulso_crear ahora es idempotente (dedup por title+scope abierto) → no se puede
+    # forzar ambigüedad duplicando un título. La ambigüedad real ocurre cuando dos ítems
+    # con títulos DISTINTOS empatan EXACTAMENTE en el rank FTS para la query (la palabra
+    # «login» aparece una vez en cada título, mismo peso A → mismo ts_rank). Insertamos
+    # directo en BD (como test_scope_tools) para controlar el dato sin depender de la tool.
+    sname = f"amb-{uuid.uuid4().hex[:6]}"
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = Scope(name=sname)
+        db.add(scope)
+        await db.flush()
+        db.add(Item(scope_id=scope.id, title="login roto en movil",
+                    type="bug", status="backlog", origen="humano"))
+        db.add(Item(scope_id=scope.id, title="login lento en desktop",
+                    type="bug", status="backlog", origen="humano"))
+        await db.commit()
+        break
+
     r = await _rpc(client, raw, "tools/call", {
-        "name": "pulso_completar", "arguments": {"search_query": "titulo identico ambiguo"},
+        "name": "pulso_completar", "arguments": {"search_query": "login"},
     })
     assert r.json()["result"]["isError"] is True
     assert "ambig" in r.json()["result"]["content"][0]["text"].lower()
@@ -166,7 +181,7 @@ async def test_hilo_item_linking(client: AsyncClient):
         "name": "pulso_crear",
         "arguments": {"title": "F1 pasarela chile", "type": "feature", "scope_name": sname}})
     f1 = _json.loads(c2.json()["result"]["content"][0]["text"])
-    assert "thread_id" not in f1  # suelto
+    assert f1["thread_id"] is None  # suelto: _item_brief SIEMPRE incluye thread_id (null si no)
     v = await _rpc(client, raw, "tools/call", {
         "name": "pulso_hilo_vincular", "arguments": {"hilo_id": hid, "item_id": f1["id"]}})
     linked = _json.loads(v.json()["result"]["content"][0]["text"])

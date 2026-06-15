@@ -48,5 +48,20 @@ jobs:
       - name: Type check (mypy)
         run: mypy app/ --ignore-missing-imports
 
-      - name: Tests
-        run: pytest tests/ -v --tb=short
+      # CI-2 / DM-06: valida que las migraciones aplican Y revierten (round-trip).
+      # env.py lee DATABASE_URL (URL async); el motor async de Alembic la usa directo.
+      # upgrade head → downgrade base → upgrade head: detecta downgrades rotos o no
+      # idempotentes antes de que lleguen a producción. Corre ANTES de pytest (que usa
+      # create_all, no las migraciones) y deja la BD migrada para una inspección eventual.
+      - name: Migraciones Alembic (round-trip)
+        env:
+          DATABASE_URL: postgresql+asyncpg://pulso:test@localhost:5432/pulso_test
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Tests + cobertura
+        run: >-
+          pytest tests/ -v --tb=short
+          --cov=app --cov-report=term-missing --cov-fail-under=59

@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Pulso{% endblock %} — Eduk3</title>
+  {# TODO: vendorizar/compilar Tailwind para prod (el CDN es solo-dev). #}
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"
+          integrity="sha384-wS5l5IKJBvK6sPTKa2WZ1js3d947pvWXbPJ1OmWfEuxLgeHcEbjUUA5i9V5ZkpCw"
+          crossorigin="anonymous"></script>
 </head>
 <body class="bg-gray-50 min-h-screen">
   <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
@@ -31,5 +34,101 @@
   <main class="max-w-7xl mx-auto px-6 py-6">
     {% block content %}{% endblock %}
   </main>
+
+  {# FE-01: toast global de error HTMX. Toda acción HTMX que falle muestra aquí
+     el mensaje del backend, que antes se descartaba en silencio. #}
+  <div id="toast" role="alert" aria-live="assertive"
+       class="hidden fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg bg-red-600 text-white text-sm px-4 py-3 shadow-lg break-words">
+  </div>
+
+  <script>
+    (function () {
+      var toast = document.getElementById("toast");
+      var hideTimer = null;
+
+      function showToast(message) {
+        if (!toast) return;
+        toast.textContent = message;
+        toast.classList.remove("hidden");
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () {
+          toast.classList.add("hidden");
+        }, 5000);
+      }
+
+      // Error de respuesta del servidor (4xx/5xx): muestra el cuerpo del backend.
+      document.body.addEventListener("htmx:responseError", function (event) {
+        var xhr = event.detail && event.detail.xhr;
+        var body = xhr && xhr.responseText ? xhr.responseText.trim() : "";
+        // Si el cuerpo es HTML (p. ej. un fragmento de error), usa solo su texto.
+        if (body && body.charAt(0) === "<") {
+          var tmp = document.createElement("div");
+          tmp.innerHTML = body;
+          body = (tmp.textContent || "").trim();
+        }
+        var status = xhr ? xhr.status : "";
+        showToast(body || ("Ocurrió un error" + (status ? " (" + status + ")" : "") + ". Inténtalo de nuevo."));
+      });
+
+      // Error de red / sin conexión.
+      document.body.addEventListener("htmx:sendError", function () {
+        showToast("Sin conexión. Revisa tu red e inténtalo de nuevo.");
+      });
+    })();
+  </script>
+
+  {# FE-06: helper de modales. Cierra con Esc y con clic en el backdrop,
+     enfoca el primer input al abrir y bloquea el scroll del body (clave en móvil).
+     Marca cada overlay con data-modal y usa estas funciones en vez de toggle directo. #}
+  <script>
+    (function () {
+      function bodyScrollLock(lock) {
+        document.body.style.overflow = lock ? "hidden" : "";
+      }
+
+      window.openModal = function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove("hidden");
+        bodyScrollLock(true);
+        var first = el.querySelector("input, select, textarea, button");
+        if (first) {
+          try { first.focus(); } catch (e) { /* sin foco si no es enfocable */ }
+        }
+      };
+
+      window.closeModal = function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add("hidden");
+        bodyScrollLock(false);
+      };
+
+      function anyModalOpen() {
+        var modals = document.querySelectorAll("[data-modal]");
+        for (var i = 0; i < modals.length; i++) {
+          if (!modals[i].classList.contains("hidden")) return modals[i];
+        }
+        return null;
+      }
+
+      // Cerrar con clic en el backdrop (el overlay mismo, no su contenido).
+      document.addEventListener("click", function (event) {
+        var overlay = event.target;
+        if (overlay && overlay.matches && overlay.matches("[data-modal]") &&
+            !overlay.classList.contains("hidden")) {
+          window.closeModal(overlay.id);
+        }
+      });
+
+      // Cerrar con Esc el modal abierto.
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          var open = anyModalOpen();
+          if (open) window.closeModal(open.id);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -23,12 +23,7 @@
           {% if item.stale_risk %}<span class="text-xs text-yellow-600 shrink-0">⚠</span>{% endif %}
         </div>
         <div class="flex items-center gap-2 text-xs text-gray-400">
-          <span class="rounded px-1.5 py-0.5
-            {% if item.status == 'bloqueado' %}bg-red-100 text-red-600
-            {% elif item.status == 'en-curso' %}bg-blue-100 text-blue-600
-            {% elif item.status == 'hecho' %}bg-green-100 text-green-600
-            {% elif item.status == 'en-revision' %}bg-purple-100 text-purple-600
-            {% else %}bg-gray-100{% endif %}">{{ item.status }}</span>
+          {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
           {% if item.impact_ai %}<span>I{{ item.impact_ai }}</span>{% endif %}
           <span class="text-gray-300">·</span>
           <span>{{ item.origen }}</span>
@@ -38,17 +33,11 @@
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
-      <select title="Prioridad" class="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600"
-              hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
-              hx-vals='{"field":"priority"}' name="value">
-        <option value="" {% if not item.priority %}selected{% endif %}>—</option>
-        {% for p in ['p0','p1','p2','p3'] %}
-        <option value="{{ p }}" {% if item.priority == p %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-      </select>
+      {% include "partials/_priority_select.html" %}
       {% set targets = non_terminal_targets(item.status) %}
       {% if targets %}
-      <select title="Cambiar estado" class="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600"
+      <select title="Cambiar estado" aria-label="Cambiar estado del ítem"
+              class="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600"
               hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
         <option value="">→ mover…</option>
         {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}

@@ -151,21 +151,33 @@ async def triage_sentry(title: str, context: str) -> dict[str, Any]:
 
 
 async def embed_text(content: str) -> list[float] | None:
-    """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación)."""
+    """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación).
+
+    SEC-07: la API key viaja en el header `x-goog-api-key`, no en la query string
+    `?key=`, para que no quede registrada en logs de acceso/proxies (las query strings
+    se loguean por defecto; los headers no).
+
+    PERF-03: timeout agresivo (8s). El embedding es opcional — si el proveedor tarda,
+    degradamos a None en vez de bloquear el request/worker.
+    """
     if not settings.gemini_api_key:
         return None
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"{_GEMINI_EMBED_URL}?key={settings.gemini_api_key}",
-            json={
-                "model": "models/gemini-embedding-001",
-                "content": {"parts": [{"text": content[:8000]}]},
-                "outputDimensionality": EMBED_DIM,
-            },
-        )
-        resp.raise_for_status()
-        values = resp.json().get("embedding", {}).get("values")
-        return values if values else None
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.post(
+                _GEMINI_EMBED_URL,
+                headers={"x-goog-api-key": settings.gemini_api_key},
+                json={
+                    "model": "models/gemini-embedding-001",
+                    "content": {"parts": [{"text": content[:8000]}]},
+                    "outputDimensionality": EMBED_DIM,
+                },
+            )
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        return None
+    values = resp.json().get("embedding", {}).get("values")
+    return values if values else None
 
 
 def _extract_json(text: str) -> dict[str, Any]:

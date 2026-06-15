@@ -1,0 +1,14 @@
+{#
+  Badge de estado reutilizable. Centraliza la paleta de colores por estado.
+  Parámetros:
+    status  — estado del ítem (obligatorio).
+    size    — 'sm' (default, text-xs) por ahora único tamaño; reservado para futuro.
+  Uso: {% include "partials/_status_badge.html" with context %}  (pasa `status`)
+       o  {% with status = it.status %}{% include "partials/_status_badge.html" %}{% endwith %}
+#}
+<span class="text-xs rounded px-1.5 py-0.5
+  {% if status == 'bloqueado' %}bg-red-100 text-red-700
+  {% elif status == 'en-curso' %}bg-blue-100 text-blue-700
+  {% elif status == 'hecho' %}bg-green-100 text-green-700
+  {% elif status == 'en-revision' %}bg-purple-100 text-purple-700
+  {% else %}bg-gray-100 text-gray-600{% endif %}">{{ status }}</span>

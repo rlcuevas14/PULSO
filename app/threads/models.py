@@ -13,17 +13,11 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.enums import THREAD_ARTIFACT_KINDS, THREAD_STAGES, check_in
 
-THREAD_STAGES: tuple[str, ...] = (
-    "idea",
-    "investigacion",
-    "historias",
-    "spec",
-    "en-desarrollo",
-    "review",
-    "hecho",
-    "descartado",
-)
+# Re-exportados desde app.enums (única fuente de verdad). Se mantienen aquí por los
+# imports existentes (`from app.threads.models import THREAD_STAGES`).
+__all__ = ["THREAD_STAGES", "THREAD_ARTIFACT_KINDS", "Thread", "ThreadArtifact", "next_stage", "prev_stage"]
 
 # Orden lineal del funnel (para "siguiente"/"anterior" stage).
 _FUNNEL = ("idea", "investigacion", "historias", "spec", "en-desarrollo", "review", "hecho")
@@ -48,20 +42,19 @@ def prev_stage(stage: str) -> str | None:
 class Thread(Base):
     __tablename__ = "threads"
     __table_args__ = (
-        CheckConstraint(
-            "stage IN ('idea','investigacion','historias','spec',"
-            "'en-desarrollo','review','hecho','descartado')",
-            name="threads_stage_check",
-        ),
+        CheckConstraint(check_in("stage", THREAD_STAGES), name="threads_stage_check"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    scope_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("scopes.id"), nullable=False)
+    scope_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scopes.id", ondelete="RESTRICT"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     summary_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    stage: Mapped[str] = mapped_column(String(20), nullable=False, default="idea")
+    # DB es TEXT (v0005); el ORM debe coincidir (DM-09).
+    stage: Mapped[str] = mapped_column(Text, nullable=False, default="idea")
     assignee_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -77,15 +70,20 @@ class ThreadArtifact(Base):
     __tablename__ = "thread_artifacts"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('investigacion','historias','spec','notas','decision')",
+            check_in("kind", THREAD_ARTIFACT_KINDS),
             name="thread_artifacts_kind_check",
         ),
+        # DM-05: stage carecía de CHECK; se alinea con threads.stage.
+        CheckConstraint(check_in("stage", THREAD_STAGES), name="thread_artifacts_stage_check"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    thread_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("threads.id"), nullable=False)
-    stage: Mapped[str] = mapped_column(String(20), nullable=False)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False
+    )
+    # DB es TEXT (v0005); el ORM debe coincidir (DM-09).
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False)
     created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

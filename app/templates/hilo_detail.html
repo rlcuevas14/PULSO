@@ -50,7 +50,7 @@
     <summary class="cursor-pointer text-sm">
       <span class="font-medium text-gray-700">{{ a.stage }}</span>
       <span class="text-xs bg-gray-100 rounded px-1.5">{{ a.kind }}</span>
-      <span class="text-xs text-gray-400">{{ a.created_at }}</span>
+      <span class="text-xs text-gray-400">{{ a.created_at | fecha }}</span>
     </summary>
     <div class="text-sm text-gray-700 whitespace-pre-wrap mt-2 pl-2">{{ a.content_md }}</div>
   </details>
