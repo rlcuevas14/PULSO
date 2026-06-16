@@ -16,8 +16,8 @@ from app.scopes.service import resolve_scope
 _STATUS_MAP = {
     "abierto": "backlog",
     "diferido": "backlog",
-    "en-curso": "en-curso",
-    "bloqueado": "bloqueado",
+    "en-curso": "in-progress",
+    "bloqueado": "blocked",
 }
 
 

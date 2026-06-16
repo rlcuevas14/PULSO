@@ -60,11 +60,11 @@ class ItemPatch(BaseModel):
 
 class CommentCreate(BaseModel):
     body_md: str
-    kind: CommentKindLit = "comentario"
+    kind: CommentKindLit = "comment"
 
 
 class CloseItem(BaseModel):
-    status: str  # "hecho" | "descartado"
+    status: str  # "done" | "discarded"
     reason: str | None = None
     commit_sha: str | None = None
 
@@ -153,7 +153,7 @@ async def create_item(
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
 ):
-    item = Item(**body.model_dump(), created_by=_actor(auth), origen="humano")
+    item = Item(**body.model_dump(), created_by=_actor(auth), origen="human")
     db.add(item)
     try:
         await db.commit()
@@ -484,7 +484,7 @@ async def enqueue_pending_enrich(
     rows = await db.execute(
         select(Item.id).where(
             Item.impact_ai.is_(None),
-            Item.status.not_in(["hecho", "descartado"]),
+            Item.status.not_in(["done", "discarded"]),
         ).limit(limit)
     )
     ids = [r[0] for r in rows]

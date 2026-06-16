@@ -67,7 +67,7 @@ async def test_advance_to_hecho_blocked_by_open_items(client: AsyncClient):
         scope = (await db.execute(
             __import__("sqlalchemy").select(Scope).where(Scope.name == scope_name)
         )).scalar_one()
-        it = Item(scope_id=scope.id, title="abierto", type="feature", status="en-curso",
+        it = Item(scope_id=scope.id, title="abierto", type="feature", status="in-progress",
                   thread_id=uuid.UUID(tid))
         db.add(it)
         await db.commit()

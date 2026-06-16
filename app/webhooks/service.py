@@ -165,10 +165,10 @@ async def resolve_issue(
     item_cerrado = False
     if issue.item_id is not None:
         item = await service.get_item(db, issue.item_id)
-        if item is not None and item.status not in ("hecho", "descartado"):
+        if item is not None and item.status not in ("done", "discarded"):
             try:
                 await service.close_item(
-                    db, item, "hecho", nota or "resuelto desde incidente",
+                    db, item, "done", nota or "resolved from incident",
                     actor, commit_sha=commit_sha,
                 )
                 item_cerrado = True
@@ -333,10 +333,10 @@ async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
         return False
     if item is None:
         return False
-    if item.status in ("hecho", "descartado"):
-        return False  # idempotente: ya cerrado
+    if item.status in ("done", "discarded"):
+        return False  # idempotent: already closed
     try:
-        await service.close_item(db, item, "hecho", f"cerrado por commit {sha[:12]}",
+        await service.close_item(db, item, "done", f"closed by commit {sha[:12]}",
                                  f"github:{sha[:12]}", commit_sha=sha)
     except service.TransitionError as e:
         logger.warning("_complete_by_ref: transición inválida al cerrar %s: %s", item_id, e)

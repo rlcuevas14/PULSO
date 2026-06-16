@@ -35,7 +35,7 @@ async def apply_transition(db: AsyncSession, item: Item, to_status: str, actor: 
     deben pasar por close_item (piden motivo); aquí se rechazan."""
     if to_status in TERMINAL:
         raise TransitionError(
-            f"'{to_status}' es terminal — usa cerrar/descartar (con motivo), no un cambio directo."
+            f"'{to_status}' is terminal — use close/discard (with a reason), not a direct transition."
         )
     if not valid_transition(item.status, to_status):
         raise TransitionError(f"Transición inválida: {item.status} → {to_status}")
@@ -67,7 +67,7 @@ async def close_item(
     """Cierra un ítem (hecho|descartado). Devuelve la lista de ítems que quedaron
     desbloqueados por este cierre (bloqueo derivado del grafo)."""
     if status not in TERMINAL:
-        raise TransitionError("status debe ser 'hecho' o 'descartado'")
+        raise TransitionError("status must be 'done' or 'discarded'")
     if not valid_transition(item.status, status):
         raise TransitionError(f"Transición inválida: {item.status} → {status}")
 
@@ -92,9 +92,8 @@ async def close_item(
 
 
 async def reopen_item(db: AsyncSession, item: Item, actor: str) -> Item:
-    """Reabre un ítem terminal: vuelve a backlog."""
     if item.status not in TERMINAL:
-        raise TransitionError("Solo se reabren ítems en estado 'hecho' o 'descartado'.")
+        raise TransitionError("Only done/discarded items can be reopened.")
     old = item.status
     item.status = "backlog"
     item.closed_at = None
@@ -174,12 +173,11 @@ async def _topo_order_ids(db: AsyncSession, items: list[Item]) -> dict[str, int]
 
 
 def _order_items(items: list[Item], order: str, topo_rank: dict[str, int] | None) -> list[Item]:
-    """Ordena en memoria por impacto / prioridad / topológico / reciente (fallback)."""
-    if order == "impacto":
+    if order == "impact":
         return sorted(items, key=lambda i: (-(i.impact_ai or 0), i.effort_ai or "ZZ"))
-    if order == "prioridad":
+    if order == "priority":
         return sorted(items, key=lambda i: (_PRIORITY_RANK.get(i.priority, 9), -(i.impact_ai or 0)))
-    if order == "topologico" and topo_rank is not None:
+    if order == "topological" and topo_rank is not None:
         return sorted(items, key=lambda i: topo_rank.get(str(i.id), 1_000_000))
     return sorted(items, key=lambda i: i.created_at, reverse=True)
 
@@ -187,12 +185,15 @@ def _order_items(items: list[Item], order: str, topo_rank: dict[str, int] | None
 def _apply_item_filters(
     q: "Select[Any]",
     *,
+    project_id: uuid.UUID | None,
     scope_id: uuid.UUID | None,
     statuses: list[str] | None,
     type: str | None,
     stale_risk: bool | None,
     quickwins: bool,
 ) -> "Select[Any]":
+    if project_id is not None:
+        q = q.where(Item.project_id == project_id)
     if scope_id is not None:
         q = q.where(Item.scope_id == scope_id)
     if statuses:
@@ -209,10 +210,11 @@ def _apply_item_filters(
 async def list_items(
     db: AsyncSession,
     *,
+    project_id: uuid.UUID | None = None,
     scope: Any = None,
     statuses: list[str] | None = None,
     type: str | None = None,
-    order: str = "impacto",
+    order: str = "impact",
     quickwins: bool = False,
     stale_risk: bool | None = None,
     limit: int | None = None,
@@ -224,7 +226,7 @@ async def list_items(
         scope: uuid.UUID o nombre del scope (str). None = todos los scopes.
         statuses: lista de estados a incluir. None = todos.
         type: tipo de ítem (uno solo). None = todos.
-        order: "impacto" | "prioridad" | "topologico" | "reciente".
+        order: "impact" | "priority" | "topological" | "recent".
         quickwins: si True, solo ítems de alto impacto (>=4) y bajo esfuerzo (XS/S).
         stale_risk: filtra por la bandera de riesgo de obsolescencia.
         limit / offset: paginación. limit=None trae todo el conjunto filtrado.
@@ -239,7 +241,7 @@ async def list_items(
 
     q = _apply_item_filters(
         select(Item),
-        scope_id=scope_id, statuses=statuses, type=type,
+        project_id=project_id, scope_id=scope_id, statuses=statuses, type=type,
         stale_risk=stale_risk, quickwins=quickwins,
     )
     if offset:

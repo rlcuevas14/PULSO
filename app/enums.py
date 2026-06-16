@@ -1,77 +1,42 @@
-"""Única fuente de verdad de los dominios cerrados (enums) del sistema.
+"""Single source of truth for closed-domain enums.
 
-Cada tupla refleja EXACTAMENTE los valores de los CHECK constraints vigentes en la
-base de datos (declarados en los modelos y en las migraciones v0001/v0003/v0005).
-Cambiar un valor aquí implica una migración de schema — no es una edición cosmética.
-
-Este módulo es base: NO importa nada de `app.*` para no introducir ciclos.
+Each tuple exactly mirrors the CHECK constraints in the database.
+Changing a value here requires a migration — not a cosmetic edit.
 """
 
 # --- items ---
 ITEM_TYPES: tuple[str, ...] = (
-    "bug",
-    "feature",
-    "tech-debt",
-    "infra",
-    "docs",
-    "ops",
-    "seguridad",
-    "producto",
-    "idea",
+    "bug", "feature", "tech-debt", "infra", "docs", "ops", "security", "product", "idea",
 )
 ITEM_STATUSES: tuple[str, ...] = (
-    "idea",
-    "backlog",
-    "spec",
-    "en-curso",
-    "bloqueado",
-    "en-revision",
-    "hecho",
-    "descartado",
+    "idea", "backlog", "spec", "in-progress", "blocked", "in-review", "done", "discarded",
 )
-# Estados terminales: el cierre pasa por POST /close (pide motivo), no por PATCH.
-TERMINAL: tuple[str, ...] = ("hecho", "descartado")
-# Estados abiertos: todos los no terminales (orden estable, derivado de ITEM_STATUSES).
+TERMINAL: tuple[str, ...] = ("done", "discarded")
 OPEN_STATUSES: tuple[str, ...] = tuple(s for s in ITEM_STATUSES if s not in TERMINAL)
 PRIORITIES: tuple[str, ...] = ("p0", "p1", "p2", "p3")
 EFFORTS: tuple[str, ...] = ("XS", "S", "M", "L", "XL")
-ORIGENES: tuple[str, ...] = ("digest", "humano", "ia-sesion", "sentry", "agente")
+ORIGENES: tuple[str, ...] = ("digest", "human", "ai-session", "sentry", "agent")
 
-# --- grafo ---
+# --- graph ---
 RELATIONS: tuple[str, ...] = ("blocks", "requires", "conflicts", "related", "part_of")
 
-# --- comentarios de ítem ---
-COMMENT_KINDS: tuple[str, ...] = ("comentario", "analisis-ia", "decision", "cambio-estado")
+# --- item comments ---
+COMMENT_KINDS: tuple[str, ...] = ("comment", "ai-analysis", "decision", "status-change")
 
-# --- hilos de desarrollo ---
+# --- threads ---
 THREAD_STAGES: tuple[str, ...] = (
-    "idea",
-    "investigacion",
-    "historias",
-    "spec",
-    "en-desarrollo",
-    "review",
-    "hecho",
-    "descartado",
+    "idea", "investigacion", "historias", "spec", "en-desarrollo", "review", "hecho", "descartado",
 )
 THREAD_ARTIFACT_KINDS: tuple[str, ...] = (
-    "investigacion",
-    "historias",
-    "spec",
-    "notas",
-    "decision",
+    "investigacion", "historias", "spec", "notas", "decision",
 )
 
-# --- órdenes de listado (UI / MCP); no es un CHECK, pero es dominio cerrado ---
-LIST_ORDERS: tuple[str, ...] = ("impacto", "prioridad", "topologico", "reciente")
+# --- list ordering (UI / MCP); not a CHECK but a closed domain ---
+LIST_ORDERS: tuple[str, ...] = ("impact", "priority", "topological", "recent")
 
-# --- jobs / agentes ---
+# --- jobs ---
 AGENT_RUN_KINDS: tuple[str, ...] = (
-    "enrich",
-    "dedup",
-    "triage-sentry",
-    "digest-email",
-    "fix-externo",
+    "enrich", "dedup", "triage-sentry", "digest-email", "fix-externo",
 )
 AGENT_RUN_STATUSES: tuple[str, ...] = ("pendiente", "corriendo", "ok", "error")
 
@@ -86,13 +51,8 @@ TOKEN_SCOPES: tuple[str, ...] = ("read", "write")
 
 
 def sql_list(values: tuple[str, ...] | list[str]) -> str:
-    """Lista de literales SQL separados por coma, p.ej. "'a','b'", para usar en `IN (...)`.
-
-    `repr` de un str da comillas simples, que es el delimitador de cadena válido en SQL.
-    """
     return ",".join(repr(v) for v in values)
 
 
 def check_in(col: str, values: tuple[str, ...] | list[str]) -> str:
-    """Expresión SQL `col IN ('a','b',...)` para un CheckConstraint."""
     return f"{col} IN ({sql_list(values)})"

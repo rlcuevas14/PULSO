@@ -82,7 +82,7 @@ async def test_check_acepta_cada_valor_valido_de_type(db: AsyncSession):
         await db.execute(text(
             "INSERT INTO items (id, scope_id, title, type, status, origen, "
             "stale_risk, agent_ready) "
-            "VALUES (:id, :sid, :title, :type, 'backlog', 'humano', false, false)"
+            "VALUES (:id, :sid, :title, :type, 'backlog', 'human', false, false)"
         ), {"id": str(uuid.uuid4()), "sid": scope_id, "title": f"t-{t}", "type": t})
     await db.flush()  # si algún valor fuera inválido, el flush lanzaría IntegrityError
     n = await db.scalar(
@@ -100,7 +100,7 @@ async def test_check_rechaza_type_fuera_de_la_tupla(db: AsyncSession):
         await db.execute(text(
             "INSERT INTO items (id, scope_id, title, type, status, origen, "
             "stale_risk, agent_ready) "
-            "VALUES (:id, :sid, 't', 'deuda', 'backlog', 'humano', false, false)"
+            "VALUES (:id, :sid, 't', 'deuda', 'backlog', 'human', false, false)"
         ), {"id": str(uuid.uuid4()), "sid": scope_id})
         await db.flush()
     await db.rollback()
@@ -113,7 +113,7 @@ async def test_check_rechaza_status_fuera_de_la_tupla(db: AsyncSession):
         await db.execute(text(
             "INSERT INTO items (id, scope_id, title, type, status, origen, "
             "stale_risk, agent_ready) "
-            "VALUES (:id, :sid, 't', 'feature', 'volando', 'humano', false, false)"
+            "VALUES (:id, :sid, 't', 'feature', 'volando', 'human', false, false)"
         ), {"id": str(uuid.uuid4()), "sid": scope_id})
         await db.flush()
     await db.rollback()

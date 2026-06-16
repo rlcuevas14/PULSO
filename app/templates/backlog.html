@@ -30,7 +30,7 @@
   <select name="status" aria-label="Filtrar por estado" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los estados</option>
-    {% for s in ['idea','backlog','spec','en-curso','bloqueado','en-revision','hecho','descartado'] %}
+    {% for s in ['idea','backlog','spec','in-progress','blocked','in-review','done','discarded'] %}
     <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
     {% endfor %}
   </select>
@@ -38,7 +38,7 @@
   <select name="item_type" aria-label="Filtrar por tipo" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los tipos</option>
-    {% for t in ['bug','feature','tech-debt','infra','docs','ops','seguridad','producto','idea'] %}
+    {% for t in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
     <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
   </select>
@@ -46,17 +46,17 @@
   <select name="origen" aria-label="Filtrar por origen" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
     <option value="">Todos los orígenes</option>
-    {% for o in ['digest','humano','ia-sesion','sentry','agente'] %}
+    {% for o in ['digest','human','ai-session','sentry','agent'] %}
     <option value="{{ o }}" {% if filters.origen == o %}selected{% endif %}>{{ o }}</option>
     {% endfor %}
   </select>
 
   <select name="order" aria-label="Ordenar por" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="prioridad" {% if filters.order == 'prioridad' %}selected{% endif %}>Prioridad</option>
-    <option value="impacto" {% if filters.order == 'impacto' %}selected{% endif %}>Mayor impacto</option>
-    <option value="topologico" {% if filters.order == 'topologico' %}selected{% endif %}>Topológico</option>
-    <option value="reciente" {% if filters.order == 'reciente' %}selected{% endif %}>Más reciente</option>
+    <option value="priority" {% if filters.order == 'priority' %}selected{% endif %}>Priority</option>
+    <option value="impact" {% if filters.order == 'impact' %}selected{% endif %}>Highest impact</option>
+    <option value="topological" {% if filters.order == 'topological' %}selected{% endif %}>Topological</option>
+    <option value="recent" {% if filters.order == 'recent' %}selected{% endif %}>Most recent</option>
   </select>
 
   <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
@@ -86,7 +86,7 @@
           {% for s in scopes %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
         </select>
         <select name="type" required aria-label="Tipo del ítem" class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm">
-          {% for t in ['feature','bug','tech-debt','infra','docs','ops','seguridad','producto'] %}
+          {% for t in ['feature','bug','tech-debt','infra','docs','ops','security','product','idea'] %}
           <option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
       </div>

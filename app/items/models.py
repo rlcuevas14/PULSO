@@ -128,7 +128,7 @@ class ItemComment(Base):
     )
     author: Mapped[str] = mapped_column(String(255), nullable=False)
     body_md: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="comentario")
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="comment")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
     item: Mapped["Item"] = relationship("Item", back_populates="comments")

@@ -44,7 +44,7 @@ async def test_create_item(client: AsyncClient):
     assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "backlog"
-    assert data["origen"] == "humano"
+    assert data["origen"] == "human"
 
 
 @pytest.mark.asyncio
@@ -71,7 +71,7 @@ async def test_patch_item_generates_event(client: AsyncClient):
     item_id = r.json()["id"]
     resp = await client.patch(
         f"/api/v1/items/{item_id}",
-        json={"status": "en-curso"},
+        json={"status": "in-progress"},
         cookies=cookies,
     )
     assert resp.status_code == 200
@@ -112,9 +112,9 @@ async def test_close_item(client: AsyncClient):
     item_id = r.json()["id"]
     resp = await client.post(
         f"/api/v1/items/{item_id}/close",
-        json={"status": "hecho", "reason": "Completado en PR #99"},
+        json={"status": "done", "reason": "Completado en PR #99"},
         cookies=cookies,
     )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "hecho"
+    assert resp.json()["status"] == "done"
     assert resp.json()["closed_at"] is not None

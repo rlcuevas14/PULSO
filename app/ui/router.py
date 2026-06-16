@@ -19,7 +19,7 @@ from app.templates_config import templates
 
 router = APIRouter(tags=["ui"])
 
-_OPEN = ["idea", "backlog", "spec", "en-curso", "bloqueado", "en-revision"]
+_OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
 _PRIORITY_RANK = {"p0": 0, "p1": 1, "p2": 2, "p3": 3, None: 9}
 
 
@@ -50,7 +50,7 @@ async def dashboard(
         .where(
             Item.impact_ai >= 4,
             Item.effort_ai.in_(["XS", "S"]),
-            Item.status.not_in(["hecho", "descartado"]),
+            Item.status.not_in(["done", "discarded"]),
         )
         .order_by(Item.impact_ai.desc())
         .limit(5)
@@ -112,7 +112,7 @@ async def backlog(
     if graph_blocked:
         items = [i for i in items if str(i.id) in blocked_ids]
 
-    items = _order_items(items, order, await _topo_order_ids(db, items) if order == "topologico" else None)
+    items = _order_items(items, order, await _topo_order_ids(db, items) if order == "topological" else None)
 
     scopes = list((await db.execute(
         select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
@@ -138,11 +138,11 @@ async def backlog(
 
 
 def _order_items(items: list[Item], order: str, topo_rank: dict[str, int] | None) -> list[Item]:
-    if order == "impacto":
+    if order in ("impact", "impacto"):
         return sorted(items, key=lambda i: (-(i.impact_ai or 0), i.effort_ai or "ZZ"))
-    if order == "prioridad":
+    if order in ("priority", "prioridad"):
         return sorted(items, key=lambda i: (_PRIORITY_RANK.get(i.priority, 9), -(i.impact_ai or 0)))
-    if order == "topologico" and topo_rank is not None:
+    if order in ("topological", "topologico") and topo_rank is not None:
         return sorted(items, key=lambda i: topo_rank.get(str(i.id), 1_000_000))
     return sorted(items, key=lambda i: i.created_at, reverse=True)
 
@@ -390,7 +390,7 @@ async def ui_create_item(
 ):
     item = Item(
         scope_id=uuid.UUID(scope_id), title=title, type=type, status=status,
-        summary_md=summary_md or None, origen="humano", created_by=user.email,
+        summary_md=summary_md or None, origen="human", created_by=user.email,
     )
     db.add(item)
     await db.commit()

@@ -125,9 +125,9 @@ async def test_pulso_completar_ambiguous_aborts(client: AsyncClient):
         db.add(scope)
         await db.flush()
         db.add(Item(scope_id=scope.id, title="login roto en movil",
-                    type="bug", status="backlog", origen="humano"))
+                    type="bug", status="backlog", origen="human"))
         db.add(Item(scope_id=scope.id, title="login lento en desktop",
-                    type="bug", status="backlog", origen="humano"))
+                    type="bug", status="backlog", origen="human"))
         await db.commit()
         break
 

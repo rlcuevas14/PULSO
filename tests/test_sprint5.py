@@ -171,7 +171,7 @@ async def test_github_completes_item(client: AsyncClient, monkeypatch):
         scope = Scope(name=f"gh-{uuid.uuid4().hex[:8]}")
         db.add(scope)
         await db.flush()
-        item = Item(scope_id=scope.id, title="cerrar por commit", type="bug", status="en-curso")
+        item = Item(scope_id=scope.id, title="cerrar por commit", type="bug", status="in-progress")
         db.add(item)
         await db.commit()
         await db.refresh(item)

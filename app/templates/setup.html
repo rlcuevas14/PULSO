@@ -42,11 +42,20 @@
           placeholder="at least 8 characters"
         >
       </div>
+      <div class="border-t border-gray-200 pt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="project_name">First project</label>
+        <p class="text-xs text-gray-400 mb-1">You can add more projects later at /projects.</p>
+        <input
+          id="project_name" name="project_name" type="text" required
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="e.g. My SaaS"
+        >
+      </div>
       <button
         type="submit"
         class="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 transition"
       >
-        Create account
+        Create account &amp; first project
       </button>
     </form>
   </div>

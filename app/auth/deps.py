@@ -18,10 +18,10 @@ async def current_user(
 ) -> User:
     user_id = request.session.get("user_id")
     if not user_id:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        raise HTTPException(status_code=401, detail="Not authenticated")
     user = await get_user_by_id(db, uuid.UUID(user_id))
     if user is None:
-        raise HTTPException(status_code=401, detail="Sesión inválida")
+        raise HTTPException(status_code=401, detail="Invalid session")
     return user
 
 
@@ -29,7 +29,7 @@ async def current_user_ui(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Para rutas UI — redirige al login en vez de 401."""
+    """UI routes — redirect to login instead of 401."""
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
@@ -41,7 +41,7 @@ async def current_user_ui(
 
 async def require_admin(user: User = Depends(current_user)) -> User:
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+        raise HTTPException(status_code=403, detail="Admin only")
     return user
 
 
@@ -50,10 +50,10 @@ async def api_token_auth(
     db: AsyncSession = Depends(get_db),
 ) -> ApiToken:
     if credentials is None:
-        raise HTTPException(status_code=401, detail="Token requerido")
+        raise HTTPException(status_code=401, detail="Bearer token required")
     token = await verify_api_token(db, credentials.credentials)
     if token is None:
-        raise HTTPException(status_code=401, detail="Token inválido o revocado")
+        raise HTTPException(status_code=401, detail="Invalid or revoked token")
     return token
 
 
@@ -62,48 +62,33 @@ async def api_or_session_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     db: AsyncSession = Depends(get_db),
 ) -> User | ApiToken:
-    """Acepta cookie de sesión O Bearer token."""
+    """Accept session cookie OR Bearer token."""
     if credentials:
         token = await verify_api_token(db, credentials.credentials)
         if token is None:
-            raise HTTPException(status_code=401, detail="Token inválido o revocado")
+            raise HTTPException(status_code=401, detail="Invalid or revoked token")
         return token
     user_id = request.session.get("user_id")
     if user_id:
         user = await get_user_by_id(db, uuid.UUID(user_id))
         if user:
             return user
-    raise HTTPException(status_code=401, detail="No autenticado")
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 async def require_write(
     auth: User | ApiToken = Depends(api_or_session_user),
 ) -> User | ApiToken:
-    """SEC-01: autoriza una operación de ESCRITURA sobre cookie de sesión o Bearer token.
-
-    - ApiToken: debe tener scope 'write'. Un token de solo lectura recibe 403.
-    - User de sesión: pasa (la autorización por rol, si aplica, la hace require_admin*).
-
-    Úsala como dependency en todos los endpoints que mutan estado. Devuelve el actor
-    (User o ApiToken) para que el handler lo use (p. ej. atribución/auditoría).
-    """
     if isinstance(auth, ApiToken) and auth.scopes != "write":
-        raise HTTPException(status_code=403, detail="El token es de solo lectura")
+        raise HTTPException(status_code=403, detail="Token is read-only")
     return auth
 
 
 async def require_admin_strict(
     auth: User | ApiToken = Depends(api_or_session_user),
 ) -> User:
-    """RBAC-1: SOLO un User de sesión con rol 'admin'. Un ApiToken NUNCA es admin.
-
-    Corrige el bug del patrón anterior (`isinstance(auth, User) and role != 'admin'`),
-    que dejaba pasar a los ApiToken porque la condición de rechazo solo evaluaba Users.
-    Aquí la regla es positiva e invertida: si no es un User admin, se rechaza —
-    cualquier ApiToken cae en el 403 sin importar su scope.
-    """
     if not isinstance(auth, User):
-        raise HTTPException(status_code=403, detail="Solo administradores (sesión de usuario)")
+        raise HTTPException(status_code=403, detail="Admin session required (tokens not allowed here)")
     if auth.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+        raise HTTPException(status_code=403, detail="Admin only")
     return auth

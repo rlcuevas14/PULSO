@@ -36,8 +36,8 @@ async def _make(client, cookies, scope_id, **kw):
 async def test_invalid_transition_rejected(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     item_id = await _make(client, cookies, scope_id)  # backlog
-    # backlog -> en-revision NO es válido.
-    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "en-revision"}, cookies=cookies)
+    # backlog -> in-review NO es válido.
+    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "in-review"}, cookies=cookies)
     assert r.status_code == 422
 
 
@@ -45,8 +45,8 @@ async def test_invalid_transition_rejected(client: AsyncClient):
 async def test_terminal_via_patch_rejected(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     item_id = await _make(client, cookies, scope_id)
-    # No se puede pasar a 'hecho' por PATCH (debe usar /close).
-    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "hecho"}, cookies=cookies)
+    # No se puede pasar a 'done' por PATCH (debe usar /close).
+    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "done"}, cookies=cookies)
     assert r.status_code == 422
 
 
@@ -54,9 +54,9 @@ async def test_terminal_via_patch_rejected(client: AsyncClient):
 async def test_valid_transition_ok(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     item_id = await _make(client, cookies, scope_id)
-    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "en-curso"}, cookies=cookies)
+    r = await client.patch(f"/api/v1/items/{item_id}", json={"status": "in-progress"}, cookies=cookies)
     assert r.status_code == 200
-    assert r.json()["status"] == "en-curso"
+    assert r.json()["status"] == "in-progress"
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,7 @@ async def test_close_reports_unblocked(client: AsyncClient):
         break
     # cerrar blocker -> reporta blocked como desbloqueado
     r = await client.post(
-        f"/api/v1/items/{blocker}/close", json={"status": "hecho", "reason": "done"}, cookies=cookies,
+        f"/api/v1/items/{blocker}/close", json={"status": "done", "reason": "done"}, cookies=cookies,
     )
     assert r.status_code == 200
     unblocked_ids = [u["id"] for u in r.json()["unblocked"]]
@@ -97,7 +97,7 @@ async def test_close_reports_unblocked(client: AsyncClient):
 async def test_reopen(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     item_id = await _make(client, cookies, scope_id)
-    await client.post(f"/api/v1/items/{item_id}/close", json={"status": "hecho"}, cookies=cookies)
+    await client.post(f"/api/v1/items/{item_id}/close", json={"status": "done"}, cookies=cookies)
     r = await client.post(f"/api/v1/items/{item_id}/reopen", cookies=cookies)
     assert r.status_code == 200
     assert r.json()["status"] == "backlog"
@@ -108,7 +108,7 @@ async def test_ui_transition_endpoint(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     item_id = await _make(client, cookies, scope_id)
     r = await client.post(
-        f"/ui/items/{item_id}/transition", data={"status": "en-curso"}, cookies=cookies,
+        f"/ui/items/{item_id}/transition", data={"status": "in-progress"}, cookies=cookies,
     )
     assert r.status_code == 204
     assert r.headers.get("HX-Refresh") == "true"

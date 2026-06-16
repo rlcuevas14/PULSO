@@ -11,40 +11,40 @@ def test_all_statuses_have_transition_entry():
     # Todos los estados son origen válido en la matriz.
     for s in STATUSES:
         assert s in {
-            "idea", "backlog", "spec", "en-curso",
-            "bloqueado", "en-revision", "hecho", "descartado",
+            "idea", "backlog", "spec", "in-progress",
+            "blocked", "in-review", "done", "discarded",
         }
 
 
 def test_valid_forward_transitions():
-    assert valid_transition("backlog", "en-curso")
-    assert valid_transition("en-curso", "en-revision")
-    assert valid_transition("en-revision", "hecho")
+    assert valid_transition("backlog", "in-progress")
+    assert valid_transition("in-progress", "in-review")
+    assert valid_transition("in-review", "done")
     assert valid_transition("idea", "backlog")
 
 
 def test_invalid_transitions_rejected():
-    assert not valid_transition("idea", "hecho")
-    assert not valid_transition("hecho", "en-curso")
-    assert not valid_transition("backlog", "en-revision")
+    assert not valid_transition("idea", "done")
+    assert not valid_transition("done", "in-progress")
+    assert not valid_transition("backlog", "in-review")
 
 
 def test_same_status_is_idempotent():
-    assert valid_transition("en-curso", "en-curso")
+    assert valid_transition("in-progress", "in-progress")
 
 
 def test_reopen_from_terminal_only_to_backlog():
-    assert valid_transition("hecho", "backlog")
-    assert valid_transition("descartado", "backlog")
-    assert not valid_transition("hecho", "en-curso")
-    assert not valid_transition("descartado", "hecho")
+    assert valid_transition("done", "backlog")
+    assert valid_transition("discarded", "backlog")
+    assert not valid_transition("done", "in-progress")
+    assert not valid_transition("discarded", "done")
 
 
 def test_non_terminal_targets_excludes_hecho_descartado():
-    targets = non_terminal_targets("en-curso")
-    assert "hecho" not in targets
-    assert "descartado" not in targets
-    assert "en-revision" in targets
+    targets = non_terminal_targets("in-progress")
+    assert "done" not in targets
+    assert "discarded" not in targets
+    assert "in-review" in targets
 
 
 def test_allowed_targets_stable_order():
@@ -54,4 +54,4 @@ def test_allowed_targets_stable_order():
 
 
 def test_terminal_set():
-    assert TERMINAL == frozenset({"hecho", "descartado"})
+    assert TERMINAL == frozenset({"done", "discarded"})

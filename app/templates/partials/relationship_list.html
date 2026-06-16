@@ -10,7 +10,7 @@
   {% set other_id = arc.target_id if outgoing else arc.source_id %}
   {% set other_status = arc.target_status if outgoing else arc.source_status %}
   {% set label = rel_labels[arc.relation] if outgoing else rel_in_labels[arc.relation] %}
-  <div class="flex items-center gap-2 {% if other_status in ('hecho','descartado') %}opacity-50 line-through{% endif %}">
+  <div class="flex items-center gap-2 {% if other_status in ('done','discarded') %}opacity-50 line-through{% endif %}">
     <span class="text-gray-400 w-32 shrink-0">
       {% if arc.relation == 'blocks' %}⛔{% elif arc.relation == 'requires' %}🔗{% elif arc.relation == 'conflicts' %}⚡{% elif arc.relation == 'part_of' %}⤴{% else %}◦{% endif %}
       {{ label }}</span>

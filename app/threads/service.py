@@ -1,4 +1,4 @@
-"""Lógica de Hilos: CRUD, avance de stage con artefactos, y elaboración IA."""
+"""Thread service — CRUD, stage advancement, AI elaboration."""
 
 import uuid
 
@@ -9,7 +9,6 @@ from app.items.models import Item
 from app.scopes.models import Scope
 from app.threads.models import THREAD_STAGES, Thread, ThreadArtifact, next_stage, prev_stage
 
-# Mapeo stage → kind de artefacto que produce.
 _STAGE_KIND = {
     "investigacion": "investigacion",
     "historias": "historias",
@@ -20,20 +19,32 @@ _STAGE_KIND = {
 
 
 class ThreadError(ValueError):
-    """Error de negocio de un hilo."""
+    pass
 
 
 async def get_thread(db: AsyncSession, thread_id: uuid.UUID) -> Thread | None:
     return (await db.execute(select(Thread).where(Thread.id == thread_id))).scalar_one_or_none()
 
 
-async def create_thread(db: AsyncSession, scope_name: str, title: str, summary: str | None) -> Thread:
-    scope = (await db.execute(select(Scope).where(Scope.name == scope_name))).scalar_one_or_none()
+async def create_thread(
+    db: AsyncSession,
+    scope_name: str,
+    title: str,
+    summary: str | None,
+    project_id: uuid.UUID | None = None,
+) -> Thread:
+    q = select(Scope).where(func.lower(Scope.name) == scope_name.lower())
+    if project_id is not None:
+        q = q.where(Scope.project_id == project_id)
+    scope = (await db.execute(q)).scalar_one_or_none()
     if scope is None:
-        scope = Scope(name=scope_name, source_repo="hilo")
+        scope = Scope(name=scope_name, source_repo="thread", project_id=project_id)
         db.add(scope)
         await db.flush()
-    thread = Thread(scope_id=scope.id, title=title, summary_md=summary, stage="idea")
+    thread = Thread(
+        scope_id=scope.id, title=title, summary_md=summary, stage="idea",
+        project_id=project_id,
+    )
     db.add(thread)
     await db.flush()
     return thread
@@ -55,7 +66,7 @@ async def add_artifact(
 async def _open_linked_items(db: AsyncSession, thread: Thread) -> int:
     n = await db.scalar(
         select(func.count()).select_from(Item).where(
-            Item.thread_id == thread.id, Item.status.not_in(["hecho", "descartado"])
+            Item.thread_id == thread.id, Item.status.not_in(["done", "discarded"])
         )
     )
     return int(n or 0)
@@ -65,12 +76,11 @@ async def advance_stage(
     db: AsyncSession, thread: Thread, artifact_content: str | None = None,
     user_id: uuid.UUID | None = None,
 ) -> Thread:
-    """Avanza al siguiente stage. Si se pasa artifact_content, lo guarda para el stage actual."""
     nxt = next_stage(thread.stage)
     if nxt is None:
-        raise ThreadError(f"El stage '{thread.stage}' no tiene siguiente.")
+        raise ThreadError(f"Stage '{thread.stage}' has no next stage.")
     if nxt == "hecho" and await _open_linked_items(db, thread) > 0:
-        raise ThreadError("Hay ítems linkeados aún abiertos — ciérralos antes de marcar el hilo hecho.")
+        raise ThreadError("There are still open linked items — close them before marking the thread done.")
     if artifact_content:
         kind = _STAGE_KIND.get(thread.stage, "notas")
         await add_artifact(db, thread, kind, artifact_content, user_id)
@@ -80,9 +90,8 @@ async def advance_stage(
 
 
 async def set_stage(db: AsyncSession, thread: Thread, stage: str) -> Thread:
-    """Mueve a un stage arbitrario (retroceder o descartar)."""
     if stage not in THREAD_STAGES:
-        raise ThreadError(f"Stage inválido: {stage}")
+        raise ThreadError(f"Invalid stage: {stage}")
     thread.stage = stage
     await db.flush()
     return thread
@@ -93,25 +102,31 @@ def back_stage_value(stage: str) -> str | None:
 
 
 async def list_threads(
-    db: AsyncSession, stage: str | None = None, scope_name: str | None = None
+    db: AsyncSession,
+    stage: str | None = None,
+    scope_name: str | None = None,
+    project_id: uuid.UUID | None = None,
 ) -> list[Thread]:
     q = select(Thread)
+    if project_id is not None:
+        q = q.where(Thread.project_id == project_id)
     if stage:
         q = q.where(Thread.stage == stage)
     if scope_name:
-        scope = (await db.execute(select(Scope).where(Scope.name == scope_name))).scalar_one_or_none()
+        scope = (await db.execute(
+            select(Scope).where(func.lower(Scope.name) == scope_name.lower())
+        )).scalar_one_or_none()
         if scope:
             q = q.where(Thread.scope_id == scope.id)
     return list((await db.execute(q.order_by(Thread.updated_at.desc()))).scalars().all())
 
 
 async def elaborate_next_stage(db: AsyncSession, thread: Thread) -> dict:
-    """Genera con IA un borrador del SIGUIENTE stage a partir de los artefactos previos."""
     from app.ai import llm
 
     nxt = next_stage(thread.stage)
     if nxt is None or nxt == "hecho":
-        raise ThreadError("No hay un stage siguiente para elaborar.")
+        raise ThreadError("No next stage to elaborate.")
     arts = (await db.execute(
         select(ThreadArtifact).where(ThreadArtifact.thread_id == thread.id)
         .order_by(ThreadArtifact.created_at)
@@ -120,5 +135,5 @@ async def elaborate_next_stage(db: AsyncSession, thread: Thread) -> dict:
     try:
         result = await llm.generate_stage(nxt, thread.title, thread.summary_md, arts_text)
     except llm.LLMUnavailable as e:
-        raise ThreadError("IA no disponible (sin ANTHROPIC_API_KEY).") from e
+        raise ThreadError("AI unavailable (no ANTHROPIC_API_KEY).") from e
     return {"stage": nxt, "content": result["content"], "model": result["model"]}
