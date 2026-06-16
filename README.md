@@ -1,113 +1,164 @@
 # Pulso
 
-An agent-native backlog manager for solo-preneurs. Manage all your projects from one database, with Claude Code connected as an MCP client that reads and writes your backlog automatically.
+**Agent-native backlog manager for solo-preneurs.** Manage multiple projects from one self-hosted instance. Claude Code connects via MCP and keeps your backlog up to date as it works — no manual updates.
 
-## What it is
+---
 
-- **Backlog + dependency graph + Sentry incidents + development threads** — all accessible via MCP so your Claude Code agent keeps the backlog up to date as it works.
-- **Multi-project** — manage N projects in one database. Each MCP token is project-scoped; the agent cannot write to the wrong project.
-- **Self-hosted** — runs on any machine with Docker + Postgres.
+## How it works
+
+You run Pulso on your own server (or locally). Claude Code connects to it as an MCP server. As the agent codes, it reads context, creates items, advances statuses, and closes completed work — automatically.
+
+Each project gets its own MCP token. The agent cannot write to the wrong project.
+
+---
 
 ## Quick start
 
+**Prerequisites:** Docker, Docker Compose, a Postgres instance (included in the compose file).
+
 ```bash
-git clone https://github.com/your-username/pulso
-cd pulso
+git clone https://github.com/rlcuevas14/PULSO
+cd PULSO
 cp .env.example .env
-# Edit .env: set SECRET_KEY and DB_PASSWORD
+```
+
+Edit `.env` — at minimum set `SECRET_KEY` and `DB_PASSWORD`:
+
+```bash
+SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+DB_PASSWORD=choose-a-password
+```
+
+```bash
 docker compose up -d
 ```
 
-Open http://localhost:8000 → you'll be redirected to `/setup` to create your account and first project.
+Open **http://localhost:8000** → redirects to `/setup` to create your account, first project, and write token in one step.
 
 ### Connect Claude Code
 
-After setup, go to **Projects → Settings** and generate a write token. Then run:
+After setup, go to **Projects → Settings** → copy the `claude mcp add` command shown there. It looks like:
 
 ```bash
 claude mcp add --transport http my-project http://localhost:8000/mcp \
   --header "Authorization: Bearer <TOKEN>"
 ```
 
-Restart Claude Code. The MCP tools will appear prefixed with your project slug.
+Restart Claude Code. Call `pulso_context` at the start of any session to get your current priorities, blockers, and open incidents.
+
+---
 
 ## MCP tools (17)
 
-| Tool | Description |
-|------|-------------|
-| `pulso_context` | Session start summary: quick wins, blockers, unlinked Sentry bugs, active threads |
+| Tool | What it does |
+|------|--------------|
+| `pulso_context` | Session briefing: quick wins, blockers, unlinked Sentry errors, active threads |
 | `pulso_search` | Full-text search across backlog items |
-| `pulso_list` | Filtered item list (by status, type, area, order) |
-| `pulso_areas` | List areas (backlog groupings) with counts |
-| `pulso_create` | Create a backlog item (auto-creates area if needed) |
-| `pulso_advance` | Transition item status (validated lifecycle) |
-| `pulso_complete` | Mark item done — reports newly unblocked items |
-| `pulso_link` | Create a graph edge between items (blocks/requires/conflicts/related/part\_of) |
-| `pulso_move_area` | Move item to a different area |
-| `pulso_thread_create` | Create a Thread (heavy feature funnel) |
-| `pulso_thread_advance` | Advance a Thread to the next stage |
-| `pulso_thread_list` | List Threads (filter by stage/area) |
+| `pulso_list` | Filtered item list (status, type, area, order) |
+| `pulso_areas` | List areas (groupings) with item counts |
+| `pulso_create` | Create a backlog item; auto-creates the area if needed |
+| `pulso_advance` | Transition an item's status (lifecycle-validated) |
+| `pulso_complete` | Mark an item done — reports newly unblocked items |
+| `pulso_link` | Add a graph edge between items (`blocks` / `requires` / `conflicts` / `related` / `part_of`) |
+| `pulso_move_area` | Move an item to a different area |
+| `pulso_thread_create` | Create a Thread (funnel for heavy features) |
+| `pulso_thread_advance` | Advance a Thread to its next stage |
+| `pulso_thread_list` | List Threads, filter by stage or area |
 | `pulso_thread` | Thread detail with artifacts and linked items |
-| `pulso_thread_link` | Link an existing item to a Thread |
+| `pulso_thread_link` | Link an existing backlog item to a Thread |
 | `pulso_incidents` | List Sentry errors in the incident container |
-| `pulso_incident` | Incident detail with stack trace from Sentry |
-| `pulso_incident_resolve` | Mark incident resolved in Pulso (and Sentry) |
+| `pulso_incident` | Incident detail with stack trace fetched from Sentry |
+| `pulso_incident_resolve` | Resolve an incident in Pulso (and optionally in Sentry) |
 
-Every token is project-scoped: tools silently fail-safe if the token has no project assigned.
+---
 
 ## Item lifecycle
 
 ```
 idea → backlog → spec → in-progress → in-review → done
-                      ↘ blocked ↗
-                      ↘ discarded (from any state)
+                              ↕
+                           blocked
+                              ↓
+                          discarded  (available from any state)
 ```
 
-Transitions are validated. Terminal states (`done`/`discarded`) require a reason (via `pulso_complete` or the UI close modal).
+Transitions are validated — the agent can't make illegal moves. Terminal states (`done` / `discarded`) require a reason. Blocking is **derived**: an item is blocked when it has an open `blocks` arc incoming; no manual flag needed.
+
+---
 
 ## Features
 
-- **Dependency graph** — items link with typed edges (`blocks`, `requires`, etc.). Blocked status is derived (not stored): an item is blocked if it has an open blocker in the graph.
-- **Priority matrix** — impact × effort (AI-estimated). Quick wins surfaced automatically.
-- **Threads** — funnel for heavy features: idea → investigacion → historias → spec → en-desarrollo → review → hecho.
-- **Sentry integration** — errors land in an incident container; triage AI pre-classifies noise; you promote real ones to the backlog manually.
-- **GitHub webhook** — `pulso:UUID` in commit messages auto-closes the referenced item.
-- **AI enrichment** — impact/effort estimation via Claude Haiku (optional, degrades without `ANTHROPIC_API_KEY`).
-- **Semantic search** — embedding-based neighbor lookup via Gemini (optional, requires `GEMINI_API_KEY` + pgvector).
+- **Dependency graph** — typed edges between items. Blocked status computed in real time, never stale.
+- **Priority matrix** — impact × effort, AI-estimated via Claude Haiku. Quick wins surface automatically on the dashboard.
+- **Multi-project** — N projects, one database. Token-level isolation: each MCP token is bound to exactly one project.
+- **Threads** — a lightweight funnel for features too big to go straight to the backlog (idea → investigation → stories → spec → in-development → review → done).
+- **Sentry integration** — errors land in a dedicated incident container. AI triage pre-classifies noise. You (or the agent) promote real issues to the backlog manually.
+- **GitHub webhook** — include `pulso:ITEM-UUID` in any commit message to auto-close the referenced item.
+- **AI enrichment** — impact/effort estimation via Claude Haiku. Optional; degrades gracefully without `ANTHROPIC_API_KEY`.
+- **Semantic search** — embedding-based neighbor lookup via Gemini + pgvector. Optional; requires both `GEMINI_API_KEY` and a Postgres instance with pgvector.
+- **No Node.js** — Tailwind and HTMX load from CDN. Server renders HTML; HTMX handles partial updates.
+
+---
 
 ## Configuration
 
-See `.env.example` for all options. Required:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SECRET_KEY` | Yes | Session signing key. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `DB_PASSWORD` | Yes | Postgres password |
+| `ANTHROPIC_API_KEY` | No | Enables AI impact/effort estimation and Sentry triage |
+| `GEMINI_API_KEY` | No | Enables semantic neighbor search (requires pgvector) |
+| `SENTRY_CLIENT_SECRET` | No | HMAC secret for Sentry webhook signature verification |
+| `SENTRY_API_TOKEN` | No | Fetches stack traces and resolves issues via Sentry API |
+| `SENTRY_ORG` | No | Your Sentry organization slug |
+| `GITHUB_WEBHOOK_SECRET` | No | HMAC secret for GitHub webhook (auto-close on commit) |
 
-| Variable | Description |
-|----------|-------------|
-| `SECRET_KEY` | Session secret (generate with `python -c "import secrets; print(secrets.token_hex(32))"`) |
-| `DB_PASSWORD` | Postgres password |
+See `.env.example` for all defaults.
 
-Optional: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `SENTRY_CLIENT_SECRET`, `SENTRY_API_TOKEN`, `SENTRY_ORG`, `GITHUB_WEBHOOK_SECRET`.
+---
 
-## Running locally (development)
+## Development
 
 ```bash
 pip install -r requirements.txt
-# Postgres on localhost:5432, database "pulso_test"
+
+# Run tests (Postgres required — database "pulso_test")
 TEST_DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/pulso_test" \
   python -m pytest tests/ -q
+
+# Lint + type check
+ruff check app/ tests/
+python -m mypy app/
 ```
 
-No Node.js required — Tailwind and HTMX load from CDN.
+**Dirty DB gotcha:** the test database persists between runs. If you change the schema and see unexpected failures, reset it:
+```sql
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+```
+Then re-run pytest — it recreates everything from scratch.
+
+---
 
 ## Deployment
 
-Tag a release to trigger the Docker build + deploy workflow:
+Tag a release; the GitHub Actions workflow builds a multi-platform image (amd64 + arm64), pushes to GHCR, SSHs to your server, and runs `alembic upgrade head`:
 
 ```bash
-git tag -a v2026.MM.DD-N -m "release notes"
-git push origin v2026.MM.DD-N
+git tag -a v2026.MM.DD-1 -m "what changed"
+git push origin v2026.MM.DD-1
 ```
 
-The workflow builds a multi-platform image, pushes to GHCR, SSHs to your server, and runs `alembic upgrade head`.
+You'll need to configure the workflow secrets (`SSH_HOST`, `SSH_USER`, `SSH_KEY`, `GHCR_TOKEN`) in your repo settings. See `.github/workflows/deploy.yml` for the full spec.
+
+---
 
 ## Stack
 
-FastAPI · SQLAlchemy async (asyncpg) · Alembic · Jinja2 · HTMX 2 · Tailwind (CDN) · Postgres + pgvector · Custom MCP JSON-RPC 2.0
+FastAPI · SQLAlchemy async (asyncpg) · Alembic · Jinja2 · HTMX 2 · Tailwind CSS (CDN) · Postgres + pgvector · MCP JSON-RPC 2.0 (hand-rolled, not the SDK)
+
+---
+
+## License
+
+MIT
