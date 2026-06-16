@@ -1,153 +1,146 @@
 # CLAUDE.md — Pulso
 
-> Gestor de backlog **agent-native** para Eduk3. El backlog vive como un grafo de ítems
-> interconectados; una sesión de Claude Code lo lee y lo escribe vía **MCP**. Distinto del
-> repo `efrain` (el SaaS escolar): Pulso es la capa que gestiona el backlog *de* efrain.
+> Agent-native backlog manager for solo-preneurs. Manage N projects from one database;
+> Claude Code reads and writes your backlog via MCP, keeping it current as it works.
 
-## Qué es
+## What it is
 
-- **Producto**: backlog + grafo de dependencias + incidentes (Sentry) + hilos de desarrollo, todo accesible por MCP para que el agente que hace el trabajo mantenga el backlog solo.
-- **Producción**: https://pulso.eduk3.cl · admin `rcuevas@tidanalytics.com` / `pulso2026`.
-- **Repo**: `rlcuevas14/eduk3-pulso` (privado). **VM**: misma que efrain (161.153.193.32), stack en `/opt/pulso`.
-- **MCP endpoint**: `https://pulso.eduk3.cl/mcp` (Streamable HTTP, modo JSON).
+- **Backlog + dependency graph + Sentry incidents + development threads** — all accessible via 17 MCP tools.
+- **Multi-project** — one database, N projects. Each MCP token is project-scoped; the agent cannot write to the wrong project.
+- **Self-hosted OSS** — Docker + Postgres, no external dependencies except optional AI keys.
+- **Repo**: `C:\Proyectos\pulso` (local spin-off of `rlcuevas14/eduk3-pulso`).
 
 ---
 
-## Estado actual
+## Current state
 
-**SPEC 100% implementada y EN PROD** (6 sprints). Último deploy por tag `v2026.06.13-7`; commit `010ce7f` (hardening senior, PR #1) mergeado — verificar que esté deployado antes de asumirlo.
-
-- **Sprint 0** — gestión de backlog desde la UI: ciclo de 8 estados, apertura/cierre con motivo, priorización (matriz impacto×esfuerzo), edición inline.
-- **Sprint 1** — enriquecimiento IA (Haiku impacto/esfuerzo + embeddings Gemini), mockeable, degrada sin API key.
-- **Sprint 2** — grafo vivo: `item_relationships` (blocks/requires/conflicts/related/part_of), vecindad 2-hop, bloqueo derivado, orden topológico (Kahn).
-- **Sprint 3** — MCP-over-HTTP (`/mcp`), **19 tools**, auth Bearer + scope read/write.
-- **Sprint 4** — Hilos (funnel idea→…→hecho), artefactos, `elaborate-stage` IA, vínculo ítem↔hilo por `thread_id`.
-- **Sprint 5** — webhooks Sentry/GitHub firmados (HMAC) + **Incidentes** (contenedor de errores de Sentry).
+**OSS refactor complete** (Chunks 1–4, commit `2f1bec7`):
+- Chunk 1: cloned to `C:\Proyectos\pulso`, stripped Eduk3 references, standalone docker-compose + `.env.example`
+- Chunk 2: multi-project DB schema (`projects` table, `project_id` FK on items/scopes/threads/sentry_issues/agent_runs/api_tokens), migrations v0006–v0010
+- Chunk 3: English enum rename migration (v0011), all code/templates updated to English values
+- Chunk 4: 17 MCP tools renamed to English, project isolation failsafe in MCP dispatch, `/projects` UI, setup wizard, project selector in navbar, public README
 
 ---
 
 ## Stack
 
-FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailwind (CDN)** — sin Node build. Postgres + pgvector. Worker asyncio in-proceso (cola en BD, `FOR UPDATE SKIP LOCKED`, sin Redis). **El MCP está hecho a mano** (JSON-RPC 2.0), NO con el SDK `mcp` — por control de auth/DB/testabilidad.
+FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailwind (CDN)** — no Node build. Postgres + pgvector. Asyncio worker in-process (queue in DB, `FOR UPDATE SKIP LOCKED`, no Redis). **MCP is hand-rolled** (JSON-RPC 2.0), NOT the `mcp` SDK — for auth/DB/testability control.
 
 ---
 
-## Arquitectura (`app/`)
+## Architecture (`app/`)
 
-| Módulo | Responsabilidad |
-|--------|-----------------|
-| `main.py` | `create_app`, lifespan (arranca el worker), monta routers + `/mcp` (`mount_mcp`) |
+| Module | Responsibility |
+|--------|----------------|
+| `main.py` | `create_app`, lifespan (starts worker), mounts routers + `/mcp` (`mount_mcp`) |
 | `config.py` | `Settings` (env vars) |
 | `database.py` | engine, `SessionFactory`, `Base`, `get_db` |
-| `templates_config.py` | `Jinja2Templates` + globals (`non_terminal_targets`, `allowed_targets`) + filtro `fecha` |
-| `auth/` | `User`/`ApiToken`, bcrypt + tokens SHA-256, deps (cookie **o** Bearer), login UI |
-| `items/` | `Item`/`ItemComment`/`ItemEvent`/`AiEnrichment`/`ItemRelationship`; `service.py` (mutaciones lifecycle-validadas); `lifecycle.py` (máquina 8 estados); `graph.py` (vecindad/bloqueo/Kahn); `relationships.py` (arcos); `importer.py` (JSONL) |
-| `scopes/` | `Scope` (agrupador) + router |
+| `templates_config.py` | `Jinja2Templates` + globals + `fecha` filter |
+| `auth/` | `User`/`ApiToken`, bcrypt + SHA-256 tokens, deps (cookie **or** Bearer), login UI, `/setup` wizard |
+| `projects/` | `Project` model, service (CRUD + slug), router (`/projects/*`, `/ui/project/switch`) |
+| `items/` | `Item`/`ItemComment`/`ItemEvent`/`AiEnrichment`/`ItemRelationship`; `service.py` (lifecycle-validated mutations); `lifecycle.py` (8-state machine); `graph.py` (neighborhood/blocking/Kahn); `relationships.py` (arcs); `importer.py` (JSONL) |
+| `scopes/` | `Scope` (area grouper) + router |
 | `threads/` | `Thread`/`ThreadArtifact` (stages), service, router |
-| `webhooks/` | `SentryIssue`; service (firma HMAC, ingest, backfill, fetch stack trace, resolve); router (`/webhooks/sentry`, `/webhooks/github`) |
+| `webhooks/` | `SentryIssue`; service (HMAC verify, ingest, backfill, fetch stack trace, resolve); router |
 | `jobs/` | `AgentRun`; `worker.py` (poll-and-lease); `handlers.py` (`enrich`, `triage-sentry`) |
-| `ai/` | `llm.py` — interfaz aislada/mockeable a Haiku (enrich/triage/generate_stage) + Gemini (embed). Degrada sin API key |
-| `mcp/` | `server.py` (transporte JSON-RPC + registro de 19 tools + auth/scope); `tools.py` (implementaciones) |
-| `ui/` | `router.py` — pantallas (`/`, `/backlog`, `/prioridad`, `/hilos`, `/incidentes`, `/items/{id}`, `/admin`) + endpoints `/ui/...` de acción (HTMX) |
+| `ai/` | `llm.py` — isolated/mockable interface to Haiku (enrich/triage/generate_stage) + Gemini (embed). Degrades without API key |
+| `mcp/` | `server.py` (JSON-RPC transport + 17 tool registry + auth/scope + project-id failsafe); `tools.py` (implementations) |
+| `ui/` | `router.py` — screens (`/`, `/backlog`, `/priority`, `/threads`, `/incidents`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints |
 
 ---
 
-## Modelo de datos (enums reales — NO inventar valores)
+## Data model (real enum values — do NOT invent)
 
-**`items`**: `id, scope_id, title, summary_md, type, status, priority, effort_ai, impact_ai, impact_rationale, effort_declared, priority_declared, trigger_text, dependencies, origen, source_refs(JSONB), stale_risk, agent_ready, created_by, created_at, updated_at, closed_at, last_touched_at, thread_id` + `embedding vector(768)` (solo BD, vacío sin F2) + `search_vector` (GENERATED, solo migración).
+**`items`**: `id, project_id, scope_id, title, summary_md, type, status, priority, effort_ai, impact_ai, impact_rationale, effort_declared, priority_declared, trigger_text, dependencies, origen, source_refs(JSONB), stale_risk, agent_ready, created_by, created_at, updated_at, closed_at, last_touched_at, thread_id` + `embedding vector(768)` (migration-only) + `search_vector` (GENERATED, migration-only).
 
-- **status**: `idea, backlog, spec, en-curso, bloqueado, en-revision, hecho, descartado`
-- **type**: `bug, feature, tech-debt, infra, docs, ops, seguridad, producto, idea`
+- **status**: `idea, backlog, spec, in-progress, blocked, in-review, done, discarded`
+- **type**: `bug, feature, tech-debt, infra, docs, ops, security, product, idea`
 - **priority**: `p0..p3` · **effort_ai**: `XS..XL` · **impact_ai**: `1..5`
-- **origen**: `digest, humano, ia-sesion, sentry, agente` (NO existe `claude-code`/`github`)
-- **item_comments.kind**: `comentario, analisis-ia, decision, cambio-estado` (`decision` = decision log)
+- **origen**: `digest, human, ai-session, sentry, agent`
+- **item_comments.kind**: `comment, ai-analysis, decision, status-change` (`decision` = decision log)
 
-**Otras tablas**: `users, api_tokens, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
-`item_events(actor, action, payload)` es el **primitivo de auditoría** — toda mutación debe emitir uno.
+**Other tables**: `users, api_tokens, projects, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
+`item_events(actor, action, payload)` is the **audit primitive** — every mutation must emit one.
 
-**Migraciones** (head = `v0005`): v0001 (9 tablas) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id).
+**Migrations** (head = `v0011`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006 (projects table) · v0007 (project_id on scopes) · v0008 (project_id on items+threads+sentry_issues) · v0009 (project_id on agent_runs) · v0010 (project_id on api_tokens) · v0011 (English enum rename).
+
+**Thread stages** (NOT renamed — Spanish still): `idea, investigacion, historias, spec, en-desarrollo, review, hecho, descartado`
 
 ---
 
-## MCP — 19 tools
+## MCP — 17 tools
 
-Config del cliente (Claude Code, NO Claude Desktop):
+Connect Claude Code to a project (generate token at `/projects/{slug}/settings`):
 ```bash
-claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp \
+claude mcp add --transport http my-project http://localhost:8000/mcp \
   --header "Authorization: Bearer <TOKEN>"
 ```
-Token write se genera en `/admin` → "Generar token MCP". `protocolVersion 2025-03-26`. Auth Bearer obligatoria; las tools de escritura exigen scope `write` (si no → `isError`). **Las tools nuevas solo aparecen tras REINICIAR la sesión Claude Code** (don't-ask deniega tools no aprobadas — es client-side, no bug del server).
+`protocolVersion 2025-03-26`. Bearer auth required; write tools require scope `write` (else → `isError`). **New tools only appear after RESTARTING Claude Code** (don't-ask denies unapproved tools — client-side, not a server bug).
 
-- **Lectura**: `pulso_contexto` (3 capas: local + vecindad-grafo + semántica), `pulso_buscar`, `pulso_listar`, `pulso_scopes`, `pulso_incidentes`, `pulso_incidente` (detalle CON stack trace de Sentry), `pulso_hilo_listar`, `pulso_hilo` (detalle)
-- **Escritura**: `pulso_crear` (acepta `hilo_id`), `pulso_avanzar`, `pulso_completar`, `pulso_relacionar`, `pulso_mover_scope`, `pulso_incidente_resolver`, `pulso_hilo_crear`, `pulso_hilo_avanzar`, `pulso_hilo_vincular`
-- **Prompts**: `briefing`, `decision`. **Resources**: `pulso://scope/{name}`, `pulso://graph/{item_id}`.
+Token MUST have `project_id` set (created from `/projects/{slug}/settings`, not `/admin`). MCP dispatch returns `isError` immediately if `token.project_id is None`.
 
-Los ítems devueltos incluyen `scope` (nombre) y `thread_id` cuando aplica. El grafo es **item↔item** (`part_of` es para epics entre ítems); la pertenencia a un hilo va por `thread_id`, no por el grafo.
+- **Read**: `pulso_context`, `pulso_search`, `pulso_list`, `pulso_areas`, `pulso_incidents`, `pulso_incident`, `pulso_thread_list`, `pulso_thread`
+- **Write**: `pulso_create` (accepts `thread_id`), `pulso_advance`, `pulso_complete`, `pulso_link`, `pulso_move_area`, `pulso_incident_resolve`, `pulso_thread_create`, `pulso_thread_advance`, `pulso_thread_link`
+- **Prompts**: `briefing`, `decision`. **Resources**: `pulso://area/{name}`, `pulso://graph/{item_id}`.
 
----
-
-## Conceptos clave
-
-- **Ciclo de vida del ítem** (`lifecycle.py`): máquina de 8 estados con matriz de transiciones, validada en UI/REST/MCP. Terminales (`hecho`/`descartado`) van por `/close` (piden motivo).
-- **Grafo vivo**: el bloqueo es **derivado** (un ítem está bloqueado si tiene un arco `blocks` entrante de un ítem abierto), no un estado materializado. `pulso_contexto` traversa la vecindad en tiempo real (anti context-collapse).
-- **Incidentes (Sentry)**: el error aterriza en `sentry_issues` (**contenedor**, NO al backlog automático). Triage IA pre-clasifica el ruido; el owner/agente **promueve manualmente** los reales al backlog. Webhook firmado HMAC; `pulso:UUID` en commit auto-cierra (webhook GitHub).
-- **Hilos**: funnel para features pesadas (el 80% va rápido por el backlog, sin hilos).
-- **Append-only / auditoría**: cada mutación emite `ItemEvent`.
+Items returned include `area` (name) and `thread_id` when set. Graph is item↔item; thread membership is via `thread_id`, not the graph.
 
 ---
 
-## Correr local + tests
+## Key concepts
 
-**No hay pgvector local** (degrada con gracia — `embedding` es columna solo-migración). Postgres local en `localhost:5432` (`efrain`/`efrain`), base `pulso_test`:
+- **Item lifecycle** (`lifecycle.py`): 8-state machine with transition matrix, validated in UI/REST/MCP. Terminals (`done`/`discarded`) go through `/close` (require a reason).
+- **Live graph**: blocking is **derived** (an item is blocked if it has an open `blocks` arc incoming), not a stored state. `pulso_context` traverses neighborhood in real time (anti context-collapse).
+- **Incidents (Sentry)**: errors land in `sentry_issues` (**container**, NOT auto-promoted to backlog). AI triage pre-classifies noise; owner/agent **manually promotes** real ones. HMAC-signed webhook; `pulso:UUID` in commit auto-closes (GitHub webhook).
+- **Threads**: funnel for heavy features (80% goes fast through backlog, no thread needed).
+- **Append-only / audit**: every mutation emits `ItemEvent`.
+- **Project isolation**: every DB query in `mcp/tools.py` filters by `pid = _pid(token)`. Creating items, scopes, or threads sets `project_id = pid`. Cross-project access is impossible via MCP.
+
+---
+
+## Run locally + tests
+
+**No pgvector locally** (degrades gracefully — `embedding` is migration-only column). Postgres on `localhost:5432` (`efrain`/`efrain`), database `pulso_test`:
 
 ```bash
 TEST_DATABASE_URL="postgresql+asyncpg://efrain:efrain@localhost:5432/pulso_test" \
-  python -m pytest tests/ -q          # 93 tests
-ruff check app/ tests/                 # lint
-python -m mypy app/                    # type check
+  python -m pytest tests/ -q
+ruff check app/ tests/
+python -m mypy app/
 ```
 
-**Gotcha de DB sucia**: la base `pulso_test` persiste entre corridas; `create_all` NO altera tablas existentes. Si cambias el schema o ves fallos que en CI no ocurren, **resetea**: `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` y vuelve a correr (reproduce la DB limpia de CI).
-**`search_vector`** (GENERATED, solo en migración) se parchea global en `conftest.py` para que el full-text funcione en todos los tests.
-**CI es el gate real** (pgvector/pgvector:pg16). Push a `main` corre CI; deploy NO es automático.
+**Dirty DB gotcha**: `pulso_test` persists between runs; `create_all` does NOT alter existing tables. If you change the schema or see failures that don't happen in CI, **reset**: `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` then re-run.
+**`search_vector`** (GENERATED, migration-only) is globally patched in `conftest.py` so full-text works in all tests.
+**CI is the real gate** (pgvector/pgvector:pg16). Push to `main` runs CI; deploy is NOT automatic.
 
 ---
 
 ## Deploy
 
 ```bash
-git tag -a v2026.MM.DD-N -m "..." && git push origin v2026.MM.DD-N
+git tag -a v2026.MM.DD-N -m "..." && git push origin <tag>
 ```
-Dispara `deploy.yml`: build multi-plataforma (amd64+arm64, la VM es ARM) → push a GHCR → SSH a `/opt/pulso` → `docker compose pull && up -d` → `alembic upgrade head`.
+Triggers `deploy.yml`: multi-platform build (amd64+arm64) → push to GHCR → SSH to server → `docker compose pull && up -d` → `alembic upgrade head`.
 
-**Infra crítica (NO romper):**
-- El contenedor `pulso-app-1` debe estar en la red `infra_frontnet` (en el `docker-compose.yml` de `/opt/pulso`) para que Caddy lo alcance por nombre.
-- El bloque Caddy `pulso.eduk3.cl { reverse_proxy pulso-app-1:8000 }` vive **commiteado** en el repo efrain `infra/Caddyfile` (commit `f9c81f8`, marcado "NO BORRAR"). Si se borra, `/mcp` cae al wildcard `*.eduk3.cl` → Next.js de Eduk3 → 404. (Patrón `feedback_docker_recreate_wipes_patches`: parche en prod sin commitear = se pierde.)
-- SSH key: `C:\Dev\efrain\ssh\ssh-key-2026-03-20.key`.
-
-**Secretos en `/opt/pulso/.env`**: `DB_PASSWORD`, `SECRET_KEY`, `SENTRY_CLIENT_SECRET` (webhook), `SENTRY_API_TOKEN` + `SENTRY_ORG` (stack traces/resolver), `GITHUB_WEBHOOK_SECRET`, y opcionales `ANTHROPIC_API_KEY` (triage/enrich IA — hoy OFF para no gastar tokens) + `GEMINI_API_KEY` (embeddings).
+**Required secrets** (`.env` on server): `DB_PASSWORD`, `SECRET_KEY`.
+**Optional**: `ANTHROPIC_API_KEY` (AI triage/enrich), `GEMINI_API_KEY` (embeddings), `SENTRY_CLIENT_SECRET`, `SENTRY_API_TOKEN`, `SENTRY_ORG`, `GITHUB_WEBHOOK_SECRET`.
 
 ---
 
-## Convenciones
+## Conventions
 
-- **Cero voseo argentino** en TODO el copy (igual que efrain): tuteo neutro / español. Imperativos en tú ("crea", "elige", "configura"), nunca "creá"/"elegí"/"configurá".
-- **Cada feature trae tests**; CI verde antes de tag.
-- **LLM siempre vía `app/ai/llm.py`** (aislado y mockeable); degrada sin API key, nunca rompe el worker.
-- **Trunk-based**: commit directo a `main` permitido; verificar local (ruff+mypy+pytest del área) antes de pushear; deploy solo por tag.
-- Webhooks/escrituras externas: verificar firma HMAC, emitir `ItemEvent`, sanitizar contenido no confiable (XSS).
-
----
-
-## Spin-off (futuro, diferido)
-
-Existe la idea de abrir Pulso como **open-core** (core OSS self-host + cloud gestionado de pago: multi-tenant, SSO, backups), con posicionamiento "no markup de IA" (trae tu propia suscripción). **Decisión: NO construir infra de spin-off hasta validar demanda** — Pulso ya rinde como palanca interna de Eduk3. Documentar la visión en `docs/SPINOFF.md` cuando se retome; el primer hito barato sería **desacoplar Pulso de efrain** (docker-compose autocontenido, sin supuestos de la VM/Caddy) + licencia + docs.
+- **English throughout**: all enum values, error messages, MCP tool names, and UI copy are English. Thread stages are the only exception (still Spanish — out of scope).
+- **Every feature brings tests**; CI green before tagging.
+- **LLM always via `app/ai/llm.py`** (isolated and mockable); degrades without API key, never breaks the worker.
+- **Trunk-based**: direct commit to `main` allowed; verify locally (ruff+mypy+pytest for the area) before pushing; deploy only by tag.
+- External webhooks/writes: verify HMAC signature, emit `ItemEvent`, sanitize untrusted content (XSS).
+- `/admin` token creation does NOT set `project_id` — only use `/projects/{slug}/settings` to generate MCP tokens.
 
 ---
 
-## Cómo retomar
+## How to resume
 
-1. Lee este CLAUDE.md.
-2. Estado en prod: https://pulso.eduk3.cl (`/backlog`, `/prioridad`, `/hilos`, `/incidentes`, `/admin`).
-3. Tests locales contra `pulso_test` (resetea el schema si dudas de la DB sucia).
-4. Cambios → CI verde → tag para deploy. No toques el bloque Caddy ni la red `infra_frontnet`.
+1. Read this CLAUDE.md.
+2. First run: open `http://localhost:8000` → redirects to `/setup` (create account + first project + write token).
+3. Local tests against `pulso_test` (reset schema if you suspect dirty DB).
+4. Changes → CI green → tag for deploy.
