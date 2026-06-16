@@ -23,12 +23,12 @@ logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-logger = logging.getLogger("pulso.app")
+logger = logging.getLogger("pulso")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Pulso arrancando (debug=%s)", settings.debug)
+    logger.info("Pulso starting (debug=%s)", settings.debug)
     from app.jobs.worker import worker_loop
     task = asyncio.create_task(worker_loop())
     yield
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
-    logger.info("Pulso detenido")
+    logger.info("Pulso stopped")
 
 
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -56,7 +56,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def create_app() -> FastAPI:
-    from app.auth.router import router as auth_router
+    from app.auth.router import router as auth_router, setup_router
     from app.items.router import router as items_router
     from app.scopes.router import router as scopes_router
     from app.threads import models as _threads_models  # noqa: F401 — registra ORM en Base.metadata
@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
     from app.ui.router import router as ui_router
     from app.webhooks.router import router as webhooks_router
 
-    app = FastAPI(title="Pulso — Eduk3", lifespan=lifespan)
+    app = FastAPI(title="Pulso", lifespan=lifespan)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
         max_age=604800,            # 7 días — la sesión expira aunque la cookie persista.
     )
     app.include_router(auth_router)
+    app.include_router(setup_router)
     app.include_router(items_router, prefix="/api/v1")
     app.include_router(scopes_router, prefix="/api/v1")
     app.include_router(threads_router, prefix="/api/v1")

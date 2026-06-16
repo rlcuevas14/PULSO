@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pulso — Sign in</title>
-  {# TODO: vendorizar/compilar Tailwind para prod (el CDN es solo-dev). #}
+  <title>Pulso — Setup</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center">
   <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
-    <h1 class="text-2xl font-bold text-gray-800 mb-2">Pulso</h1>
-    <p class="text-sm text-gray-500 mb-6">Agent-native backlog manager</p>
+    <h1 class="text-2xl font-bold text-gray-800 mb-1">Welcome to Pulso</h1>
+    <p class="text-sm text-gray-500 mb-6">Create your admin account to get started.</p>
 
     {% if error %}
     <div class="bg-red-50 border border-red-200 text-red-700 rounded px-4 py-2 mb-4 text-sm">
@@ -18,11 +17,19 @@
     </div>
     {% endif %}
 
-    <form method="post" action="/auth/login" class="space-y-4">
+    <form method="post" action="/setup" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="name">Your name</label>
+        <input
+          id="name" name="name" type="text" required autofocus
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Jane Smith"
+        >
+      </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1" for="email">Email</label>
         <input
-          id="email" name="email" type="email" required autofocus
+          id="email" name="email" type="email" required
           class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="you@example.com"
         >
@@ -30,15 +37,16 @@
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1" for="password">Password</label>
         <input
-          id="password" name="password" type="password" required
+          id="password" name="password" type="password" required minlength="8"
           class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="at least 8 characters"
         >
       </div>
       <button
         type="submit"
         class="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 transition"
       >
-        Sign in
+        Create account
       </button>
     </form>
   </div>

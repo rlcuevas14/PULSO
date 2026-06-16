@@ -16,7 +16,7 @@ services:
 
   app:
     build: .
-    image: ghcr.io/rlcuevas14/eduk3-pulso:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GITHUB_OWNER:-your-username}/pulso:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
@@ -24,15 +24,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://pulso:${DB_PASSWORD}@db/pulso
-    volumes:
-      - /opt/pulso/seed:/seed:ro
-    networks:
-      - default
-      - infra_frontnet
-
-networks:
-  infra_frontnet:
-    external: true
+    ports:
+      - "${PORT:-8000}:8000"
 
 volumes:
   pulso_db:
