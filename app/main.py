@@ -59,7 +59,8 @@ def create_app() -> FastAPI:
     from app.auth.router import router as auth_router, setup_router
     from app.items.router import router as items_router
     from app.scopes.router import router as scopes_router
-    from app.threads import models as _threads_models  # noqa: F401 — registra ORM en Base.metadata
+    from app.projects import models as _projects_models  # noqa: F401 — register ORM in Base.metadata
+    from app.threads import models as _threads_models  # noqa: F401 — register ORM in Base.metadata
     from app.threads.router import router as threads_router
     from app.ui.router import router as ui_router
     from app.webhooks.router import router as webhooks_router
