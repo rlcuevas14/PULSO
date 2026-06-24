@@ -154,6 +154,44 @@ async def test_sentry_triage_hides_noise(client: AsyncClient, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sentry_triage_promotes_bug_real(client: AsyncClient, monkeypatch):
+    """El triage clasifica bug-real → auto-promueve al backlog como ítem p0 (el tope)."""
+    from app.ai import llm
+    from app.database import get_db
+    from app.items.models import Item
+    from app.jobs.handlers import handle_triage_sentry
+    from app.webhooks.models import SentryIssue
+
+    monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
+    sid = f"sentry-{uuid.uuid4().hex[:8]}"
+    body = json.dumps({"id": sid, "title": "KeyError en reportes", "project": "efrain-api"}).encode()
+    await client.post(
+        "/webhooks/sentry", content=body,
+        headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
+    )
+
+    async def fake_triage(title, context):
+        return {"triage": "bug-real"}
+
+    monkeypatch.setattr(llm, "triage_sentry", fake_triage)
+    async for db in client.app.dependency_overrides[get_db]():
+        issue = (await db.execute(
+            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
+        )).scalar_one()
+        out = await handle_triage_sentry(db, issue.id)
+        await db.commit()
+        assert out["triage"] == "bug-real"
+        assert out["promoted_item_id"] is not None
+        issue2 = await db.get(SentryIssue, issue.id)
+        assert issue2.status == "linked"
+        assert issue2.item_id is not None
+        item = await db.get(Item, issue2.item_id)
+        assert item.type == "bug"
+        assert item.priority == "p0"  # al tope del backlog
+        break
+
+
+@pytest.mark.asyncio
 async def test_github_no_secret_503(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "github_webhook_secret", "")
     r = await client.post("/webhooks/github", json={})
