@@ -13,7 +13,6 @@ from app.auth.service import revoke_api_token
 from app.config import settings
 from app.database import get_db
 from app.projects import service as ps
-from app.projects.models import Project
 from app.templates_config import templates
 
 router = APIRouter(tags=["projects"])

@@ -56,11 +56,12 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def create_app() -> FastAPI:
-    from app.auth.router import router as auth_router, setup_router
+    from app.auth.router import router as auth_router
+    from app.auth.router import setup_router
     from app.items.router import router as items_router
-    from app.scopes.router import router as scopes_router
     from app.projects import models as _projects_models  # noqa: F401 — register ORM in Base.metadata
     from app.projects.router import router as projects_router
+    from app.scopes.router import router as scopes_router
     from app.threads import models as _threads_models  # noqa: F401 — register ORM in Base.metadata
     from app.threads.router import router as threads_router
     from app.ui.router import router as ui_router

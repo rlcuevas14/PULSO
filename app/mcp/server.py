@@ -47,7 +47,8 @@ _CONSTRAINT_HELP: dict[str, str] = {
     "items_effort_ai_check": f"invalid effort_ai; use one of: {', '.join(EFFORTS)} (or null)",
     "items_priority_check": "invalid priority; use one of: p0, p1, p2, p3 (or null)",
     "item_comments_kind_check": (
-        f"invalid comment kind; use one of: {', '.join(('comment', 'ai-analysis', 'decision', 'status-change'))}"
+        "invalid comment kind; use one of: "
+        f"{', '.join(('comment', 'ai-analysis', 'decision', 'status-change'))}"
     ),
     "item_relationships_relation_check": f"invalid relation; use one of: {', '.join(RELATIONS)}",
     "item_rel_no_self": "an item cannot be related to itself (source and target are the same)",
@@ -237,8 +238,10 @@ PROMPTS = {
     "briefing": {
         "name": "briefing",
         "description": "Session start context (priorities, blockers, neighborhood).",
-        "arguments": [{"name": "area", "description": "active area", "required": False},
-                      {"name": "work_description", "description": "what you are working on", "required": False}],
+        "arguments": [
+            {"name": "area", "description": "active area", "required": False},
+            {"name": "work_description", "description": "what you are working on", "required": False},
+        ],
     },
     "decision": {
         "name": "decision",
