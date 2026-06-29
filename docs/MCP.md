@@ -1,18 +1,18 @@
 # Conectar Claude Code a Pulso (MCP-over-HTTP)
 
-Pulso expone un endpoint MCP en `https://pulso.eduk3.cl/mcp` (Streamable HTTP, modo JSON).
+Pulso expone un endpoint MCP en `https://pulso.tidanalytics.com/mcp` (Streamable HTTP, modo JSON).
 Cualquier instancia de Claude Code se conecta con solo un token — sin instalar nada local.
 
 ## 1. Generar un token
 
-Entra a `https://pulso.eduk3.cl/admin` → **Generar token MCP** (scope `write` para poder
+Entra a `https://pulso.tidanalytics.com/admin` → **Generar token MCP** (scope `write` para poder
 crear/cerrar ítems desde la sesión). Copia el token (se muestra una sola vez).
 
 ## 2. Registrar el server en Claude Code
 
 **Opción A — comando (escribe en `~/.claude.json`, scope local):**
 ```bash
-claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp \
+claude mcp add --transport http pulso https://pulso.tidanalytics.com/mcp \
   --header "Authorization: Bearer <TU_TOKEN>"
 ```
 
@@ -22,7 +22,7 @@ claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp \
   "mcpServers": {
     "pulso": {
       "type": "http",
-      "url": "https://pulso.eduk3.cl/mcp",
+      "url": "https://pulso.tidanalytics.com/mcp",
       "headers": { "Authorization": "Bearer ${PULSO_TOKEN}" }
     }
   }

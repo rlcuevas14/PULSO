@@ -2,5 +2,5 @@
   <div class="text-green-800 font-medium mb-2">Token «{{ name }}» ({{ scopes }}) creado — cópialo ahora, no se vuelve a mostrar:</div>
   <code class="block bg-white border border-gray-200 rounded px-2 py-1 mb-2 break-all font-mono text-xs">{{ raw }}</code>
   <div class="text-gray-500 mb-1">Conecta Claude Code:</div>
-  <code class="block bg-white border border-gray-200 rounded px-2 py-1 break-all font-mono text-xs">claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp --header "Authorization: Bearer {{ raw }}"</code>
+  <code class="block bg-white border border-gray-200 rounded px-2 py-1 break-all font-mono text-xs">claude mcp add --transport http pulso {{ base_url }}/mcp --header "Authorization: Bearer {{ raw }}"</code>
 </div>

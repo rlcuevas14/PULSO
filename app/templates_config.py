@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi.templating import Jinja2Templates
 
+from app.config import settings
 from app.items.lifecycle import allowed_targets, non_terminal_targets
 
 templates = Jinja2Templates(directory="app/templates")
@@ -9,6 +10,7 @@ templates = Jinja2Templates(directory="app/templates")
 # Helpers disponibles en todas las plantillas.
 templates.env.globals["non_terminal_targets"] = non_terminal_targets
 templates.env.globals["allowed_targets"] = allowed_targets
+templates.env.globals["base_url"] = settings.base_url
 
 
 def _fecha(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
