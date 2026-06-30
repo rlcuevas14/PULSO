@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import ApiToken, User
-from app.auth.service import authenticate, create_user
+from app.auth.service import authenticate
 from app.database import get_db
 from app.templates_config import templates
 
@@ -80,12 +80,15 @@ async def setup_submit(
             {"error": "Password must be at least 8 characters"},
             status_code=422,
         )
-    user = await create_user(db, email=email, name=name, password=password, role="admin")
+    from app.accounts.service import create_account
+    acc, user = await create_account(
+        db, name=name, owner_email=email, owner_name=name, password=password, is_superadmin=True
+    )
     request.session["user_id"] = str(user.id)
 
     # Create the first project and a write token in the same transaction.
     from app.projects.service import create_project
-    project = await create_project(db, name=project_name)
+    project = await create_project(db, name=project_name, account_id=acc.id)
     raw = secrets.token_urlsafe(32)
     token = ApiToken(
         name="claude-code",

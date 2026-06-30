@@ -621,8 +621,8 @@ async def ui_backfill_sentry(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    """Importa el histórico de errores desde la API de Sentry (solo admin)."""
-    if user.role != "admin":
+    """Importa el histórico de errores desde la API de Sentry (solo owner)."""
+    if user.account_role != "owner":
         return HTMLResponse(
             '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
         )
@@ -667,7 +667,7 @@ async def ui_create_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    if user.role != "admin":
+    if not user.is_superadmin:
         return HTMLResponse(
             '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
         )
@@ -687,7 +687,7 @@ async def admin_page(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    if user.role != "admin":
+    if not user.is_superadmin:
         return RedirectResponse("/", status_code=303)
 
     users = list((await db.execute(select(User).order_by(User.created_at))).scalars().all())

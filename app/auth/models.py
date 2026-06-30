@@ -7,17 +7,23 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.enums import TOKEN_SCOPES, USER_ROLES, check_in
+from app.enums import ACCOUNT_ROLES, TOKEN_SCOPES, check_in
 
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint(check_in("role", USER_ROLES), name="users_role_check"),)
+    __table_args__ = (
+        CheckConstraint(check_in("account_role", ACCOUNT_ROLES), name="users_account_role_check"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    account_role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
+    is_superadmin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

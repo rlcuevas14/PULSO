@@ -7,12 +7,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user_ui, require_admin_strict
+from app.auth.deps import current_user_ui, require_owner
 from app.auth.models import ApiToken, User
 from app.auth.service import revoke_api_token
 from app.config import settings
 from app.database import get_db
 from app.projects import service as ps
+from app.projects.access import accessible_project_ids, require_project_access, user_role_on_project
 from app.templates_config import templates
 
 router = APIRouter(tags=["projects"])
@@ -24,14 +25,19 @@ async def projects_list(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    projects = await ps.list_projects(db, include_archived=True)
+    ids = await accessible_project_ids(db, user)
+    projects = [
+        p
+        for p in await ps.list_projects(db, user.account_id, include_archived=True)
+        if p.id in ids
+    ]
     return templates.TemplateResponse(request, "projects_list.html", {"user": user, "projects": projects})
 
 
 @router.get("/projects/new", response_class=HTMLResponse)
 async def projects_new_page(
     request: Request,
-    user: User = Depends(require_admin_strict),
+    user: User = Depends(require_owner),
 ):
     return templates.TemplateResponse(request, "projects_new.html", {"user": user, "error": None})
 
@@ -44,12 +50,13 @@ async def projects_new_submit(
     description: str = Form(""),
     color: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_admin_strict),
+    user: User = Depends(require_owner),
 ):
     try:
         project = await ps.create_project(
             db,
             name=name,
+            account_id=user.account_id,
             slug=slug or None,
             description=description or None,
             color=color or None,
@@ -69,9 +76,11 @@ async def project_settings(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    project = await ps.get_by_slug(db, slug)
+    project = await ps.get_by_slug(db, slug, user.account_id)
     if project is None:
         return Response(status_code=404, content="Project not found")
+    await require_project_access(db, user, project.id)
+    can_write = await user_role_on_project(db, user, project.id) != "viewer"
     tokens = list((await db.execute(
         select(ApiToken).where(
             ApiToken.project_id == project.id,
@@ -83,7 +92,7 @@ async def project_settings(
         f'  --header "Authorization: Bearer <TOKEN>"'
     )
     return templates.TemplateResponse(request, "projects_settings.html", {
-        "user": user, "project": project, "tokens": tokens,
+        "user": user, "project": project, "tokens": tokens, "can_write": can_write,
         "snippet": snippet, "new_token": request.session.pop("new_token", None),
     })
 
@@ -100,9 +109,9 @@ async def project_settings_update(
     sentry_api_token: str = Form(""),
     sentry_org: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin_strict),
+    user: User = Depends(require_owner),
 ):
-    project = await ps.get_by_slug(db, slug)
+    project = await ps.get_by_slug(db, slug, user.account_id)
     if project is None:
         return Response(status_code=404, content="Project not found")
     await ps.update_project(db, project, {
@@ -126,11 +135,19 @@ async def project_token_create(
     token_name: str = Form(...),
     scopes: str = Form("write"),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_admin_strict),
+    user: User = Depends(current_user_ui),
 ):
-    project = await ps.get_by_slug(db, slug)
+    project = await ps.get_by_slug(db, slug, user.account_id)
     if project is None:
         return Response(status_code=404, content="Project not found")
+    role = await user_role_on_project(db, user, project.id)
+    if role is None:
+        return Response(status_code=403, content="No access to this project")
+    if scopes not in ("read", "write"):
+        scopes = "read"
+    # Token scope must not exceed the minter's role on the project.
+    if scopes == "write" and role == "viewer":
+        return Response(status_code=403, content="Viewer cannot mint a write token")
     raw = secrets.token_urlsafe(32)
     token = ApiToken(
         name=token_name,
@@ -151,9 +168,16 @@ async def project_token_revoke(
     slug: str,
     token_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin_strict),
+    user: User = Depends(current_user_ui),
 ):
-    await revoke_api_token(db, token_id)
+    project = await ps.get_by_slug(db, slug, user.account_id)
+    if project is None:
+        return Response(status_code=404, content="Project not found")
+    await require_project_access(db, user, project.id, need_write=True)
+    # Only revoke a token that belongs to this project (no cross-account/project revoke).
+    token = await db.get(ApiToken, token_id)
+    if token is not None and token.project_id == project.id:
+        await revoke_api_token(db, token_id)
     return RedirectResponse(f"/projects/{slug}/settings", status_code=303)
 
 
@@ -162,12 +186,13 @@ async def switch_project(
     request: Request,
     project_id: str = Form(...),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(current_user_ui),
+    user: User = Depends(current_user_ui),
 ):
     try:
         pid = uuid.UUID(project_id)
-        project = await ps.get_by_id(db, pid)
-        if project and not project.archived_at:
+        project = await ps.get_by_id(db, pid, user.account_id)
+        ids = await accessible_project_ids(db, user)
+        if project and not project.archived_at and project.id in ids:
             request.session["current_project_id"] = str(project.id)
             request.session["current_project_name"] = project.name
             request.session["current_project_slug"] = project.slug

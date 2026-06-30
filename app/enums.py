@@ -48,6 +48,8 @@ SENTRY_STATUSES: tuple[str, ...] = ("new", "linked", "resolved", "ignored")
 # --- auth ---
 USER_ROLES: tuple[str, ...] = ("admin", "viewer")
 TOKEN_SCOPES: tuple[str, ...] = ("read", "write")
+ACCOUNT_ROLES: tuple[str, ...] = ("owner", "member")
+PROJECT_MEMBER_ROLES: tuple[str, ...] = ("viewer", "editor")
 
 
 def sql_list(values: tuple[str, ...] | list[str]) -> str:

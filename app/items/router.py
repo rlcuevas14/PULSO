@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.deps import api_or_session_user, require_admin_strict, require_write
+from app.auth.deps import api_or_session_user, require_owner, require_write
 from app.auth.models import ApiToken, User
 from app.database import get_db
 from app.enums import (
@@ -173,7 +173,7 @@ class ImportRequest(BaseModel):
 async def import_digest(
     body: ImportRequest,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin_strict),
+    _admin: User = Depends(require_owner),
 ):
     target = body.path or body.directory
     if not target:
@@ -476,7 +476,7 @@ async def enqueue_enrich(
 async def enqueue_pending_enrich(
     limit: int = Query(200),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin_strict),
+    _admin: User = Depends(require_owner),
 ):
     """Encola enriquecimiento para todos los ítems abiertos sin impacto estimado (admin)."""
     from app.jobs.worker import enqueue_job

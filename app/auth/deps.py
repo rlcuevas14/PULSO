@@ -39,9 +39,15 @@ async def current_user_ui(
     return user
 
 
-async def require_admin(user: User = Depends(current_user)) -> User:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+async def require_owner_session(user: User = Depends(current_user)) -> User:
+    if user.account_role != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    return user
+
+
+async def require_superadmin(user: User = Depends(current_user)) -> User:
+    if not user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin only")
     return user
 
 
@@ -84,11 +90,11 @@ async def require_write(
     return auth
 
 
-async def require_admin_strict(
+async def require_owner(
     auth: User | ApiToken = Depends(api_or_session_user),
 ) -> User:
     if not isinstance(auth, User):
-        raise HTTPException(status_code=403, detail="Admin session required (tokens not allowed here)")
-    if auth.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+        raise HTTPException(status_code=403, detail="Owner session required (tokens not allowed here)")
+    if auth.account_role != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
     return auth

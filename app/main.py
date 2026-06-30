@@ -56,6 +56,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def create_app() -> FastAPI:
+    from app.accounts import models as _accounts_models  # noqa: F401 — register ORM in Base.metadata
     from app.auth.router import router as auth_router
     from app.auth.router import setup_router
     from app.items.router import router as items_router
