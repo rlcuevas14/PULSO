@@ -494,7 +494,7 @@ async def enqueue_enrich(
 
     _require_item(await db.get(Item, item_id), pid)
 
-    run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
+    run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id, project_id=pid)
     return {"run_id": str(run.id), "status": "encolado"}
 
 
@@ -517,5 +517,5 @@ async def enqueue_pending_enrich(
     )
     ids = [r[0] for r in rows]
     for item_id in ids:
-        await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
+        await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id, project_id=pid)
     return {"encolados": len(ids)}

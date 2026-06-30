@@ -98,7 +98,7 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
         await db.flush()
         # Encolar triage IA (pre-clasifica el ruido; corre cuando hay ANTHROPIC_API_KEY).
         db.add(AgentRun(kind="triage-sentry", ref_type="sentry_issue",
-                        ref_id=issue.id, status="pendiente"))
+                        ref_id=issue.id, status="pendiente", project_id=issue.project_id))
     else:
         issue.events_count += 1
         issue.last_seen = last_seen

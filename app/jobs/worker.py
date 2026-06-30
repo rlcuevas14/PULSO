@@ -16,8 +16,11 @@ async def enqueue_job(
     kind: str,
     ref_type: str | None = None,
     ref_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
 ) -> AgentRun:
-    run = AgentRun(kind=kind, ref_type=ref_type, ref_id=ref_id, status="pendiente")
+    run = AgentRun(
+        kind=kind, ref_type=ref_type, ref_id=ref_id, status="pendiente", project_id=project_id
+    )
     db.add(run)
     await db.commit()
     await db.refresh(run)
