@@ -1,11 +1,17 @@
-"""v0012: accounts + project_members + account columns; fold existing data into one account."""
+"""v0014: accounts + project_members + account columns; fold existing data into one account.
+
+Builds on the live multiproject line (v0012 backfill, v0013 isolation hardening): the
+per-project scopes uniqueness is already done by v0013, so this migration only adds the
+account layer (accounts, project_members, account columns on users/projects) and folds
+existing rows into one default account.
+"""
 
 import os
 
 from alembic import op
 
-revision = "v0012"
-down_revision = "v0011"
+revision = "v0014"
+down_revision = "v0013"
 branch_labels = None
 depends_on = None
 
@@ -69,15 +75,8 @@ def upgrade() -> None:
     op.execute("CREATE INDEX project_members_user ON project_members(user_id)")
     op.execute("CREATE INDEX project_members_project ON project_members(project_id)")
 
-    # Area (scope) names are unique per project now, not globally (accounts are isolated:
-    # two projects/accounts may each have a "backend" area).
-    op.execute("ALTER TABLE scopes DROP CONSTRAINT IF EXISTS scopes_name_key")
-    op.execute("CREATE UNIQUE INDEX scopes_project_name_uniq ON scopes(project_id, name)")
-
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS scopes_project_name_uniq")
-    op.execute("ALTER TABLE scopes ADD CONSTRAINT scopes_name_key UNIQUE (name)")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
     op.execute("DROP INDEX IF EXISTS projects_account_slug_uniq")
     op.execute("ALTER TABLE projects ADD CONSTRAINT projects_slug_key UNIQUE (slug)")
