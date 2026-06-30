@@ -67,7 +67,8 @@ async def create_user(
     its owner — convenient for tests and simple flows. The legacy ``role`` arg maps to
     account semantics: ``"admin"`` -> owner + superadmin, anything else -> member.
     """
-    if account_id is None:
+    auto_account = account_id is None
+    if auto_account:
         from app.accounts.models import Account
         from app.accounts.service import _slugify, _unique_slug
 
@@ -88,6 +89,12 @@ async def create_user(
         is_superadmin=is_superadmin,
     )
     db.add(user)
+    if auto_account:
+        # A personal account gets a starter project so the user is immediately usable.
+        assert account_id is not None
+        from app.projects.service import create_project
+
+        await create_project(db, name="Default", account_id=account_id)
     await db.commit()
     await db.refresh(user)
     return user

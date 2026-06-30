@@ -98,3 +98,14 @@ async def require_owner(
     if auth.account_role != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
     return auth
+
+
+async def current_project_id(
+    request: Request,
+    auth: User | ApiToken = Depends(api_or_session_user),
+    db: AsyncSession = Depends(get_db),
+) -> uuid.UUID:
+    """REST dependency: the effective project for this request (token's or session's)."""
+    from app.projects.access import resolve_project_id
+
+    return await resolve_project_id(db, auth, request)

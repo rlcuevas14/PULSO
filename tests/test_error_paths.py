@@ -373,7 +373,10 @@ async def test_rest_create_item_priority_invalida_422(client: AsyncClient):
 async def test_rest_create_item_valido_201(client: AsyncClient):
     """Sanidad: un cuerpo válido SÍ crea (201) — el 422 no es un falso positivo."""
     cookies = await _admin_cookies(client)
-    scope_id = await _make_scope(client)
+    sresp = await client.post(
+        "/api/v1/scopes", json={"name": f"rest-{uuid.uuid4().hex[:6]}"}, cookies=cookies
+    )
+    scope_id = sresp.json()["id"]
     r = await client.post(
         "/api/v1/items",
         json={"scope_id": scope_id, "title": "valida", "type": "feature", "priority": "p1"},

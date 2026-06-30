@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import api_or_session_user
+from app.auth.deps import api_or_session_user, current_project_id
 from app.database import get_db
 from app.scopes import service
 from app.scopes.models import Scope
@@ -45,8 +45,11 @@ class ScopeOut(BaseModel):
 async def list_scopes(
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
-    result = await db.execute(select(Scope).order_by(Scope.display_order, Scope.name))
+    result = await db.execute(
+        select(Scope).where(Scope.project_id == pid).order_by(Scope.display_order, Scope.name)
+    )
     return result.scalars().all()
 
 
@@ -55,9 +58,10 @@ async def create_scope(
     body: ScopeCreate,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     try:
-        scope = await service.create_scope(db, body.model_dump())
+        scope = await service.create_scope(db, {**body.model_dump(), "project_id": pid})
         await db.commit()
         await db.refresh(scope)
     except service.ScopeError as e:
@@ -65,7 +69,7 @@ async def create_scope(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=f"El scope '{body.name}' ya existe")
+        raise HTTPException(status_code=409, detail=f"Area '{body.name}' already exists in this project")
     return scope
 
 
@@ -75,7 +79,11 @@ async def patch_scope(
     body: ScopePatch,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
+    existing = await db.get(Scope, scope_id)
+    if existing is None or existing.project_id != pid:
+        raise HTTPException(status_code=404, detail="Area not found")
     try:
         scope = await service.update_scope(db, scope_id, body.model_dump(exclude_none=True))
         await db.commit()

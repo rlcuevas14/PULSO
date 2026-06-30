@@ -2,11 +2,12 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.auth.service import create_user
 from app.items.models import Item
+from app.projects.models import Project
 from app.scopes.models import Scope
 
 
@@ -40,13 +41,15 @@ async def test_search_finds_by_title(client: AsyncClient, test_engine):
 
     TestSession = async_sessionmaker(test_engine, expire_on_commit=False)
     async with TestSession() as s:
-        await create_user(s, email, "Admin", "pass", "admin")
-        scope = Scope(name=f"search-scope-{uid}")
+        user = await create_user(s, email, "Admin", "pass", "admin")
+        project = await s.scalar(select(Project).where(Project.account_id == user.account_id))
+        scope = Scope(name=f"search-scope-{uid}", project_id=project.id)
         s.add(scope)
         await s.commit()
         await s.refresh(scope)
         item = Item(
             scope_id=scope.id,
+            project_id=project.id,
             title="Autenticación con OAuth",
             summary_md="Integrar OAuth 2.0 con Google.",
             type="feature",

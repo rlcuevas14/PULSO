@@ -5,14 +5,18 @@ from httpx import AsyncClient
 
 
 async def _setup(client: AsyncClient):
+    from sqlalchemy import select
+
     from app.auth.service import create_user
     from app.database import get_db
+    from app.projects.models import Project
     from app.scopes.models import Scope
 
     suffix = uuid.uuid4().hex[:8]
     async for db in client.app.dependency_overrides[get_db]():
-        await create_user(db, f"s0admin{suffix}@test.cl", "Admin", "pass", "admin")
-        scope = Scope(name=f"s0-{suffix}")
+        user = await create_user(db, f"s0admin{suffix}@test.cl", "Admin", "pass", "admin")
+        project = await db.scalar(select(Project).where(Project.account_id == user.account_id))
+        scope = Scope(name=f"s0-{suffix}", project_id=project.id)
         db.add(scope)
         await db.commit()
         await db.refresh(scope)

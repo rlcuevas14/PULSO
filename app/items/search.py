@@ -16,6 +16,7 @@ async def search_items(
     *,
     limit: int = 50,
     with_scope: bool = False,
+    project_id: Any = None,
 ) -> list[dict[str, Any]]:
     """Busca ítems por full-text en español, ordenados por rank descendente.
 
@@ -25,27 +26,33 @@ async def search_items(
 
     Dedup: la query agrupa por ítem (un ítem aparece una vez) y ordena por rank, id.
     """
+    # Account isolation: when a project is given, restrict the FTS to that project.
+    pclause_j = "AND i.project_id = :pid" if project_id is not None else ""
+    pclause = "AND project_id = :pid" if project_id is not None else ""
     if with_scope:
-        sql = """
+        sql = f"""
             SELECT i.id, i.title, i.summary_md, i.type, i.status, i.scope_id,
                    s.name AS scope, i.effort_ai, i.impact_ai, i.stale_risk,
                    ts_rank(i.search_vector, plainto_tsquery('spanish', :q)) AS rank
             FROM items i JOIN scopes s ON s.id = i.scope_id
-            WHERE i.search_vector @@ plainto_tsquery('spanish', :q)
+            WHERE i.search_vector @@ plainto_tsquery('spanish', :q) {pclause_j}
             ORDER BY rank DESC, i.id
             LIMIT :limit
         """
     else:
-        sql = """
+        sql = f"""
             SELECT id, title, summary_md, type, status, scope_id,
                    effort_ai, impact_ai, stale_risk,
                    ts_rank(search_vector, plainto_tsquery('spanish', :q)) AS rank
             FROM items
-            WHERE search_vector @@ plainto_tsquery('spanish', :q)
+            WHERE search_vector @@ plainto_tsquery('spanish', :q) {pclause}
             ORDER BY rank DESC, id
             LIMIT :limit
         """
-    rows = (await db.execute(text(sql), {"q": q, "limit": int(limit)})).mappings().all()
+    params: dict[str, Any] = {"q": q, "limit": int(limit)}
+    if project_id is not None:
+        params["pid"] = project_id
+    rows = (await db.execute(text(sql), params)).mappings().all()
     out: list[dict[str, Any]] = []
     for r in rows:
         row = dict(r)
