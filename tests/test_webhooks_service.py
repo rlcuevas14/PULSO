@@ -1,0 +1,182 @@
+"""Coverage for app/webhooks/service.py + the signed webhook router endpoints."""
+import hashlib
+import hmac
+import json
+import uuid
+
+import pytest
+
+from app.webhooks import service as ws
+
+
+def test_verify_sentry_signature():
+    body = b'{"a":1}'
+    sig = hmac.new(b"sec", body, hashlib.sha256).hexdigest()
+    assert ws.verify_sentry_signature("sec", body, sig) is True
+    assert ws.verify_sentry_signature("sec", body, "bad") is False
+    assert ws.verify_sentry_signature("", body, sig) is False
+    assert ws.verify_sentry_signature("sec", body, None) is False
+
+
+def test_verify_github_signature():
+    body = b'{"a":1}'
+    sig = "sha256=" + hmac.new(b"sec", body, hashlib.sha256).hexdigest()
+    assert ws.verify_github_signature("sec", body, sig) is True
+    assert ws.verify_github_signature("sec", body, "sha256=bad") is False
+    assert ws.verify_github_signature("", body, sig) is False
+
+
+def test_sanitize_strips_tags_and_limits():
+    assert ws._sanitize("<b>hi</b>") == "hi"
+    assert ws._sanitize(None) == ""
+    assert len(ws._sanitize("x" * 99, limit=10)) == 10
+
+
+def test_parse_dt():
+    assert ws._parse_dt("2026-01-01T00:00:00Z") is not None
+    assert ws._parse_dt("not-a-date") is None
+    assert ws._parse_dt(None) is None
+
+
+def test_format_stacktrace():
+    assert ws._format_stacktrace({}) == "(sin evento)"
+    event = {
+        "culprit": "app.x",
+        "entries": [{"type": "exception", "data": {"values": [{
+            "type": "ValueError", "value": "boom",
+            "stacktrace": {"frames": [{"filename": "a.py", "lineNo": 3, "function": "f",
+                                       "inApp": True, "context": [[3, "raise ValueError()"]]}]},
+        }]}}],
+    }
+    out = ws._format_stacktrace(event)
+    assert "ValueError: boom" in out and "a.py:3 in f" in out
+
+
+@pytest.mark.asyncio
+async def test_ingest_sentry_create_and_dedup(db):
+    payload = {"data": {"issue": {"id": "S1", "title": "Boom", "project": "web",
+                                  "level": "error", "count": 3}}}
+    r1 = await ws.ingest_sentry(db, payload)
+    assert r1["created"] is True and r1["events_count"] == 3
+    r2 = await ws.ingest_sentry(db, payload)
+    assert r2["created"] is False and r2["events_count"] == 4
+    with pytest.raises(ValueError):
+        await ws.ingest_sentry(db, {"data": {"issue": {"title": "no id"}}})
+
+
+@pytest.mark.asyncio
+async def test_promote_issue_creates_item_idempotent(db):
+    await ws.ingest_sentry(db, {"data": {"issue": {"id": "S2", "title": "Crash", "project": "api"}}})
+    from sqlalchemy import select
+
+    from app.webhooks.models import SentryIssue
+    issue = (await db.execute(select(SentryIssue).where(SentryIssue.sentry_issue_id == "S2"))).scalar_one()
+    item_id = await ws.promote_issue(db, issue, priority="p0")
+    assert item_id
+    assert issue.status == "linked"
+    assert await ws.promote_issue(db, issue) == item_id  # idempotent
+
+
+@pytest.mark.asyncio
+async def test_resolve_issue_closes_linked_item(db):
+    await ws.ingest_sentry(db, {"data": {"issue": {"id": "S3", "title": "Err", "project": "api"}}})
+    from sqlalchemy import select
+
+    from app.items.models import Item
+    from app.webhooks.models import SentryIssue
+    issue = (await db.execute(select(SentryIssue).where(SentryIssue.sentry_issue_id == "S3"))).scalar_one()
+    item_id = await ws.promote_issue(db, issue)
+    res = await ws.resolve_issue(db, issue, in_sentry=False, nota="fixed", actor="me")
+    assert res["status"] == "resolved" and res["item_cerrado"] is True
+    item = await db.get(Item, uuid.UUID(item_id))
+    assert item.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_process_github_push_autocompletes(db):
+    from app.items.models import Item
+    from app.scopes.models import Scope
+    scope = Scope(name=f"auth-{uuid.uuid4().hex[:6]}")
+    db.add(scope)
+    await db.flush()
+    item = Item(scope_id=scope.id, title="Close me", type="feature", status="in-progress", origen="human")
+    db.add(item)
+    await db.flush()
+    payload = {"commits": [{"id": "abc123", "message": f"fix(auth): done pulso:{item.id}"}]}
+    res = await ws.process_github_push(db, payload)
+    assert str(item.id) in res["completed"]
+    await db.refresh(item)
+    assert item.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_backfill_issues(db):
+    issues = [{"id": "B1", "title": "one", "count": 1}, {"title": "no id"}]
+    res = await ws.backfill_issues(db, issues, "web")
+    assert res == {"ingested": 1, "total": 2}
+
+
+@pytest.mark.asyncio
+async def test_sentry_webhook_endpoint(client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.sentry_client_secret", "whsecret")
+    payload = {"data": {"issue": {"id": "W1", "title": "Hook", "project": "web"}}}
+    body = json.dumps(payload).encode()
+    sig = hmac.new(b"whsecret", body, hashlib.sha256).hexdigest()
+    r = await client.post("/webhooks/sentry", content=body, headers={"sentry-hook-signature": sig})
+    assert r.status_code == 200 and r.json()["created"] is True
+    bad = await client.post("/webhooks/sentry", content=body, headers={"sentry-hook-signature": "no"})
+    assert bad.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_endpoint(client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.github_webhook_secret", "ghsecret")
+    body = json.dumps({"commits": []}).encode()
+    sig = "sha256=" + hmac.new(b"ghsecret", body, hashlib.sha256).hexdigest()
+    r = await client.post(
+        "/webhooks/github", content=body,
+        headers={"x-hub-signature-256": sig, "x-github-event": "push"},
+    )
+    assert r.status_code == 200
+    ignored = await client.post(
+        "/webhooks/github", content=body,
+        headers={"x-hub-signature-256": sig, "x-github-event": "ping"},
+    )
+    assert ignored.json() == {"ignored": "ping"}
+
+
+@pytest.mark.asyncio
+async def test_sentry_api_calls_mocked(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr("app.config.settings.sentry_api_token", "tok")
+
+    class _R:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"title": "T", "culprit": "c", "level": "error", "count": 1,
+                    "firstSeen": None, "lastSeen": None, "permalink": "u", "entries": []}
+
+    async def fake_get(self, url, **kw):
+        return _R()
+
+    async def fake_put(self, url, **kw):
+        return _R()
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
+
+    detail = await ws.fetch_issue_detail("123")
+    assert detail["title"] == "T"
+    assert await ws.resolve_in_sentry("123") is True
+    assert isinstance(await ws.fetch_sentry_issues("tok", "org", "proj"), list)
+
+
+@pytest.mark.asyncio
+async def test_resolve_in_sentry_no_token(monkeypatch):
+    monkeypatch.setattr("app.config.settings.sentry_api_token", "")
+    assert await ws.resolve_in_sentry("1") is False

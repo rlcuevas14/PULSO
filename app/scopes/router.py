@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import api_or_session_user, current_project_id
+from app.auth.deps import api_or_session_user, current_project_id, require_write
 from app.database import get_db
 from app.scopes import service
 from app.scopes.models import Scope
@@ -57,7 +57,7 @@ async def list_scopes(
 async def create_scope(
     body: ScopeCreate,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(api_or_session_user),
+    _auth=Depends(require_write),
     pid: uuid.UUID = Depends(current_project_id),
 ):
     try:
@@ -78,7 +78,7 @@ async def patch_scope(
     scope_id: uuid.UUID,
     body: ScopePatch,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(api_or_session_user),
+    _auth=Depends(require_write),
     pid: uuid.UUID = Depends(current_project_id),
 ):
     existing = await db.get(Scope, scope_id)

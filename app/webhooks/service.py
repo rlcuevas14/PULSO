@@ -211,7 +211,7 @@ async def process_github_push(db: AsyncSession, payload: dict) -> dict:
         await db.execute(text("""
             UPDATE items SET last_touched_at = now()
             WHERE scope_id = (SELECT id FROM scopes WHERE name = :name)
-              AND status NOT IN ('hecho','descartado')
+              AND status NOT IN ('done','discarded')
         """), {"name": scope_name})
 
     await db.flush()

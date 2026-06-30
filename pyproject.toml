@@ -55,6 +55,9 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy async bridges sync<->async via greenlet; without this, coverage silently
+# misses lines executed across that boundary (async DB handlers under-report badly).
+concurrency = ["greenlet", "thread"]
 # Las migraciones se validan con el round-trip de Alembic en CI, no por cobertura de tests.
 omit = ["migrations/*", "app/__init__.py"]
 

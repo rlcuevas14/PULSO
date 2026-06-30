@@ -20,13 +20,13 @@
      class="text-sm text-blue-600 hover:underline">
     {% if incluir_ignorados %}Ocultar ignorados{% else %}Mostrar ignorados{% endif %}
   </a>
-  {% if user.role == 'admin' %}
+  {% if user.account_role == 'owner' %}
   <button onclick="document.getElementById('backfill-box').classList.toggle('hidden')"
           class="text-sm text-gray-600 hover:text-gray-900">Importar histórico de Sentry ↓</button>
   {% endif %}
 </div>
 
-{% if user.role == 'admin' %}
+{% if user.account_role == 'owner' %}
 <div id="backfill-box" class="hidden bg-white border border-gray-200 rounded-lg p-4 mb-4">
   <p class="text-xs text-gray-500 mb-2">
     Trae los errores <strong>sin resolver</strong> que ya existen en Sentry (los resueltos se saltan).
