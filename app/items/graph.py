@@ -103,8 +103,16 @@ async def unblocked_by(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, A
     return [{"id": str(r["id"]), "title": r["title"]} for r in result.mappings().all()]
 
 
-async def graph_blocked_ids(db: AsyncSession) -> set[str]:
-    """Ids de todos los ítems efectivamente bloqueados por el grafo (para badges/filtro)."""
+async def graph_blocked_ids(db: AsyncSession, project_id: uuid.UUID | None = None) -> set[str]:
+    """Ids de ítems efectivamente bloqueados por el grafo (para badges/filtro).
+
+    Con ``project_id`` acota a los bloqueados DENTRO de ese proyecto (lo pasan el dashboard
+    y el backlog para no contar el grafo de otras cuentas). Sin él, cuenta global.
+    """
+    proj, params = "", {}
+    if project_id is not None:
+        proj = "AND t.project_id = :pid"
+        params = {"pid": str(project_id)}
     result = await db.execute(
         text(f"""
             SELECT DISTINCT r.target_id AS id
@@ -114,13 +122,22 @@ async def graph_blocked_ids(db: AsyncSession) -> set[str]:
             WHERE r.relation = 'blocks'
               AND s.status NOT IN ({_TERMINAL_SQL})
               AND t.status NOT IN ({_TERMINAL_SQL})
-        """)
+              {proj}
+        """),
+        params,
     )
     return {str(r["id"]) for r in result.mappings().all()}
 
 
-async def unblocker_ids(db: AsyncSession) -> set[str]:
-    """Ids de ítems que bloquean a otros aún abiertos (badge 🔓 = desbloqueador)."""
+async def unblocker_ids(db: AsyncSession, project_id: uuid.UUID | None = None) -> set[str]:
+    """Ids de ítems que bloquean a otros aún abiertos (badge 🔓 = desbloqueador).
+
+    Con ``project_id`` acota a los desbloqueadores DENTRO de ese proyecto.
+    """
+    proj, params = "", {}
+    if project_id is not None:
+        proj = "AND s.project_id = :pid"
+        params = {"pid": str(project_id)}
     result = await db.execute(
         text(f"""
             SELECT DISTINCT r.source_id AS id
@@ -130,7 +147,9 @@ async def unblocker_ids(db: AsyncSession) -> set[str]:
             WHERE r.relation = 'blocks'
               AND s.status NOT IN ({_TERMINAL_SQL})
               AND t.status NOT IN ({_TERMINAL_SQL})
-        """)
+              {proj}
+        """),
+        params,
     )
     return {str(r["id"]) for r in result.mappings().all()}
 

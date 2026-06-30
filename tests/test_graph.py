@@ -120,3 +120,34 @@ async def test_conflicts_symmetric_visible_both_directions(test_engine):
         result = await graph.neighborhood(db, scope.id)
         ids = {r["id"] for r in result}
         assert str(a.id) in ids and str(b.id) in ids
+
+
+@pytest.mark.asyncio
+async def test_graph_blocked_ids_scoped_by_project(test_engine):
+    """The dashboard/backlog blocked count must not leak another account's graph."""
+    from app.accounts.service import create_account
+    from app.projects.service import create_project
+
+    TestSession = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with TestSession() as db:
+        acc, _ = await create_account(
+            db, f"a{uuid.uuid4().hex[:6]}", f"o{uuid.uuid4().hex[:6]}@t.cl", "O", "passw0rd"
+        )
+        p1 = await create_project(db, name="P1", account_id=acc.id)
+        p2 = await create_project(db, name="P2", account_id=acc.id)
+        scope = Scope(name=f"s-{uuid.uuid4().hex[:6]}", project_id=p1.id)
+        db.add(scope)
+        await db.flush()
+        a = Item(scope_id=scope.id, project_id=p1.id, title="A", type="feature", status="backlog")
+        b = Item(scope_id=scope.id, project_id=p1.id, title="B", type="feature", status="backlog")
+        db.add_all([a, b])
+        await db.flush()
+        db.add(ItemRelationship(source_id=a.id, target_id=b.id, relation="blocks"))
+        await db.commit()
+
+        # B is blocked, inside p1.
+        assert str(b.id) in await graph.graph_blocked_ids(db, project_id=p1.id)
+        # p2 is empty — must NOT see p1's blocked item (the bug: it used to show it).
+        assert await graph.graph_blocked_ids(db, project_id=p2.id) == set()
+        # Unfiltered (internal tools) still global.
+        assert str(b.id) in await graph.graph_blocked_ids(db)

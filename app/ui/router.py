@@ -64,8 +64,7 @@ async def dashboard(
     )
     counts = {row.status: row.n for row in counts_q}
 
-    # ponytail: blocked count is graph-derived and account-global; it's just a number.
-    blocked_ids = await graph.graph_blocked_ids(db)
+    blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
 
     recent_q = await db.execute(
         select(Item).where(Item.project_id == pid).order_by(Item.created_at.desc()).limit(10)
@@ -137,8 +136,8 @@ async def backlog(
     q = q.limit(300)
     items = list((await db.execute(q)).scalars().all())
 
-    blocked_ids = await graph.graph_blocked_ids(db)
-    unblocker_ids = await graph.unblocker_ids(db)
+    blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
+    unblocker_ids = await graph.unblocker_ids(db, project_id=pid)
 
     if graph_blocked:
         items = [i for i in items if str(i.id) in blocked_ids]
