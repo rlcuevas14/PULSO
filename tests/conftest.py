@@ -57,9 +57,11 @@ async def test_engine(pg_url):
                 END IF;
             END $$;
         """))
-    # Truncate auth tables so tests are repeatable across runs.
+    # Truncate all data tables so tests are repeatable across runs. Truncating
+    # `accounts` cascades to users, projects, project_members, api_tokens and every
+    # project-scoped table (items, scopes, threads, sentry_issues, agent_runs).
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE api_tokens, users RESTART IDENTITY CASCADE"))
+        await conn.execute(text("TRUNCATE accounts RESTART IDENTITY CASCADE"))
     yield engine
     await engine.dispose()
 

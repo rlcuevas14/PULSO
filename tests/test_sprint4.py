@@ -112,8 +112,12 @@ async def test_mcp_thread_tools(client: AsyncClient):
     cookies, scope_name = await _setup(client)
     suffix = uuid.uuid4().hex[:8]
     async for db in client.app.dependency_overrides[get_db]():
-        user = await create_user(db, f"mcpt{suffix}@test.cl", "X", "p", "admin")
+        from app.projects.service import create_project
+        user = await create_user(db, f"mcpt{suffix}@test.cl", "X", "password", "admin")
+        project = await create_project(db, name=f"p-{suffix}", account_id=user.account_id)
         _t, raw = await create_api_token(db, f"t-{suffix}", "write", user.id)
+        _t.project_id = project.id
+        await db.commit()
         break
 
     async def rpc(method, params):
@@ -123,12 +127,14 @@ async def test_mcp_thread_tools(client: AsyncClient):
         )
 
     import json
+    # Fresh area name: scopes.name is globally unique, so reusing _setup's scope name
+    # (which lives in another project) would collide. The thread tool creates the area.
     r = await rpc("tools/call", {
-        "name": "pulso_hilo_crear",
-        "arguments": {"title": "Hilo MCP", "scope_name": scope_name},
+        "name": "pulso_thread_create",
+        "arguments": {"title": "Hilo MCP", "area_name": f"mcp-area-{suffix}"},
     })
     created = json.loads(r.json()["result"]["content"][0]["text"])
     assert created["stage"] == "idea"
-    li = await rpc("tools/call", {"name": "pulso_hilo_listar", "arguments": {}})
+    li = await rpc("tools/call", {"name": "pulso_thread_list", "arguments": {}})
     listed = json.loads(li.json()["result"]["content"][0]["text"])
     assert any(t["title"] == "Hilo MCP" for t in listed)

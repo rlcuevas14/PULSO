@@ -19,7 +19,11 @@
       <a href="/hilos" class="text-sm text-gray-600 hover:text-gray-900">Threads</a>
       <a href="/incidentes" class="text-sm text-gray-600 hover:text-gray-900">Incidents</a>
       <a href="/ideas" class="text-sm text-gray-600 hover:text-gray-900">Ideas</a>
-      {% if user.role == 'admin' %}
+      {% if user.account_role == 'owner' %}
+      <a href="/account/members" class="text-sm text-gray-600 hover:text-gray-900">Members</a>
+      {% endif %}
+      {% if user.is_superadmin %}
+      <a href="/admin/accounts" class="text-sm text-gray-600 hover:text-gray-900">Accounts</a>
       <a href="/admin" class="text-sm text-gray-600 hover:text-gray-900">Admin</a>
       {% endif %}
     </div>

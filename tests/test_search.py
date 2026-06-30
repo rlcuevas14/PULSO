@@ -50,7 +50,7 @@ async def test_search_finds_by_title(client: AsyncClient, test_engine):
             title="Autenticación con OAuth",
             summary_md="Integrar OAuth 2.0 con Google.",
             type="feature",
-            origen="humano",
+            origen="human",
         )
         s.add(item)
         await s.commit()
