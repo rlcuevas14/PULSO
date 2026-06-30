@@ -94,14 +94,20 @@ async def test_manual_promote_creates_backlog_item(client: AsyncClient, monkeypa
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
     )
     # login admin para la UI
+    from sqlalchemy import select
+
     from app.auth.service import create_user
+    from app.projects.models import Project
     suffix = uuid.uuid4().hex[:8]
     issue_id = None
     async for db in client.app.dependency_overrides[get_db]():
-        await create_user(db, f"inc{suffix}@test.cl", "Inc", "pass", "admin")
+        user = await create_user(db, f"inc{suffix}@test.cl", "Inc", "pass", "admin")
+        project = await db.scalar(select(Project).where(Project.account_id == user.account_id))
         issue = (await db.execute(
-            __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
+            select(SentryIssue).where(SentryIssue.sentry_issue_id == sid)
         )).scalar_one()
+        issue.project_id = project.id
+        await db.commit()
         issue_id = str(issue.id)
         break
     login = await client.post(

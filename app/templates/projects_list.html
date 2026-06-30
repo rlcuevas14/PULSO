@@ -4,7 +4,7 @@
 <div class="max-w-2xl">
   <div class="flex items-center justify-between mb-6">
     <h1 class="text-xl font-bold text-gray-900">Projects</h1>
-    {% if user.role == 'admin' %}
+    {% if user.account_role == 'owner' %}
     <a href="/projects/new" class="bg-indigo-600 text-white text-sm px-3 py-1.5 rounded hover:bg-indigo-700">New project</a>
     {% endif %}
   </div>

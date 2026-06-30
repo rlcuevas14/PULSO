@@ -65,7 +65,7 @@
   </div>
 
   {# ── Project settings ─────────────────────────────────── #}
-  {% if user.role == 'admin' %}
+  {% if user.account_role == 'owner' %}
   <div class="bg-white rounded-lg border border-gray-200 p-5">
     <h2 class="font-semibold text-gray-900 mb-4">Project settings</h2>
     <form method="post" action="/projects/{{ project.slug }}/settings" class="space-y-4">

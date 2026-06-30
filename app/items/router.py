@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.deps import api_or_session_user, require_admin_strict, require_write
+from app.auth.deps import api_or_session_user, current_project_id, require_owner, require_write
 from app.auth.models import ApiToken, User
 from app.database import get_db
 from app.enums import (
@@ -21,6 +21,7 @@ from app.enums import (
     PRIORITIES,
 )
 from app.items.models import Item, ItemComment
+from app.scopes.models import Scope
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -110,6 +111,13 @@ def _actor(auth) -> str:
     return "unknown"
 
 
+def _require_item(item: "Item | None", pid: uuid.UUID) -> Item:
+    """404 unless the item exists and belongs to the request's project (account isolation)."""
+    if item is None or item.project_id != pid:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    return item
+
+
 # PERF-04: paginación con tope duro para no devolver el backlog entero sin querer.
 _LIST_DEFAULT_LIMIT = 50
 _LIST_MAX_LIMIT = 200
@@ -126,15 +134,18 @@ async def list_items(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     """DUP-1: consume la implementación única `items.service.list_items` (REST/UI/MCP).
 
     PERF-04: `limit` por defecto 50, tope duro 200; `offset` para paginar.
+    Scoped to the request's project (account isolation).
     """
     from app.items import service
 
     items = await service.list_items(
         db,
+        project_id=pid,
         scope=scope_id,
         statuses=[status] if status else None,
         type=type,
@@ -152,8 +163,13 @@ async def create_item(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
-    item = Item(**body.model_dump(), created_by=_actor(auth), origen="human")
+    # The scope must belong to the request's project (no cross-project item creation).
+    scope = await db.get(Scope, body.scope_id)
+    if scope is None or scope.project_id != pid:
+        raise HTTPException(status_code=422, detail="Scope does not belong to this project")
+    item = Item(**body.model_dump(), project_id=pid, created_by=_actor(auth), origen="human")
     db.add(item)
     try:
         await db.commit()
@@ -173,7 +189,7 @@ class ImportRequest(BaseModel):
 async def import_digest(
     body: ImportRequest,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin_strict),
+    _admin: User = Depends(require_owner),
 ):
     target = body.path or body.directory
     if not target:
@@ -201,14 +217,15 @@ async def search_items(
     limit: int = Query(50, ge=1, le=_SEARCH_MAX_LIMIT),
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     """DUP-1: consume la implementación única del FTS (`items.search.search_items`).
 
-    PERF-04: `limit` por defecto 50, tope duro 200.
+    PERF-04: `limit` por defecto 50, tope duro 200. Scoped to the request's project.
     """
     from app.items import search
 
-    return await search.search_items(db, q, limit=limit)
+    return await search.search_items(db, q, limit=limit, project_id=pid)
 
 
 @router.get("/{item_id}", response_model=ItemDetail)
@@ -216,6 +233,7 @@ async def get_item(
     item_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     result = await db.execute(
         select(Item)
@@ -226,9 +244,7 @@ async def get_item(
             selectinload(Item.enrichments),
         )
     )
-    item = result.scalar_one_or_none()
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item = _require_item(result.scalar_one_or_none(), pid)
 
     def _event_dict(e):
         return {"id": str(e.id), "actor": e.actor, "action": e.action,
@@ -259,12 +275,11 @@ async def patch_item(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import service
 
-    item = await service.get_item(db, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item = _require_item(await service.get_item(db, item_id), pid)
 
     changes = body.model_dump(exclude_none=True)
     actor = _actor(auth)
@@ -299,8 +314,10 @@ async def get_comment(
     comment_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     """Lectura de un comentario individual. Comentarios son append-only — no existe PATCH."""
+    _require_item(await db.get(Item, item_id), pid)
     result = await db.execute(
         select(ItemComment).where(
             ItemComment.id == comment_id,
@@ -326,10 +343,9 @@ async def add_comment(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
-    result = await db.execute(select(Item).where(Item.id == item_id))
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    _require_item(await db.get(Item, item_id), pid)
 
     comment = ItemComment(
         item_id=item_id,
@@ -354,12 +370,11 @@ async def close_item(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import service
 
-    item = await service.get_item(db, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item = _require_item(await service.get_item(db, item_id), pid)
 
     try:
         unblocked = await service.close_item(
@@ -379,12 +394,11 @@ async def reopen_item_endpoint(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import service
 
-    item = await service.get_item(db, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item = _require_item(await service.get_item(db, item_id), pid)
     try:
         await service.reopen_item(db, item, _actor(auth))
     except service.TransitionError as e:
@@ -401,15 +415,24 @@ class RelationshipCreate(BaseModel):
     note: str | None = None
 
 
+async def _both_items_in_project(db: AsyncSession, a: uuid.UUID, b: uuid.UUID, pid: uuid.UUID) -> None:
+    for iid in (a, b):
+        item = await db.get(Item, iid)
+        if item is None or item.project_id != pid:
+            raise HTTPException(status_code=404, detail="Item no encontrado")
+
+
 @router.post("/relationships", status_code=201)
 async def create_relationship_endpoint(
     body: RelationshipCreate,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import relationships
 
+    await _both_items_in_project(db, body.source_id, body.target_id, pid)
     try:
         rel = await relationships.create_relationship(
             db, body.source_id, body.target_id, body.relation, body.note
@@ -436,9 +459,11 @@ async def delete_relationship_endpoint(
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import relationships
 
+    await _both_items_in_project(db, source_id, target_id, pid)
     ok = await relationships.delete_relationship(db, source_id, target_id, relation)
     await db.commit()
     return {"deleted": ok}
@@ -449,9 +474,11 @@ async def item_graph(
     item_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(api_or_session_user),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.items import graph
 
+    _require_item(await db.get(Item, item_id), pid)
     return await graph.subgraph(db, item_id)
 
 
@@ -461,12 +488,11 @@ async def enqueue_enrich(
     db: AsyncSession = Depends(get_db),
     auth=Depends(api_or_session_user),
     _=Depends(require_write),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
     from app.jobs.worker import enqueue_job
 
-    result = await db.execute(select(Item).where(Item.id == item_id))
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+    _require_item(await db.get(Item, item_id), pid)
 
     run = await enqueue_job(db, kind="enrich", ref_type="item", ref_id=item_id)
     return {"run_id": str(run.id), "status": "encolado"}
@@ -476,13 +502,15 @@ async def enqueue_enrich(
 async def enqueue_pending_enrich(
     limit: int = Query(200),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin_strict),
+    _admin: User = Depends(require_owner),
+    pid: uuid.UUID = Depends(current_project_id),
 ):
-    """Encola enriquecimiento para todos los ítems abiertos sin impacto estimado (admin)."""
+    """Encola enriquecimiento para todos los ítems abiertos sin impacto estimado (owner)."""
     from app.jobs.worker import enqueue_job
 
     rows = await db.execute(
         select(Item.id).where(
+            Item.project_id == pid,
             Item.impact_ai.is_(None),
             Item.status.not_in(["done", "discarded"]),
         ).limit(limit)

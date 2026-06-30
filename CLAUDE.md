@@ -20,6 +20,8 @@
 - Chunk 3: English enum rename migration (v0011), all code/templates updated to English values
 - Chunk 4: 17 MCP tools renamed to English, project isolation failsafe in MCP dispatch, `/projects` UI, setup wizard, project selector in navbar, public README
 
+**Multi-account** (branch `feat/multi-account`): accounts/users/grants model (`accounts`, `project_members`, account columns on users/projects), `create_account` service + super-admin UI (`/admin/accounts`) + owner member matrix (`/account/members`), per-project `viewer`/`editor` access, account isolation across MCP + REST + UI (`projects/access.py` chokepoint), migration `v0012` (backfills existing data into one default account). MCP token scope ≤ minter's role.
+
 ---
 
 ## Stack
@@ -36,8 +38,9 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 | `config.py` | `Settings` (env vars) |
 | `database.py` | engine, `SessionFactory`, `Base`, `get_db` |
 | `templates_config.py` | `Jinja2Templates` + globals + `fecha` filter |
-| `auth/` | `User`/`ApiToken`, bcrypt + SHA-256 tokens, deps (cookie **or** Bearer), login UI, `/setup` wizard |
-| `projects/` | `Project` model, service (CRUD + slug), router (`/projects/*`, `/ui/project/switch`) |
+| `auth/` | `User` (now `account_id`, `account_role` owner/member, `is_superadmin`)/`ApiToken`, bcrypt + SHA-256 tokens, deps (cookie **or** Bearer; `require_owner`/`require_superadmin`/`current_project_id`), login UI, `/setup` wizard |
+| `accounts/` | `Account` model (tenant), `service.py` (`create_account` — reusable for a future public signup), `members.py` (collaborator + grant matrix), router (`/admin/accounts` super-admin, `/account/members` owner) |
+| `projects/` | `Project` model (`account_id`-scoped, slug unique per account), service, **`access.py`** (isolation chokepoint: `accessible_project_ids`, `user_role_on_project`, `require_project_access`, `resolve_project_id`/`resolve_current_project`), router (`/projects/*`, `/ui/project/switch`) |
 | `items/` | `Item`/`ItemComment`/`ItemEvent`/`AiEnrichment`/`ItemRelationship`; `service.py` (lifecycle-validated mutations); `lifecycle.py` (8-state machine); `graph.py` (neighborhood/blocking/Kahn); `relationships.py` (arcs); `importer.py` (JSONL) |
 | `scopes/` | `Scope` (area grouper) + router |
 | `threads/` | `Thread`/`ThreadArtifact` (stages), service, router |
@@ -59,10 +62,12 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 - **origen**: `digest, human, ai-session, sentry, agent`
 - **item_comments.kind**: `comment, ai-analysis, decision, status-change` (`decision` = decision log)
 
-**Other tables**: `users, api_tokens, projects, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
+**Multi-account (tenancy)**: **`accounts`** (`id, name, slug, is_active`) groups projects. **`users`** gain `account_id` (FK — one account per user), `account_role` (`owner`|`member`), `is_superadmin` (instance operator). **`projects`** gain `account_id`; slug is unique **per account**. **`project_members`** (`user_id, project_id, role` ∈ `viewer`|`editor`) is the per-project grant matrix — owners have implicit editor on every project of their account. **`scopes.name`** is unique **per project** (`(project_id, name)`), not globally. MCP token scope ≤ minter's role on the project.
+
+**Other tables**: `accounts, users, api_tokens, projects, project_members, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
 `item_events(actor, action, payload)` is the **audit primitive** — every mutation must emit one.
 
-**Migrations** (head = `v0011`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006 (projects table) · v0007 (project_id on scopes) · v0008 (project_id on items+threads+sentry_issues) · v0009 (project_id on agent_runs) · v0010 (project_id on api_tokens) · v0011 (English enum rename).
+**Migrations** (head = `v0012`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006–v0010 (projects + project_id FKs) · v0011 (English enum rename) · v0012 (accounts + project_members + account columns; backfills existing data into one default account, earliest/admin user → owner+superadmin; scopes.name → unique per project).
 
 **Thread stages** (NOT renamed — Spanish still): `idea, investigacion, historias, spec, en-desarrollo, review, hecho, descartado`
 
@@ -94,7 +99,7 @@ Items returned include `area` (name) and `thread_id` when set. Graph is item↔i
 - **Incidents (Sentry)**: errors land in `sentry_issues` (**container**, NOT auto-promoted to backlog). AI triage pre-classifies noise; owner/agent **manually promotes** real ones. HMAC-signed webhook; `pulso:UUID` in commit auto-closes (GitHub webhook).
 - **Threads**: funnel for heavy features (80% goes fast through backlog, no thread needed).
 - **Append-only / audit**: every mutation emits `ItemEvent`.
-- **Project isolation**: every DB query in `mcp/tools.py` filters by `pid = _pid(token)`. Creating items, scopes, or threads sets `project_id = pid`. Cross-project access is impossible via MCP.
+- **Account & project isolation**: an **account** groups projects; a user belongs to one account as `owner` or `member`, with per-project `viewer`/`editor` grants (`project_members`; owners get implicit editor on all account projects). The chokepoint `projects/access.py` resolves the effective project for every REST/UI request (`resolve_project_id`/`resolve_current_project`) and `mcp/tools.py` filters by `token.project_id`. Cross-account access is impossible — members see only granted projects; the super-admin (instance operator) manages accounts but not their backlog data. `create_user` with no `account_id` auto-creates a personal account + `Default` project (tests/simple flows).
 
 ---
 

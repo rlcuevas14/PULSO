@@ -5,14 +5,18 @@ from httpx import AsyncClient
 
 
 async def _setup(client: AsyncClient):
+    from sqlalchemy import select
+
     from app.auth.service import create_user
     from app.database import get_db
+    from app.projects.models import Project
     from app.scopes.models import Scope
 
     suffix = uuid.uuid4().hex[:8]
     async for db in client.app.dependency_overrides[get_db]():
-        await create_user(db, f"s4admin{suffix}@test.cl", "Admin", "pass", "admin")
-        scope = Scope(name=f"s4-{suffix}")
+        user = await create_user(db, f"s4admin{suffix}@test.cl", "Admin", "pass", "admin")
+        project = await db.scalar(select(Project).where(Project.account_id == user.account_id))
+        scope = Scope(name=f"s4-{suffix}", project_id=project.id)
         db.add(scope)
         await db.commit()
         await db.refresh(scope)
@@ -67,8 +71,8 @@ async def test_advance_to_hecho_blocked_by_open_items(client: AsyncClient):
         scope = (await db.execute(
             __import__("sqlalchemy").select(Scope).where(Scope.name == scope_name)
         )).scalar_one()
-        it = Item(scope_id=scope.id, title="abierto", type="feature", status="in-progress",
-                  thread_id=uuid.UUID(tid))
+        it = Item(scope_id=scope.id, project_id=scope.project_id, title="abierto", type="feature",
+                  status="in-progress", thread_id=uuid.UUID(tid))
         db.add(it)
         await db.commit()
         break
@@ -112,8 +116,12 @@ async def test_mcp_thread_tools(client: AsyncClient):
     cookies, scope_name = await _setup(client)
     suffix = uuid.uuid4().hex[:8]
     async for db in client.app.dependency_overrides[get_db]():
-        user = await create_user(db, f"mcpt{suffix}@test.cl", "X", "p", "admin")
+        from app.projects.service import create_project
+        user = await create_user(db, f"mcpt{suffix}@test.cl", "X", "password", "admin")
+        project = await create_project(db, name=f"p-{suffix}", account_id=user.account_id)
         _t, raw = await create_api_token(db, f"t-{suffix}", "write", user.id)
+        _t.project_id = project.id
+        await db.commit()
         break
 
     async def rpc(method, params):
@@ -123,12 +131,14 @@ async def test_mcp_thread_tools(client: AsyncClient):
         )
 
     import json
+    # Fresh area name: scopes.name is globally unique, so reusing _setup's scope name
+    # (which lives in another project) would collide. The thread tool creates the area.
     r = await rpc("tools/call", {
-        "name": "pulso_hilo_crear",
-        "arguments": {"title": "Hilo MCP", "scope_name": scope_name},
+        "name": "pulso_thread_create",
+        "arguments": {"title": "Hilo MCP", "area_name": f"mcp-area-{suffix}"},
     })
     created = json.loads(r.json()["result"]["content"][0]["text"])
     assert created["stage"] == "idea"
-    li = await rpc("tools/call", {"name": "pulso_hilo_listar", "arguments": {}})
+    li = await rpc("tools/call", {"name": "pulso_thread_list", "arguments": {}})
     listed = json.loads(li.json()["result"]["content"][0]["text"])
     assert any(t["title"] == "Hilo MCP" for t in listed)

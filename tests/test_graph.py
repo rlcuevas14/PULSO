@@ -102,7 +102,7 @@ async def test_blockers_and_unblocked_by(test_engine):
         blockers = await graph.blockers_of(db, b.id)
         assert any(x["id"] == str(a.id) for x in blockers)
         # cerrar a => b queda desbloqueado.
-        a.status = "hecho"
+        a.status = "done"
         await db.commit()
         unblocked = await graph.unblocked_by(db, a.id)
         assert any(x["id"] == str(b.id) for x in unblocked)

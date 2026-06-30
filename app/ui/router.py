@@ -14,6 +14,7 @@ from app.items import graph, service
 from app.items.lifecycle import allowed_targets, non_terminal_targets
 from app.items.models import Item
 from app.jobs.models import AgentRun
+from app.projects.access import resolve_current_project, user_role_on_project
 from app.scopes.models import Scope
 from app.templates_config import templates
 
@@ -29,6 +30,25 @@ def _recent_touch(item: Item) -> bool:
     return item.last_touched_at > datetime.now(timezone.utc) - timedelta(hours=24)
 
 
+async def _project_id(db: AsyncSession, user: User, request: Request) -> uuid.UUID:
+    """Current project for UI list screens; a zero-UUID sentinel (matches nothing) when the
+    user can reach no project — so they see an empty board, never another account's data."""
+    p = await resolve_current_project(db, user, request)
+    return p.id if p else uuid.UUID(int=0)
+
+
+async def _guard_row(
+    db: AsyncSession, user: User, project_id, *, write: bool = False
+) -> Response | None:
+    """404 if the row's project isn't accessible to the user; 403 if a viewer attempts a write."""
+    role = await user_role_on_project(db, user, project_id)
+    if role is None:
+        return Response(status_code=404)
+    if write and role == "viewer":
+        return Response(content="Viewer cannot modify this project", status_code=403)
+    return None
+
+
 # ---------- Tablero ----------
 
 @router.get("/", response_class=HTMLResponse)
@@ -37,17 +57,25 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    counts_q = await db.execute(select(Item.status, func.count().label("n")).group_by(Item.status))
+    pid = await _project_id(db, user, request)
+    counts_q = await db.execute(
+        select(Item.status, func.count().label("n"))
+        .where(Item.project_id == pid).group_by(Item.status)
+    )
     counts = {row.status: row.n for row in counts_q}
 
+    # ponytail: blocked count is graph-derived and account-global; it's just a number.
     blocked_ids = await graph.graph_blocked_ids(db)
 
-    recent_q = await db.execute(select(Item).order_by(Item.created_at.desc()).limit(10))
+    recent_q = await db.execute(
+        select(Item).where(Item.project_id == pid).order_by(Item.created_at.desc()).limit(10)
+    )
     recent = recent_q.scalars().all()
 
     qw_q = await db.execute(
         select(Item)
         .where(
+            Item.project_id == pid,
             Item.impact_ai >= 4,
             Item.effort_ai.in_(["XS", "S"]),
             Item.status.not_in(["done", "discarded"]),
@@ -57,7 +85,9 @@ async def dashboard(
     )
     quick_wins = qw_q.scalars().all()
 
-    cost_q = await db.scalar(select(func.sum(AgentRun.cost_usd)).where(AgentRun.status == "ok"))
+    cost_q = await db.scalar(
+        select(func.sum(AgentRun.cost_usd)).where(AgentRun.status == "ok", AgentRun.project_id == pid)
+    )
     monthly_cost = float(cost_q or 0)
 
     return templates.TemplateResponse(
@@ -90,9 +120,10 @@ async def backlog(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    q = select(Item)
+    pid = await _project_id(db, user, request)
+    q = select(Item).where(Item.project_id == pid)
     if scope:
-        scope_row = await db.scalar(select(Scope).where(Scope.name == scope))
+        scope_row = await db.scalar(select(Scope).where(Scope.name == scope, Scope.project_id == pid))
         if scope_row:
             q = q.where(Item.scope_id == scope_row.id)
     if status:
@@ -115,7 +146,7 @@ async def backlog(
     items = _order_items(items, order, await _topo_order_ids(db, items) if order == "topological" else None)
 
     scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
     scope_map = {s.id: s.name for s in scopes}
 
@@ -181,12 +212,16 @@ async def item_detail(
     item = result.scalar_one_or_none()
     if item is None:
         return Response(status_code=404, content="Item no encontrado")
+    guard = await _guard_row(db, user, item.project_id)
+    if guard is not None:
+        return guard
 
     scope = await db.scalar(select(Scope).where(Scope.id == item.scope_id))
     blockers = await graph.blockers_of(db, item.id)
     sub = await graph.subgraph(db, item.id)
     scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == item.project_id)
+        .order_by(Scope.name)
     )).scalars().all())
 
     return templates.TemplateResponse(
@@ -211,9 +246,10 @@ async def prioridad_page(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    q = select(Item).where(Item.status.in_(_OPEN))
+    pid = await _project_id(db, user, request)
+    q = select(Item).where(Item.status.in_(_OPEN), Item.project_id == pid)
     if scope:
-        scope_row = await db.scalar(select(Scope).where(Scope.name == scope))
+        scope_row = await db.scalar(select(Scope).where(Scope.name == scope, Scope.project_id == pid))
         if scope_row:
             q = q.where(Item.scope_id == scope_row.id)
     items = list((await db.execute(q.limit(500))).scalars().all())
@@ -230,7 +266,7 @@ async def prioridad_page(
 
     ranked = sorted(items, key=lambda i: (_PRIORITY_RANK.get(i.priority, 9), -(i.impact_ai or 0)))
     scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
 
     ctx = {
@@ -259,6 +295,9 @@ async def ui_transition(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         await service.apply_transition(db, item, status, user.email)
         await db.commit()
@@ -279,6 +318,9 @@ async def ui_close(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         await service.close_item(db, item, status, reason or None, user.email, commit_sha or None)
         await db.commit()
@@ -296,6 +338,9 @@ async def ui_reopen(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         await service.reopen_item(db, item, user.email)
         await db.commit()
@@ -315,6 +360,9 @@ async def ui_set_field(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     if field == "priority":
         await service.set_priority(db, item, value or None, user.email)
     elif field == "impact_ai":
@@ -349,6 +397,9 @@ async def ui_create_relationship(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         target_id = await relationships.resolve_query(db, target_query)
         await relationships.create_relationship(db, item_id, target_id, relation, note or None)
@@ -373,6 +424,9 @@ async def ui_delete_relationship(
     item = await service.get_item(db, item_id)
     if item is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
     await relationships.delete_relationship(db, source, target, relation)
     await db.commit()
     return await _render_relations(request, db, item)
@@ -380,6 +434,7 @@ async def ui_delete_relationship(
 
 @router.post("/ui/items/create")
 async def ui_create_item(
+    request: Request,
     title: str = Form(...),
     scope_id: str = Form(...),
     type: str = Form(...),
@@ -388,8 +443,12 @@ async def ui_create_item(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    pid = await _project_id(db, user, request)
+    scope = await db.get(Scope, uuid.UUID(scope_id))
+    if scope is None or scope.project_id != pid:
+        return Response(content="Scope does not belong to your project", status_code=422)
     item = Item(
-        scope_id=uuid.UUID(scope_id), title=title, type=type, status=status,
+        scope_id=scope.id, project_id=pid, title=title, type=type, status=status,
         summary_md=summary_md or None, origen="human", created_by=user.email,
     )
     db.add(item)
@@ -410,7 +469,8 @@ async def hilos_page(
     from app.threads.models import THREAD_STAGES
     from app.threads.service import list_threads
 
-    threads = await list_threads(db, scope_name=scope)
+    pid = await _project_id(db, user, request)
+    threads = await list_threads(db, scope_name=scope, project_id=pid)
     by_stage: dict[str, list] = {s: [] for s in THREAD_STAGES}
     for t in threads:
         by_stage.setdefault(t.stage, []).append(t)
@@ -428,7 +488,7 @@ async def hilos_page(
         for t in threads
     }
     scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
     stages = [s for s in THREAD_STAGES if s != "descartado"]
     return templates.TemplateResponse(
@@ -451,6 +511,9 @@ async def hilo_detail(
     thread = await get_thread(db, thread_id)
     if thread is None:
         return Response(status_code=404, content="Hilo no encontrado")
+    guard = await _guard_row(db, user, thread.project_id)
+    if guard is not None:
+        return guard
     arts = list((await db.execute(
         select(ThreadArtifact).where(ThreadArtifact.thread_id == thread_id)
         .order_by(ThreadArtifact.created_at)
@@ -468,6 +531,7 @@ async def hilo_detail(
 
 @router.post("/ui/hilos/create")
 async def ui_create_hilo(
+    request: Request,
     title: str = Form(...),
     scope_name: str = Form(...),
     summary: str = Form(""),
@@ -476,7 +540,8 @@ async def ui_create_hilo(
 ):
     from app.threads.service import create_thread
 
-    t = await create_thread(db, scope_name, title, summary or None)
+    pid = await _project_id(db, user, request)
+    t = await create_thread(db, scope_name, title, summary or None, project_id=pid)
     await db.commit()
     return RedirectResponse(f"/hilos/{t.id}", status_code=303)
 
@@ -493,6 +558,9 @@ async def ui_advance_hilo(
     t = await get_thread(db, thread_id)
     if t is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, t.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         await advance_stage(db, t, artifact_content or None, user.id)
         await db.commit()
@@ -513,6 +581,9 @@ async def ui_set_hilo_stage(
     t = await get_thread(db, thread_id)
     if t is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, t.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         await set_stage(db, t, stage)
         await db.commit()
@@ -533,6 +604,9 @@ async def ui_elaborate_hilo(
     t = await get_thread(db, thread_id)
     if t is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, t.project_id, write=True)
+    if guard is not None:
+        return guard
     try:
         draft = await elaborate_next_stage(db, t)
     except ThreadError as e:
@@ -555,20 +629,27 @@ async def incidentes_page(
 ):
     from app.webhooks.models import SentryIssue
 
-    q = select(SentryIssue).order_by(SentryIssue.last_seen.desc().nulls_last())
+    pid = await _project_id(db, user, request)
+    q = (
+        select(SentryIssue)
+        .where(SentryIssue.project_id == pid)
+        .order_by(SentryIssue.last_seen.desc().nulls_last())
+    )
     if not incluir_ignorados:
         q = q.where(SentryIssue.status != "ignored")
     issues = list((await db.execute(q.limit(200))).scalars().all())
+
+    async def _count(st: str) -> int:
+        return int(await db.scalar(
+            select(func.count()).select_from(SentryIssue).where(
+                SentryIssue.project_id == pid, SentryIssue.status == st
+            )
+        ) or 0)
+
     counts = {
-        "new": await db.scalar(
-            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "new")
-        ),
-        "linked": await db.scalar(
-            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "linked")
-        ),
-        "ignored": await db.scalar(
-            select(func.count()).select_from(SentryIssue).where(SentryIssue.status == "ignored")
-        ),
+        "new": await _count("new"),
+        "linked": await _count("linked"),
+        "ignored": await _count("ignored"),
     }
     return templates.TemplateResponse(
         request, "incidentes.html",
@@ -589,6 +670,9 @@ async def ui_promote_issue(
     issue = await db.get(SentryIssue, issue_id)
     if issue is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, issue.project_id, write=True)
+    if guard is not None:
+        return guard
     if priority not in ("p0", "p1", "p2", "p3"):
         priority = "p1"
     await wservice.promote_issue(db, issue, priority=priority, actor=user.email)
@@ -607,6 +691,9 @@ async def ui_ignore_issue(
     issue = await db.get(SentryIssue, issue_id)
     if issue is None:
         return Response(status_code=404)
+    guard = await _guard_row(db, user, issue.project_id, write=True)
+    if guard is not None:
+        return guard
     issue.status = "ignored"
     await db.commit()
     return _refresh()
@@ -621,8 +708,8 @@ async def ui_backfill_sentry(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    """Importa el histórico de errores desde la API de Sentry (solo admin)."""
-    if user.role != "admin":
+    """Importa el histórico de errores desde la API de Sentry (solo owner)."""
+    if user.account_role != "owner":
         return HTMLResponse(
             '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
         )
@@ -648,11 +735,13 @@ async def ideas_page(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    pid = await _project_id(db, user, request)
     ideas = list((await db.execute(
-        select(Item).where(Item.status == "idea").order_by(Item.created_at.desc()).limit(50)
+        select(Item).where(Item.status == "idea", Item.project_id == pid)
+        .order_by(Item.created_at.desc()).limit(50)
     )).scalars().all())
     scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False)).order_by(Scope.name)
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
     return templates.TemplateResponse(
         request, "ideas.html", {"user": user, "ideas": ideas, "scopes": scopes}
@@ -667,7 +756,7 @@ async def ui_create_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    if user.role != "admin":
+    if not user.is_superadmin:
         return HTMLResponse(
             '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
         )
@@ -687,7 +776,7 @@ async def admin_page(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    if user.role != "admin":
+    if not user.is_superadmin:
         return RedirectResponse("/", status_code=303)
 
     users = list((await db.execute(select(User).order_by(User.created_at))).scalars().all())

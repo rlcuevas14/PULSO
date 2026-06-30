@@ -64,4 +64,4 @@ jobs:
       - name: Tests + cobertura
         run: >-
           pytest tests/ -v --tb=short
-          --cov=app --cov-report=term-missing --cov-fail-under=59
+          --cov=app --cov-report=term-missing --cov-fail-under=88

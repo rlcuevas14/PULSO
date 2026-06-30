@@ -20,7 +20,7 @@
     <tr class="border-b border-gray-100 last:border-0">
       <td class="py-2">{{ u.email }}</td>
       <td class="py-2 text-gray-600">{{ u.name }}</td>
-      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if u.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-gray-100{% endif %}">{{ u.role }}</span></td>
+      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if u.account_role == 'owner' %}bg-purple-100 text-purple-700{% else %}bg-gray-100{% endif %}">{{ u.account_role }}</span></td>
       <td class="py-2">{% if u.is_active %}✓{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}

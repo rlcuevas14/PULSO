@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Members — Pulso{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Team members</h1>
+
+{% if new_member %}
+<div class="mb-3 rounded bg-green-50 border border-green-300 p-3 text-sm text-green-800">
+  Member created: <code class="font-mono">{{ new_member }}</code> — share the temp password you set.
+</div>
+{% endif %}
+{% if error %}
+<div class="mb-3 rounded bg-red-50 border border-red-300 p-3 text-sm text-red-700">{{ error }}</div>
+{% endif %}
+
+<p class="text-sm text-gray-500 mb-2">Grant each collaborator viewer or editor access per project.</p>
+<table class="w-full text-sm mb-8">
+  <thead>
+    <tr class="text-left text-gray-500 border-b">
+      <th class="py-2">Member</th>
+      {% for p in projects %}<th class="px-2 text-center">{{ p.name }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for m in members %}
+    <tr class="border-b">
+      <td class="py-2">{{ m.name }}<div class="text-xs text-gray-400">{{ m.email }}</div></td>
+      {% for p in projects %}
+      {% set cur = matrix.get(m.id, {}).get(p.id) %}
+      <td class="px-2 text-center">
+        <form method="post" action="/account/members/grant" class="inline">
+          <input type="hidden" name="user_id" value="{{ m.id }}">
+          <input type="hidden" name="project_id" value="{{ p.id }}">
+          <select name="role" onchange="this.form.submit()" class="border rounded text-xs px-1 py-0.5">
+            <option value="none" {% if not cur %}selected{% endif %}>—</option>
+            <option value="viewer" {% if cur == 'viewer' %}selected{% endif %}>viewer</option>
+            <option value="editor" {% if cur == 'editor' %}selected{% endif %}>editor</option>
+          </select>
+        </form>
+      </td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  {% if not members %}<tr><td colspan="{{ projects|length + 1 }}" class="py-3 text-gray-400">No collaborators yet.</td></tr>{% endif %}
+  </tbody>
+</table>
+
+<h2 class="font-semibold mb-2">Add collaborator</h2>
+<form method="post" action="/account/members" class="grid grid-cols-2 gap-3 max-w-xl">
+  <input name="name" placeholder="Name" required class="border rounded px-2 py-1">
+  <input name="email" type="email" placeholder="Email" required class="border rounded px-2 py-1">
+  <input name="password" type="password" placeholder="Temp password (min 8 chars)" required class="border rounded px-2 py-1 col-span-2">
+  <button class="bg-indigo-600 text-white rounded px-3 py-1 col-span-2 hover:bg-indigo-700">Add collaborator</button>
+</form>
+{% endblock %}

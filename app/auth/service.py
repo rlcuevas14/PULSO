@@ -51,10 +51,50 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> User | No
 
 
 async def create_user(
-    db: AsyncSession, email: str, name: str, password: str, role: str = "viewer"
+    db: AsyncSession,
+    email: str,
+    name: str,
+    password: str,
+    role: str = "viewer",
+    *,
+    account_id: uuid.UUID | None = None,
+    account_role: str | None = None,
+    is_superadmin: bool | None = None,
 ) -> User:
-    user = User(email=email, name=name, password_hash=hash_password(password), role=role)
+    """Create a user.
+
+    If ``account_id`` is omitted, a personal account is created and the user becomes
+    its owner — convenient for tests and simple flows. The legacy ``role`` arg maps to
+    account semantics: ``"admin"`` -> owner + superadmin, anything else -> member.
+    """
+    auto_account = account_id is None
+    if auto_account:
+        from app.accounts.models import Account
+        from app.accounts.service import _slugify, _unique_slug
+
+        acc = Account(name=name or email, slug=await _unique_slug(db, _slugify(name or email)))
+        db.add(acc)
+        await db.flush()
+        account_id = acc.id
+    if account_role is None:
+        account_role = "owner" if role == "admin" else "member"
+    if is_superadmin is None:
+        is_superadmin = role == "admin"
+    user = User(
+        email=email,
+        name=name,
+        password_hash=hash_password(password),
+        account_id=account_id,
+        account_role=account_role,
+        is_superadmin=is_superadmin,
+    )
     db.add(user)
+    if auto_account:
+        # A personal account gets a starter project so the user is immediately usable.
+        assert account_id is not None
+        from app.projects.service import create_project
+
+        await create_project(db, name="Default", account_id=account_id)
     await db.commit()
     await db.refresh(user)
     return user

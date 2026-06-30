@@ -14,7 +14,8 @@ from app.auth.service import (
 async def test_create_user_and_authenticate(db: AsyncSession):
     user = await create_user(db, "admin@test.cl", "Admin Test", "secreta123", "admin")
     assert user.id is not None
-    assert user.role == "admin"
+    assert user.account_role == "owner"
+    assert user.is_superadmin is True
 
     found = await authenticate(db, "admin@test.cl", "secreta123")
     assert found is not None

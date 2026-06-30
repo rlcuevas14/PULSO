@@ -67,7 +67,7 @@ class Item(Base):
     priority_declared: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     trigger_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     dependencies: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    origen: Mapped[str] = mapped_column(String(20), nullable=False, default="humano")
+    origen: Mapped[str] = mapped_column(String(20), nullable=False, default="human")
     source_refs: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     stale_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     agent_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
