@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 {% block title %}Prioridad{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-900">Prioridad</h1>
+<div class="flex items-center justify-between gap-4 mb-4">
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Prioridad</h1>
   <form id="pf">
     <select name="scope" aria-label="Filtrar por scope"
-            class="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            class="p-input p-input-sm"
             hx-get="/prioridad" hx-target="#prioridad-body" hx-swap="innerHTML" hx-push-url="true">
       <option value="">Todos los scopes</option>
       {% for s in scopes %}<option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
@@ -14,11 +15,7 @@
   </form>
 </div>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
-  <strong>Matriz impacto × esfuerzo.</strong> El cuadrante superior-izquierdo (alto impacto, bajo esfuerzo)
-  son los <em>quick wins</em>. Si el juicio de la IA está equivocado, corrige impacto/esfuerzo en el ítem —
-  tu estimación declarada gana. Lo sin estimar aparece abajo.
-</div>
+{{ hint('prioridad', '<strong>Matriz impacto × esfuerzo.</strong> El cuadrante superior-izquierdo (alto impacto, bajo esfuerzo) son los <em>quick wins</em>. Si el juicio de la IA está equivocado, corrige impacto/esfuerzo en el ítem — tu estimación declarada gana. Lo sin estimar aparece abajo.'|safe) }}
 
 <div id="prioridad-body">
   {% include "partials/prioridad_body.html" %}
