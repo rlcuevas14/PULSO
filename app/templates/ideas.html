@@ -1,59 +1,67 @@
 {% extends "base.html" %}
 {% block title %}Ideas{% endblock %}
 {% block content %}
+{% from "partials/_hint.html" import hint %}
 
 <div class="flex items-center justify-between mb-5">
-  <h1 class="text-2xl font-bold text-gray-900">Ideas</h1>
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Ideas</h1>
 </div>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
-  Captura ideas rápidas aquí. Una idea es un ítem sin compromiso — puedes promoverla a
-  backlog desde su detalle cuando se decida trabajarla.
-</div>
+{{ hint('ideas', 'Captura ideas rápidas aquí. Una idea es un ítem sin compromiso — puedes promoverla a backlog desde su detalle cuando se decida trabajarla.') }}
 
-<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-  <h2 class="font-semibold text-gray-800 mb-3">Nueva idea</h2>
+<div class="p-card p-5 mb-6">
+  <h2 class="font-semibold text-ink mb-3">Nueva idea</h2>
   <form hx-post="/api/v1/items"
         hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }"
         class="space-y-3">
     <input type="hidden" name="status" value="idea">
     <div>
-      <input name="title" type="text" required placeholder="Título de la idea" aria-label="Título de la idea"
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <label class="p-label" for="idea-title">Título</label>
+      <input id="idea-title" name="title" type="text" required placeholder="Título de la idea" aria-label="Título de la idea"
+        class="p-input">
     </div>
     <div class="grid grid-cols-2 gap-3">
-      <select name="scope_id" required aria-label="Scope de la idea" class="border border-gray-300 rounded px-3 py-2 text-sm">
-        <option value="">Scope...</option>
-        {% for s in scopes %}
-        <option value="{{ s.id }}">{{ s.name }}</option>
-        {% endfor %}
-      </select>
-      <select name="type" aria-label="Tipo de la idea" class="border border-gray-300 rounded px-3 py-2 text-sm">
-        <option value="idea">idea</option>
-        <option value="feature">feature</option>
-        <option value="bug">bug</option>
-        <option value="tech-debt">tech-debt</option>
-      </select>
+      <div>
+        <label class="p-label" for="idea-scope">Scope</label>
+        <select id="idea-scope" name="scope_id" required aria-label="Scope de la idea" class="p-input">
+          <option value="">Scope...</option>
+          {% for s in scopes %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="p-label" for="idea-type">Tipo</label>
+        <select id="idea-type" name="type" aria-label="Tipo de la idea" class="p-input">
+          <option value="idea">idea</option>
+          <option value="feature">feature</option>
+          <option value="bug">bug</option>
+          <option value="tech-debt">tech-debt</option>
+        </select>
+      </div>
     </div>
-    <textarea name="summary_md" rows="2" placeholder="Descripción breve (opcional)" aria-label="Descripción breve"
-      class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none"></textarea>
-    <button type="submit"
-      class="text-sm bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">
-      Guardar idea
-    </button>
+    <div>
+      <label class="p-label" for="idea-summary">Descripción</label>
+      <textarea id="idea-summary" name="summary_md" rows="2" placeholder="Descripción breve (opcional)" aria-label="Descripción breve"
+        class="p-input"></textarea>
+    </div>
+    <button type="submit" class="p-btn p-btn-primary">Guardar idea</button>
   </form>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+<div class="p-card divide-y divide-hairline">
   {% for idea in ideas %}
-  <a href="/items/{{ idea.id }}" class="block px-4 py-3 hover:bg-gray-50">
-    <div class="text-sm font-medium text-gray-900">{{ idea.title }}</div>
+  <a href="/items/{{ idea.id }}" class="block px-4 py-3 hover:bg-surface-strong first:rounded-t-2xl last:rounded-b-2xl">
+    <div class="flex items-center justify-between gap-3">
+      <span class="text-sm text-ink font-medium hover:underline truncate">{{ idea.title }}</span>
+      <span class="text-xs text-muted shrink-0">{{ idea.created_at | fecha }}</span>
+    </div>
     {% if idea.summary_md %}
-    <div class="text-xs text-gray-500 mt-0.5 truncate">{{ idea.summary_md }}</div>
+    <div class="text-xs text-muted mt-0.5 truncate">{{ idea.summary_md }}</div>
     {% endif %}
   </a>
   {% else %}
-  <div class="px-4 py-8 text-center text-sm text-gray-400">No hay ideas aún. ¡Agrega la primera!</div>
+  <div class="px-4 py-12 text-center text-sm text-muted">No hay ideas aún. ¡Agrega la primera!</div>
   {% endfor %}
 </div>
 
