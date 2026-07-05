@@ -1,41 +1,41 @@
 {% extends "base.html" %}
 {% block title %}New project — Pulso{% endblock %}
 {% block content %}
+{% from "partials/_color_picker.html" import color_picker %}
 <div class="max-w-lg">
-  <h1 class="text-xl font-bold text-gray-900 mb-6">New project</h1>
+  <h1 class="text-xl font-bold text-ink mb-6">New project</h1>
 
   {% if error %}
-  <div class="bg-red-50 border border-red-200 text-red-700 rounded px-4 py-2 mb-4 text-sm">{{ error }}</div>
+  <div class="bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 mb-4 text-sm">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/projects/new" class="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+  <form method="post" action="/projects/new" class="p-card p-6 space-y-4">
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1" for="name">Name <span class="text-red-500">*</span></label>
+      <label class="p-label" for="name">Name <span class="text-error">*</span></label>
       <input id="name" name="name" type="text" required autofocus
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        class="w-full p-input text-sm"
         placeholder="e.g. My SaaS">
     </div>
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1" for="slug">Slug</label>
-      <p class="text-xs text-gray-400 mb-1">Auto-generated from name if left blank. Used in MCP config.</p>
+      <label class="p-label" for="slug">Slug</label>
+      <p class="text-xs text-muted mb-1">Auto-generated from name if left blank. Used in MCP config.</p>
       <input id="slug" name="slug" type="text"
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        class="w-full p-input text-sm"
         placeholder="e.g. my-saas">
     </div>
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1" for="description">Description</label>
+      <label class="p-label" for="description">Description</label>
       <input id="description" name="description" type="text"
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        class="w-full p-input text-sm"
         placeholder="Short description (optional)">
     </div>
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1" for="color">Color</label>
-      <input id="color" name="color" type="color" value="#6366f1"
-        class="border border-gray-300 rounded h-9 w-20 cursor-pointer">
+      <label class="p-label">Color</label>
+      {{ color_picker(None, 'Nuevo proyecto') }}
     </div>
     <div class="flex gap-3 pt-2">
-      <button type="submit" class="bg-indigo-600 text-white text-sm px-4 py-2 rounded hover:bg-indigo-700">Create</button>
-      <a href="/projects" class="text-sm text-gray-500 px-4 py-2 hover:text-gray-900">Cancel</a>
+      <button type="submit" class="p-btn p-btn-primary">Create</button>
+      <a href="/projects" class="p-btn p-btn-ghost">Cancel</a>
     </div>
   </form>
 </div>

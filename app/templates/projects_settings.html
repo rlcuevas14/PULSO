@@ -1,57 +1,66 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — Settings — Pulso{% endblock %}
 {% block content %}
+{% from "partials/_color_picker.html" import color_picker %}
 <div class="max-w-2xl">
-  <div class="flex items-center gap-2 mb-6">
-    <a href="/projects" class="text-sm text-gray-500 hover:text-gray-900">Projects</a>
-    <span class="text-gray-300">/</span>
-    <span class="text-sm font-medium text-gray-900">{{ project.name }}</span>
+  <div class="flex items-center gap-2 mb-6 text-sm text-muted">
+    <a href="/projects" class="hover:text-ink">Projects</a>
+    <span>/</span>
+    <span class="font-medium text-ink">{{ project.name }}</span>
   </div>
 
   {# ── MCP Connect ─────────────────────────────────────── #}
-  <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-5 mb-6">
-    <h2 class="font-semibold text-indigo-900 mb-1">Connect Claude Code</h2>
-    <p class="text-xs text-indigo-700 mb-3">Generate a write token, then run this command in your Claude Code session:</p>
+  <div class="border rounded-2xl p-5 mb-6"
+       style="border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--canvas))">
+    <h2 class="font-semibold text-ink mb-1">Connect Claude Code</h2>
+    <p class="text-xs text-muted mb-3">Generate a write token, then run this command in your Claude Code session:</p>
 
     {% if new_token %}
-    <div class="bg-green-50 border border-green-200 rounded p-3 mb-3 text-xs text-green-800">
-      <strong>New token (shown once):</strong>
-      <code class="block font-mono mt-1 break-all select-all">{{ new_token }}</code>
+    <div class="bg-canvas border border-hairline rounded-xl p-3 mb-3 text-xs">
+      <strong class="text-ink">New token (shown once):</strong>
+      <code class="block font-mono text-sm mt-1 break-all select-all text-ink">{{ new_token }}</code>
     </div>
     {% endif %}
 
-    <pre class="bg-white border border-indigo-100 rounded text-xs font-mono p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ snippet }}</pre>
-    <p class="text-xs text-indigo-500 mt-2">Replace &lt;TOKEN&gt; with a write token from the list below.</p>
+    <pre id="mcp-snippet" class="bg-canvas border border-hairline rounded-xl p-3 text-xs overflow-x-auto">{{ snippet }}</pre>
+    <div class="flex items-center gap-3 mt-2">
+      <button type="button" class="p-btn p-btn-ghost p-btn-sm"
+              onclick="var b=this;navigator.clipboard.writeText(document.getElementById('mcp-snippet').innerText).then(function(){b.textContent='Copiado ✓';setTimeout(function(){b.textContent='Copiar';},1500);})">Copiar</button>
+      <p class="text-xs text-muted">Replace &lt;TOKEN&gt; with a write token from the list below.</p>
+    </div>
   </div>
 
   {# ── Tokens ──────────────────────────────────────────── #}
-  <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-    <h2 class="font-semibold text-gray-900 mb-3">API Tokens</h2>
+  <div class="p-card p-5 mb-6">
+    <h2 class="font-semibold text-ink mb-3">API Tokens</h2>
 
-    <form method="post" action="/projects/{{ project.slug }}/tokens" class="flex gap-2 mb-4">
+    <form method="post" action="/projects/{{ project.slug }}/tokens" class="flex items-center gap-2 mb-4">
       <input name="token_name" type="text" required placeholder="Token name (e.g. claude-code)"
-        class="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-      <select name="scopes" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+        class="p-input flex-1 text-sm">
+      <select name="scopes" class="p-input text-sm">
         <option value="write">write</option>
         <option value="read">read</option>
       </select>
-      <button type="submit" class="bg-indigo-600 text-white text-sm px-3 py-1.5 rounded hover:bg-indigo-700">Generate</button>
+      <button type="submit" class="p-btn p-btn-primary p-btn-sm">Generate</button>
     </form>
 
     {% if tokens %}
     <table class="w-full text-sm">
-      <thead><tr class="text-xs text-gray-400 text-left border-b border-gray-100">
-        <th class="pb-1">Name</th><th class="pb-1">Scope</th><th class="pb-1">Created</th><th></th>
+      <thead><tr>
+        <th class="p-label text-left pb-2">Name</th>
+        <th class="p-label text-left pb-2">Scope</th>
+        <th class="p-label text-left pb-2">Created</th>
+        <th class="pb-2"></th>
       </tr></thead>
       <tbody>
       {% for t in tokens %}
-      <tr class="border-b border-gray-50 last:border-0">
-        <td class="py-2 font-mono text-xs text-gray-700">{{ t.name }}</td>
-        <td class="py-2 text-xs text-gray-500">{{ t.scopes }}</td>
-        <td class="py-2 text-xs text-gray-400">{{ t.created_at | fecha }}</td>
-        <td class="py-2 text-right">
+      <tr>
+        <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ t.name }}</td>
+        <td class="py-2 border-t border-hairline text-xs text-muted">{{ t.scopes }}</td>
+        <td class="py-2 border-t border-hairline text-xs text-muted">{{ t.created_at | fecha }}</td>
+        <td class="py-2 border-t border-hairline text-right">
           <form method="post" action="/projects/{{ project.slug }}/tokens/{{ t.id }}/revoke" class="inline">
-            <button type="submit" class="text-xs text-red-500 hover:text-red-700"
+            <button type="submit" class="p-btn p-btn-sm p-btn-ghost text-error"
               onclick="return confirm('Revoke token {{ t.name }}?')">Revoke</button>
           </form>
         </td>
@@ -60,66 +69,65 @@
       </tbody>
     </table>
     {% else %}
-    <p class="text-sm text-gray-400">No active tokens.</p>
+    <p class="text-sm text-muted">No active tokens.</p>
     {% endif %}
   </div>
 
   {# ── Project settings ─────────────────────────────────── #}
   {% if user.account_role == 'owner' %}
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="font-semibold text-gray-900 mb-4">Project settings</h2>
+  <div class="p-card p-5">
+    <h2 class="font-semibold text-ink mb-4">Project settings</h2>
     <form method="post" action="/projects/{{ project.slug }}/settings" class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2">
-          <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+          <label class="p-label">Name</label>
           <input name="name" type="text" required value="{{ project.name }}"
-            class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            class="w-full p-input text-sm">
         </div>
         <div class="col-span-2">
-          <label class="block text-xs font-medium text-gray-600 mb-1">Description</label>
+          <label class="p-label">Description</label>
           <input name="description" type="text" value="{{ project.description or '' }}"
-            class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            class="w-full p-input text-sm">
         </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Color</label>
-          <input name="color" type="color" value="{{ project.color or '#6366f1' }}"
-            class="border border-gray-300 rounded h-9 w-20 cursor-pointer">
+        <div class="col-span-2">
+          <label class="p-label">Color</label>
+          {{ color_picker(project.color, project.name) }}
         </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Repo URL</label>
+        <div class="col-span-2">
+          <label class="p-label">Repo URL</label>
           <input name="repo_url" type="url" value="{{ project.repo_url or '' }}"
             placeholder="https://github.com/user/repo"
-            class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            class="w-full p-input text-sm">
         </div>
       </div>
 
-      <details class="border-t border-gray-100 pt-4">
-        <summary class="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700">Webhook &amp; Sentry secrets (optional)</summary>
+      <details class="border-t border-hairline pt-4">
+        <summary class="text-sm text-muted cursor-pointer hover:text-ink">Webhook &amp; Sentry secrets (optional)</summary>
         <div class="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label class="block text-xs text-gray-500 mb-1">GitHub webhook secret</label>
+            <label class="p-label">GitHub webhook secret</label>
             <input name="github_webhook_secret" type="text" value="{{ project.github_webhook_secret or '' }}"
-              class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono">
+              class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="block text-xs text-gray-500 mb-1">Sentry client secret</label>
+            <label class="p-label">Sentry client secret</label>
             <input name="sentry_client_secret" type="text" value="{{ project.sentry_client_secret or '' }}"
-              class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono">
+              class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="block text-xs text-gray-500 mb-1">Sentry API token</label>
+            <label class="p-label">Sentry API token</label>
             <input name="sentry_api_token" type="text" value="{{ project.sentry_api_token or '' }}"
-              class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono">
+              class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="block text-xs text-gray-500 mb-1">Sentry org</label>
+            <label class="p-label">Sentry org</label>
             <input name="sentry_org" type="text" value="{{ project.sentry_org or '' }}"
-              class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              class="w-full p-input text-xs">
           </div>
         </div>
       </details>
 
-      <button type="submit" class="bg-gray-800 text-white text-sm px-4 py-2 rounded hover:bg-gray-900">Save</button>
+      <button type="submit" class="p-btn p-btn-primary">Save</button>
     </form>
   </div>
   {% endif %}
