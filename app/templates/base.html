@@ -97,10 +97,31 @@
     </div>
   </footer>
 
+{% set flash = request.session.pop("flash_success", None) %}
+{% if flash %}
+  {% if flash.celebrate %}
+  <div id="celebrate" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4"
+       role="status" aria-live="polite" onclick="this.remove()">
+    <div class="p-card px-10 py-8 text-center max-w-sm" style="border-radius:24px;animation:p-pop .25s ease-out">
+      <svg class="mx-auto mb-3" width="56" height="56" viewBox="0 0 52 52" fill="none" aria-hidden="true">
+        <circle cx="26" cy="26" r="24" stroke="#22c55e" stroke-width="2" opacity=".25"/>
+        <path d="M14 27 L22 35 L38 18" stroke="#22c55e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+              style="stroke-dasharray:40;stroke-dashoffset:40;animation:p-draw .4s .15s ease-out forwards"/>
+      </svg>
+      <p class="text-lg font-semibold text-ink">¡Completado!</p>
+      {% if flash.title %}<p class="text-sm text-muted mt-1">«{{ flash.title }}»</p>{% endif %}
+    </div>
+  </div>
+  <script>setTimeout(function () { var c = document.getElementById("celebrate"); if (c) c.remove(); }, 1600);</script>
+  {% else %}
+  <script>document.addEventListener("DOMContentLoaded", function () { showToast({{ flash.message | tojson }}, "success"); });</script>
+  {% endif %}
+{% endif %}
+
   {# FE-01: toast global de error HTMX. Toda acción HTMX que falle muestra aquí
      el mensaje del backend, que antes se descartaba en silencio. #}
   <div id="toast" role="alert" aria-live="assertive"
-       class="hidden fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg bg-red-600 text-white text-sm px-4 py-3 shadow-lg break-words">
+       class="hidden fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg text-white text-sm px-4 py-3 shadow-lg break-words">
   </div>
 
   <script>
@@ -108,15 +129,15 @@
       var toast = document.getElementById("toast");
       var hideTimer = null;
 
-      function showToast(message) {
+      function showToast(message, kind) {
         if (!toast) return;
         toast.textContent = message;
-        toast.classList.remove("hidden");
+        toast.classList.remove("hidden", "bg-error", "bg-success");
+        toast.classList.add(kind === "success" ? "bg-success" : "bg-error");
         if (hideTimer) clearTimeout(hideTimer);
-        hideTimer = setTimeout(function () {
-          toast.classList.add("hidden");
-        }, 5000);
+        hideTimer = setTimeout(function () { toast.classList.add("hidden"); }, kind === "success" ? 3000 : 5000);
       }
+      window.showToast = showToast;
 
       // Error de respuesta del servidor (4xx/5xx): muestra el cuerpo del backend.
       document.body.addEventListener("htmx:responseError", function (event) {

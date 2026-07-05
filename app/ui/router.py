@@ -17,6 +17,7 @@ from app.jobs.models import AgentRun
 from app.projects.access import resolve_current_project, user_role_on_project
 from app.scopes.models import Scope
 from app.templates_config import templates
+from app.ui.flash import flash_success
 
 router = APIRouter(tags=["ui"])
 
@@ -319,6 +320,7 @@ async def ui_transition(
 @router.post("/ui/items/{item_id}/close")
 async def ui_close(
     item_id: uuid.UUID,
+    request: Request,
     status: str = Form(...),
     reason: str = Form(""),
     commit_sha: str = Form(""),
@@ -336,6 +338,10 @@ async def ui_close(
         await db.commit()
     except service.TransitionError as e:
         return Response(content=str(e), status_code=422)
+    if status == "done":
+        flash_success(request, title=item.title, celebrate=True)
+    else:
+        flash_success(request, message="Ítem descartado")
     return _refresh()
 
 
@@ -464,6 +470,7 @@ async def ui_create_item(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+    flash_success(request, message="Ítem creado")
     return RedirectResponse(f"/items/{item.id}", status_code=303)
 
 
@@ -553,12 +560,14 @@ async def ui_create_hilo(
     pid = await _project_id(db, user, request)
     t = await create_thread(db, scope_name, title, summary or None, project_id=pid)
     await db.commit()
+    flash_success(request, message="Hilo creado")
     return RedirectResponse(f"/hilos/{t.id}", status_code=303)
 
 
 @router.post("/ui/hilos/{thread_id}/advance")
 async def ui_advance_hilo(
     thread_id: uuid.UUID,
+    request: Request,
     artifact_content: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -576,12 +585,15 @@ async def ui_advance_hilo(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
+    if t.stage == "hecho":
+        flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
 @router.post("/ui/hilos/{thread_id}/stage")
 async def ui_set_hilo_stage(
     thread_id: uuid.UUID,
+    request: Request,
     stage: str = Form(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -599,6 +611,8 @@ async def ui_set_hilo_stage(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
+    if t.stage == "hecho":
+        flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
@@ -670,6 +684,7 @@ async def incidentes_page(
 @router.post("/ui/incidentes/{issue_id}/promote")
 async def ui_promote_issue(
     issue_id: uuid.UUID,
+    request: Request,
     priority: str = Form("p1"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -687,12 +702,14 @@ async def ui_promote_issue(
         priority = "p1"
     await wservice.promote_issue(db, issue, priority=priority, actor=user.email)
     await db.commit()
+    flash_success(request, message="Incidente promovido al backlog")
     return _refresh()
 
 
 @router.post("/ui/incidentes/{issue_id}/ignore")
 async def ui_ignore_issue(
     issue_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
@@ -706,6 +723,7 @@ async def ui_ignore_issue(
         return guard
     issue.status = "ignored"
     await db.commit()
+    flash_success(request, message="Incidente ignorado")
     return _refresh()
 
 
