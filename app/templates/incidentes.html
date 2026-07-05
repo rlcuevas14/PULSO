@@ -1,95 +1,102 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 {% block title %}Incidentes{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-900">Incidentes (Sentry)</h1>
-  <div class="text-sm text-gray-500">
-    {{ counts.new }} nuevos · {{ counts.linked }} en backlog · {{ counts.ignored }} ignorados
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Incidentes (Sentry)</h1>
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="p-pill bg-brand-coral/20 text-ink">{{ counts.new }} nuevos</span>
+    <span class="p-pill bg-surface-strong text-body">{{ counts.linked }} linkeados</span>
+    <span class="p-pill bg-surface-strong text-muted">{{ counts.ignored }} ignorados</span>
   </div>
 </div>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
-  <strong>Contenedor de errores de producción.</strong> Cada error de Sentry aterriza aquí (deduplicado
+{{ hint('incidentes', '<strong>Contenedor de errores de producción.</strong> Cada error de Sentry aterriza aquí (deduplicado
   por issue, con su conteo de eventos). NO entran al backlog automáticamente: el triage IA pre-clasifica
-  el ruido y tú decides cuáles <em>promover al backlog</em> y con qué prioridad. El ruido se auto-oculta.
-</div>
+  el ruido y tú decides cuáles <em>promover al backlog</em> y con qué prioridad. El ruido se auto-oculta.'|safe) }}
 
-<div class="mb-3 flex items-center justify-between">
+<div class="mb-3 flex items-center justify-between gap-3">
   <a href="/incidentes{% if not incluir_ignorados %}?incluir_ignorados=true{% endif %}"
-     class="text-sm text-blue-600 hover:underline">
+     class="text-sm underline underline-offset-2" style="color:var(--accent)">
     {% if incluir_ignorados %}Ocultar ignorados{% else %}Mostrar ignorados{% endif %}
   </a>
   {% if user.account_role == 'owner' %}
-  <button onclick="document.getElementById('backfill-box').classList.toggle('hidden')"
-          class="text-sm text-gray-600 hover:text-gray-900">Importar histórico de Sentry ↓</button>
+  <button onclick="openModal('backfill-modal')" class="p-btn p-btn-ghost p-btn-sm">Importar histórico de Sentry</button>
   {% endif %}
 </div>
 
 {% if user.account_role == 'owner' %}
-<div id="backfill-box" class="hidden bg-white border border-gray-200 rounded-lg p-4 mb-4">
-  <p class="text-xs text-gray-500 mb-2">
-    Trae los errores <strong>sin resolver</strong> que ya existen en Sentry (los resueltos se saltan).
-    Necesitas el <em>slug</em> de la organización y del proyecto, y un token de Sentry con permiso
-    <code>Issue&amp;Event: Read</code> (el "Token" de la integración Pulso, o un token personal).
-  </p>
-  <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
-        hx-indicator="#backfill-spin"
-        class="flex flex-wrap items-center gap-2 text-sm">
-    <input name="org" required placeholder="org slug (ej: tid-analytics)" aria-label="Slug de la organización en Sentry"
-           class="border border-gray-300 rounded px-2 py-1">
-    <input name="project" required placeholder="project slug (ej: efrain)" aria-label="Slug del proyecto en Sentry"
-           class="border border-gray-300 rounded px-2 py-1">
-    <input name="token" type="password" required placeholder="Sentry token" aria-label="Token de Sentry"
-           class="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[12rem]">
-    <input name="query" value="is:unresolved" aria-label="Filtro de búsqueda en Sentry"
-           class="border border-gray-300 rounded px-2 py-1 w-40"
-           title="Filtro Sentry; deja is:unresolved para traer solo los abiertos">
-    <button class="bg-gray-900 text-white rounded px-3 py-1">Importar</button>
-    <span id="backfill-spin" class="htmx-indicator text-xs text-gray-400">importando…</span>
-  </form>
-  <div id="backfill-result" aria-live="polite" class="mt-2"></div>
+<div id="backfill-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="backfill-title"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
+  <div class="p-card w-full max-w-md p-6">
+    <h2 id="backfill-title" class="text-lg font-semibold text-ink mb-2">Importar histórico de Sentry</h2>
+    <p class="text-xs text-muted mb-4">
+      Trae los errores <strong class="text-body">sin resolver</strong> que ya existen en Sentry (los resueltos se saltan).
+      Necesitas el <em>slug</em> de la organización y del proyecto, y un token de Sentry con permiso
+      <code>Issue&amp;Event: Read</code> (el "Token" de la integración Pulso, o un token personal).
+    </p>
+    <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
+          hx-indicator="#backfill-submit" class="space-y-3 text-sm">
+      <input name="org" required placeholder="org slug (ej: tid-analytics)" aria-label="Slug de la organización en Sentry"
+             class="p-input">
+      <input name="project" required placeholder="project slug (ej: efrain)" aria-label="Slug del proyecto en Sentry"
+             class="p-input">
+      <input name="token" type="password" required placeholder="Sentry token" aria-label="Token de Sentry"
+             class="p-input">
+      <input name="query" value="is:unresolved" aria-label="Filtro de búsqueda en Sentry"
+             class="p-input"
+             title="Filtro Sentry; deja is:unresolved para traer solo los abiertos">
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="closeModal('backfill-modal')" class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
+        <button id="backfill-submit" type="submit" class="p-btn p-btn-primary">
+          <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
+          Importar
+        </button>
+      </div>
+    </form>
+    <div id="backfill-result" aria-live="polite" class="mt-3 text-sm"></div>
+  </div>
 </div>
 {% endif %}
 
-<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+<div class="p-card divide-y divide-hairline">
   {% if not issues %}
-  <div class="px-4 py-8 text-center text-sm text-gray-400">
+  <div class="px-4 py-12 text-center text-sm text-muted">
     Sin incidentes. Cuando Sentry dispare un error y el webhook esté configurado, aparecerá aquí.
   </div>
   {% endif %}
   {% for it in issues %}
-  <div class="flex items-center gap-3 px-4 py-3 {% if it.status == 'ignored' %}opacity-50{% endif %}">
-    <span class="text-xs rounded px-1.5 py-0.5 shrink-0
-      {% if it.level == 'error' %}bg-red-100 text-red-700{% elif it.level == 'warning' %}bg-yellow-100 text-yellow-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ it.level }}</span>
+  <div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-3 {% if it.status == 'ignored' %}opacity-50{% endif %}">
+    <span class="p-pill shrink-0
+      {% if it.level == 'error' %}bg-error/15 text-error{% elif it.level == 'warning' %}bg-warning/15 text-warning{% else %}bg-surface-strong text-muted{% endif %}">{{ it.level }}</span>
     <div class="flex-1 min-w-0">
-      <div class="text-sm font-medium text-gray-900 truncate">{{ it.title }}</div>
-      <div class="flex items-center gap-2 text-xs text-gray-400">
+      <div class="text-sm font-medium text-ink truncate">{{ it.title }}</div>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
         <span>{{ it.project }}</span>
         <span>· {{ it.events_count }} eventos</span>
-        {% if it.triage %}<span class="rounded px-1.5 py-0.5
-          {% if it.triage == 'bug-real' %}bg-red-50 text-red-600{% elif it.triage == 'ruido' %}bg-gray-100 text-gray-500{% else %}bg-amber-50 text-amber-600{% endif %}">{{ it.triage }}</span>
-        {% else %}<span class="text-gray-300">sin triage</span>{% endif %}
-        <span title="Primera vez visto">1ª: {{ it.first_seen.strftime('%Y-%m-%d') if it.first_seen else '—' }}</span>
-        <span title="Última vez visto" class="text-gray-500">últ: {{ it.last_seen.strftime('%Y-%m-%d %H:%M') if it.last_seen else '—' }}</span>
-        {% if it.payload and it.payload.get('web_url') %}<a href="{{ it.payload.web_url }}" target="_blank" class="text-blue-500 hover:underline">ver en Sentry ↗</a>{% endif %}
+        {% if it.triage %}<span class="p-pill bg-surface-strong text-muted">{{ it.triage }}</span>
+        {% else %}<span>sin triage</span>{% endif %}
+        <span title="Primera vez visto">1ª: {{ it.first_seen | fecha('%Y-%m-%d') }}</span>
+        <span title="Última vez visto">últ: {{ it.last_seen | fecha }}</span>
+        {% if it.payload and it.payload.get('web_url') %}<a href="{{ it.payload.web_url }}" target="_blank" class="underline underline-offset-2" style="color:var(--accent)">ver en Sentry ↗</a>{% endif %}
       </div>
     </div>
-    <div class="flex items-center gap-2 shrink-0">
+    <div class="flex items-center gap-2 shrink-0 ml-auto">
       {% if it.status == 'linked' %}
-      <a href="/backlog?origen=sentry" class="text-xs text-green-600">✓ en backlog</a>
+      <a href="/backlog?origen=sentry" class="text-xs text-success">✓ en backlog</a>
       {% elif it.status != 'ignored' %}
       <form hx-post="/ui/incidentes/{{ it.id }}/promote" hx-swap="none"
-            hx-indicator="#promote-spin-{{ it.id }}" class="flex items-center gap-1">
-        <select name="priority" aria-label="Prioridad al promover" class="text-xs border border-gray-200 rounded px-1 py-0.5">
+            hx-indicator="#promote-spin-{{ it.id }}" class="flex items-center gap-2">
+        <select name="priority" aria-label="Prioridad al promover" class="p-input p-input-sm">
           <option value="p0">p0</option><option value="p1" selected>p1</option>
           <option value="p2">p2</option><option value="p3">p3</option>
         </select>
-        <button class="text-xs bg-gray-900 text-white rounded px-2 py-0.5">Promover al backlog</button>
-        <span id="promote-spin-{{ it.id }}" class="htmx-indicator text-xs text-gray-400">…</span>
+        <button class="p-btn p-btn-sm p-btn-primary">Promover al backlog</button>
+        <span id="promote-spin-{{ it.id }}" class="htmx-indicator text-xs text-muted">…</span>
       </form>
       <button hx-post="/ui/incidentes/{{ it.id }}/ignore" hx-swap="none"
-              class="text-xs text-gray-400 hover:text-gray-700">Ignorar</button>
+              class="p-btn p-btn-sm p-btn-ghost">Ignorar</button>
       {% endif %}
     </div>
   </div>
