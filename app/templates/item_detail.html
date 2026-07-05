@@ -153,8 +153,9 @@
       <button onclick="openModal('close-modal')"
         class="p-btn p-btn-primary w-full">Marcar hecho / Descartar ▸</button>
       {% else %}
-      <form action="/ui/items/{{ item.id }}/reopen" method="post"
-            onsubmit="return confirm('¿Reabrir este ítem? Volverá al backlog.')">
+      <form hx-post="/ui/items/{{ item.id }}/reopen" hx-swap="none"
+            hx-confirm="¿Reabrir este ítem? Volverá al backlog."
+            action="/ui/items/{{ item.id }}/reopen" method="post">
         <button class="p-btn p-btn-ghost w-full">Reabrir ▸</button>
       </form>
       {% endif %}
@@ -169,7 +170,10 @@
      class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
   <div class="p-card w-full max-w-md p-6">
     <h2 id="close-modal-title" class="font-semibold text-ink mb-4">Cerrar ítem</h2>
-    <form action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
+    {# hx-post: el handler responde 204 + HX-Refresh (solo htmx honra esa cabecera);
+       action/method quedan como fallback sin JS. #}
+    <form hx-post="/ui/items/{{ item.id }}/close" hx-swap="none"
+          action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
       <div class="flex gap-4 text-sm text-body">
         <label class="flex items-center gap-2"><input type="radio" name="status" value="done" checked> Done</label>
         <label class="flex items-center gap-2"><input type="radio" name="status" value="discarded"> Discarded</label>
