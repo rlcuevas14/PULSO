@@ -1,48 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Accounts — Pulso{% endblock %}
 {% block content %}
-<h1 class="text-xl font-semibold mb-4">Accounts</h1>
+<h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink mb-6">Accounts</h1>
 
 {% if new_owner %}
-<div class="mb-3 rounded bg-green-50 border border-green-300 p-3 text-sm text-green-800">
+<div class="mb-4 bg-success/10 border border-success/30 text-success rounded-xl px-4 py-3 text-sm">
   Account created. Owner login: <code class="font-mono">{{ new_owner }}</code> — share the temp password you set.
 </div>
 {% endif %}
 {% if error %}
-<div class="mb-3 rounded bg-red-50 border border-red-300 p-3 text-sm text-red-700">{{ error }}</div>
+<div class="mb-4 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-sm">{{ error }}</div>
 {% endif %}
 
-<table class="w-full text-sm mb-8">
-  <thead>
-    <tr class="text-left text-gray-500 border-b">
-      <th class="py-2">Name</th><th>Slug</th><th>Active</th><th>Created</th><th></th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for a in accounts %}
-    <tr class="border-b">
-      <td class="py-2">{{ a.name }}</td>
-      <td class="font-mono text-xs">{{ a.slug }}</td>
-      <td>{% if a.is_active %}<span class="text-green-700">active</span>{% else %}<span class="text-gray-400">disabled</span>{% endif %}</td>
-      <td class="text-gray-500">{{ a.created_at | fecha }}</td>
-      <td>
-        <form method="post" action="/admin/accounts/{{ a.id }}/active" class="inline">
-          <input type="hidden" name="active" value="{{ 'false' if a.is_active else 'true' }}">
-          <button class="text-xs underline text-gray-500 hover:text-gray-900">{{ 'Disable' if a.is_active else 'Enable' }}</button>
-        </form>
-      </td>
-    </tr>
-  {% endfor %}
-  {% if not accounts %}<tr><td colspan="5" class="py-3 text-gray-400">No accounts yet.</td></tr>{% endif %}
-  </tbody>
-</table>
+<div class="p-card overflow-x-auto p-5 mb-8">
+  <table class="w-full text-sm">
+    <thead>
+      <tr>
+        <th class="p-label text-left pb-2">Name</th>
+        <th class="p-label text-left pb-2">Slug</th>
+        <th class="p-label text-left pb-2">Active</th>
+        <th class="p-label text-left pb-2">Created</th>
+        <th class="p-label text-left pb-2"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in accounts %}
+      <tr>
+        <td class="py-2 border-t border-hairline text-sm text-ink font-medium">{{ a.name }}</td>
+        <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ a.slug }}</td>
+        <td class="py-2 border-t border-hairline text-sm">{% if a.is_active %}<span class="p-pill bg-success/15 text-success">active</span>{% else %}<span class="p-pill bg-surface-strong text-muted">disabled</span>{% endif %}</td>
+        <td class="py-2 border-t border-hairline text-sm text-muted">{{ a.created_at | fecha }}</td>
+        <td class="py-2 border-t border-hairline text-sm text-body">
+          <form method="post" action="/admin/accounts/{{ a.id }}/active" class="inline">
+            <input type="hidden" name="active" value="{{ 'false' if a.is_active else 'true' }}">
+            <button class="p-btn p-btn-sm p-btn-ghost">{{ 'Disable' if a.is_active else 'Enable' }}</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    {% if not accounts %}<tr><td colspan="5" class="py-3 border-t border-hairline text-muted">No accounts yet.</td></tr>{% endif %}
+    </tbody>
+  </table>
+</div>
 
-<h2 class="font-semibold mb-2">Create account</h2>
-<form method="post" action="/admin/accounts" class="grid grid-cols-2 gap-3 max-w-xl">
-  <input name="name" placeholder="Account name" required class="border rounded px-2 py-1 col-span-2">
-  <input name="owner_name" placeholder="Owner name" required class="border rounded px-2 py-1">
-  <input name="owner_email" type="email" placeholder="Owner email" required class="border rounded px-2 py-1">
-  <input name="password" type="password" placeholder="Temp password (min 8 chars)" required class="border rounded px-2 py-1 col-span-2">
-  <button class="bg-indigo-600 text-white rounded px-3 py-1 col-span-2 hover:bg-indigo-700">Create account</button>
+<h2 class="text-lg font-semibold text-ink mb-3">Create account</h2>
+<form method="post" action="/admin/accounts" class="p-card p-5 grid sm:grid-cols-2 gap-4 max-w-xl">
+  <div class="sm:col-span-2">
+    <label class="p-label" for="account-name">Account name</label>
+    <input id="account-name" name="name" placeholder="Account name" required class="p-input">
+  </div>
+  <div>
+    <label class="p-label" for="owner-name">Owner name</label>
+    <input id="owner-name" name="owner_name" placeholder="Owner name" required class="p-input">
+  </div>
+  <div>
+    <label class="p-label" for="owner-email">Owner email</label>
+    <input id="owner-email" name="owner_email" type="email" placeholder="Owner email" required class="p-input">
+  </div>
+  <div class="sm:col-span-2">
+    <label class="p-label" for="owner-password">Temp password</label>
+    <input id="owner-password" name="password" type="password" placeholder="Temp password (min 8 chars)" required class="p-input">
+  </div>
+  <button class="p-btn p-btn-primary sm:col-span-2">Create account</button>
 </form>
 {% endblock %}

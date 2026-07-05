@@ -70,6 +70,8 @@ def create_app() -> FastAPI:
     from app.webhooks.router import router as webhooks_router
 
     app = FastAPI(title="Pulso", lifespan=lifespan)
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

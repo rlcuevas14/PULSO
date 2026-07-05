@@ -3,164 +3,195 @@
 {% block content %}
 
 <div class="mb-4">
-  <a href="/backlog" class="text-sm text-blue-600 hover:underline">← Backlog</a>
+  <a href="/backlog" class="text-sm text-accent hover:underline">← Backlog</a>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-  <div class="flex items-start justify-between gap-4 mb-4">
-    <h1 class="text-xl font-bold text-gray-900">{{ item.title }}</h1>
-    <div class="flex items-center gap-2 shrink-0">
-      {% if item.stale_risk %}
-      <span class="text-xs bg-yellow-100 text-yellow-700 rounded px-2 py-1">⚠ Verificar si ya está resuelto</span>
-      {% endif %}
-      {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-6 items-start">
+
+  {# ---- columna principal ---- #}
+  <div class="space-y-6 min-w-0 order-2 lg:order-1">
+
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <h1 class="text-2xl font-semibold tracking-tight text-ink">{{ item.title }}</h1>
+      <div class="flex items-center gap-2 shrink-0">
+        {% if item.stale_risk %}
+        <span class="p-pill bg-warning/20 text-warning">⚠ Verificar si ya está resuelto</span>
+        {% endif %}
+        {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
+      </div>
     </div>
-  </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-5">
-    <div><span class="text-gray-400">Tipo</span><br>{{ item.type }}</div>
-    <div><span class="text-gray-400">Scope</span><br>{{ scope.name if scope else '—' }}</div>
-    <div><span class="text-gray-400">Origen</span><br>{{ item.origen }}</div>
-    <div>
-      <span class="text-gray-400">Estado</span><br>
-      {% if transitions %}
-      <select aria-label="Cambiar estado del ítem" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
-              hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
-        <option value="">{{ item.status }} →</option>
-        {% for t in transitions %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-      </select>
-      {% else %}{{ item.status }}{% endif %}
-    </div>
-    <div>
-      <span class="text-gray-400">Esfuerzo</span><br>
-      <select aria-label="Esfuerzo estimado" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
-              hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
-              hx-vals='{"field":"effort_ai"}' name="value">
-        <option value="" {% if not item.effort_ai %}selected{% endif %}>—</option>
-        {% for e in ['XS','S','M','L','XL'] %}<option value="{{ e }}" {% if item.effort_ai == e %}selected{% endif %}>{{ e }}</option>{% endfor %}
-      </select>
-    </div>
-    <div>
-      <span class="text-gray-400">Impacto</span><br>
-      <select aria-label="Impacto estimado" class="border border-gray-300 rounded px-2 py-1 text-sm mt-0.5"
-              hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
-              hx-vals='{"field":"impact_ai"}' name="value">
-        <option value="" {% if not item.impact_ai %}selected{% endif %}>—</option>
-        {% for n in [1,2,3,4,5] %}<option value="{{ n }}" {% if item.impact_ai == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
-      </select>
-    </div>
-    <div>
-      <span class="text-gray-400">Prioridad</span><br>
-      {% with select_class = 'border border-gray-300 rounded px-2 py-1 text-sm mt-0.5' %}
-      {% include "partials/_priority_select.html" %}
-      {% endwith %}
-    </div>
-  </div>
-
-  {% if item.summary_md %}
-  <div class="prose prose-sm max-w-none text-gray-700 mb-5 whitespace-pre-wrap">{{ item.summary_md }}</div>
-  {% endif %}
-
-  {% if item.impact_rationale %}
-  <div class="bg-gray-50 rounded p-3 text-sm text-gray-600 mb-5">
-    <span class="font-medium">Justificación impacto:</span> {{ item.impact_rationale }}
-  </div>
-  {% endif %}
-
-  {% if item.dependencies %}
-  <div class="text-xs text-gray-400 mb-3">
-    <span class="font-medium">Dependencias (texto del digest, referencia):</span> {{ item.dependencies }}
-    — el grafo de Relaciones es la fuente estructurada.
-  </div>
-  {% endif %}
-
-  {% if blockers %}
-  <div class="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800 mb-5">
-    ⛔ <strong>Bloqueado por:</strong>
-    {% for b in blockers %}<a href="/items/{{ b.id }}" class="underline">{{ b.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
-    Ciérralos primero, o márcalo hecho igual solo si ya está resuelto.
-  </div>
-  {% endif %}
-
-  <div class="flex gap-3 flex-wrap items-center">
-    <button hx-post="/api/v1/items/{{ item.id }}/enrich" hx-swap="none"
-      hx-indicator="#enrich-spin"
-      hx-on:htmx:after-request="if(event.detail.successful){ this.textContent = 'Encolado ✓'; }"
-      class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">Analizar con IA</button>
-    <span id="enrich-spin" class="htmx-indicator text-xs text-gray-400">encolando…</span>
-
-    {% if item.status not in ('done','discarded') %}
-    <button onclick="openModal('close-modal')"
-      class="text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700">Marcar hecho / Descartar ▸</button>
-    {% else %}
-    <form action="/ui/items/{{ item.id }}/reopen" method="post" class="inline"
-          onsubmit="return confirm('¿Reabrir este ítem? Volverá al backlog.')">
-      <button class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">Reabrir ▸</button>
-    </form>
+    {% if item.summary_md %}
+    <div class="p-card p-5 prose-sm max-w-none text-body whitespace-pre-wrap">{{ item.summary_md }}</div>
     {% endif %}
-  </div>
-</div>
 
-<!-- Relaciones del grafo -->
-<div id="relations-section" class="bg-white rounded-lg border border-gray-200 p-5 mb-5">
-  {% include "partials/relationship_list.html" %}
-</div>
-
-<div class="bg-white rounded-lg border border-gray-200 p-5 mb-5">
-  <h2 class="font-semibold text-gray-800 mb-4">Comentarios ({{ item.comments|length }})</h2>
-  {% for c in item.comments %}
-  <div class="border-b border-gray-100 pb-3 mb-3 last:border-0 last:mb-0">
-    <div class="flex items-center gap-2 mb-1">
-      <span class="text-xs font-medium text-gray-700">{{ c.author }}</span>
-      <span class="text-xs text-gray-400">{{ c.created_at | fecha }}</span>
-      {% if c.kind == 'decision' %}<span class="text-xs bg-indigo-100 text-indigo-700 rounded px-1.5">decisión</span>{% endif %}
+    {% if item.impact_rationale %}
+    <div class="p-card p-5 text-sm text-body">
+      <span class="p-label">Justificación impacto</span>
+      {{ item.impact_rationale }}
     </div>
-    <div class="text-sm text-gray-700 whitespace-pre-wrap">{{ c.body_md }}</div>
-  </div>
-  {% endfor %}
-  <form hx-post="/api/v1/items/{{ item.id }}/comments"
-        hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }" class="mt-4">
-    <textarea name="body_md" rows="3" required placeholder="Agregar comentario..." aria-label="Nuevo comentario"
-      class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
-    <button type="submit" class="mt-2 text-sm bg-blue-600 text-white rounded px-3 py-1.5 hover:bg-blue-700">Comentar</button>
-  </form>
-</div>
+    {% endif %}
 
-{% if item.events %}
-<div class="bg-white rounded-lg border border-gray-200 p-5">
-  <h2 class="font-semibold text-gray-800 mb-4">Historial</h2>
-  <div class="space-y-2">
-    {% for e in item.events|reverse %}
-    <div class="flex items-center gap-3 text-sm">
-      <span class="text-gray-400 text-xs w-36 shrink-0">{{ e.created_at | fecha }}</span>
-      <span class="text-gray-600">{{ e.actor }}</span>
-      <span class="text-gray-400">·</span>
-      <span class="text-gray-700">{{ e.action }}</span>
-      {% if e.payload %}<span class="text-xs text-gray-400">{{ e.payload }}</span>{% endif %}
+    {% if item.dependencies %}
+    <div class="text-xs text-muted">
+      <span class="font-medium">Dependencias (texto del digest, referencia):</span> {{ item.dependencies }}
+      — el grafo de Relaciones es la fuente estructurada.
     </div>
-    {% endfor %}
+    {% endif %}
+
+    {% if blockers %}
+    <div class="bg-warning/10 border border-warning/30 text-warning rounded-xl px-4 py-3 text-sm">
+      ⛔ <strong>Bloqueado por:</strong>
+      {% for b in blockers %}<a href="/items/{{ b.id }}" class="underline">{{ b.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+      Ciérralos primero, o márcalo hecho igual solo si ya está resuelto.
+    </div>
+    {% endif %}
+
+    <!-- Relaciones del grafo -->
+    <div id="relations-section" class="p-card p-5">
+      {% include "partials/relationship_list.html" %}
+    </div>
+
+    <div class="p-card p-5">
+      <h2 class="font-semibold text-ink mb-4">Comentarios ({{ item.comments|length }})</h2>
+      <div class="space-y-4">
+        {% for c in item.comments %}
+        <div class="border-l-2 border-hairline pl-4"{% if c.kind == 'decision' %} style="border-left-color:var(--accent)"{% endif %}>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-medium text-body">{{ c.author }}</span>
+            <span class="text-xs text-muted">{{ c.created_at | fecha }}</span>
+            {% if c.kind == 'decision' %}<span class="p-pill bg-brand-lavender/25 text-ink">decision</span>{% endif %}
+          </div>
+          <div class="text-sm text-body whitespace-pre-wrap">{{ c.body_md }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <form hx-post="/api/v1/items/{{ item.id }}/comments"
+            hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }" class="mt-4">
+        <textarea name="body_md" rows="3" required placeholder="Agregar comentario..." aria-label="Nuevo comentario"
+          class="p-input"></textarea>
+        <button type="submit" class="mt-2 p-btn p-btn-primary p-btn-sm">Comentar</button>
+      </form>
+    </div>
+
+    {% if item.events %}
+    <div class="p-card p-5">
+      <h2 class="font-semibold text-ink mb-4">Historial</h2>
+      <div class="space-y-2">
+        {% for e in item.events|reverse %}
+        <div class="flex items-center gap-3 text-xs text-muted">
+          <span class="w-36 shrink-0">{{ e.created_at | fecha }}</span>
+          <span class="text-body">{{ e.actor }}</span>
+          <span>·</span>
+          <span class="text-body">{{ e.action }}</span>
+          {% if e.payload %}<span>{{ e.payload }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
   </div>
+
+  {# ---- sidebar: controles de edición + acciones ---- #}
+  <aside class="lg:sticky lg:top-24 space-y-4 order-1 lg:order-2">
+
+    <div class="p-card p-4 space-y-3">
+      <div>
+        <span class="p-label">Estado</span>
+        {% if transitions %}
+        <select aria-label="Cambiar estado del ítem" class="p-input p-input-sm w-full"
+                hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
+          <option value="">{{ item.status }} →</option>
+          {% for t in transitions %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+        {% else %}<span class="text-sm text-body">{{ item.status }}</span>{% endif %}
+      </div>
+      <div>
+        <span class="p-label">Esfuerzo</span>
+        <select aria-label="Esfuerzo estimado" class="p-input p-input-sm w-full"
+                hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
+                hx-vals='{"field":"effort_ai"}' name="value">
+          <option value="" {% if not item.effort_ai %}selected{% endif %}>—</option>
+          {% for e in ['XS','S','M','L','XL'] %}<option value="{{ e }}" {% if item.effort_ai == e %}selected{% endif %}>{{ e }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <span class="p-label">Impacto</span>
+        <select aria-label="Impacto estimado" class="p-input p-input-sm w-full"
+                hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
+                hx-vals='{"field":"impact_ai"}' name="value">
+          <option value="" {% if not item.impact_ai %}selected{% endif %}>—</option>
+          {% for n in [1,2,3,4,5] %}<option value="{{ n }}" {% if item.impact_ai == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <span class="p-label">Prioridad</span>
+        {% with select_class = 'w-full' %}
+        {% include "partials/_priority_select.html" %}
+        {% endwith %}
+      </div>
+      <div class="pt-3 border-t border-hairline space-y-1 text-xs text-muted">
+        <p>Tipo: {{ item.type }}</p>
+        <p>Scope: {{ scope.name if scope else '—' }}</p>
+        <p>Origen: {{ item.origen }}</p>
+        <p>Creado: {{ item.created_at | fecha }}</p>
+        <p>Actualizado: {{ item.updated_at | fecha }}</p>
+      </div>
+    </div>
+
+    <div class="p-card p-4 space-y-2">
+      <button id="enrich-btn" hx-post="/api/v1/items/{{ item.id }}/enrich" hx-swap="none"
+        hx-indicator="#enrich-btn"
+        hx-on:htmx:after-request="if(event.detail.successful){ this.textContent = 'Encolado ✓'; }"
+        class="p-btn p-btn-ghost w-full">
+        <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
+        ✨ Analizar con IA
+      </button>
+
+      {% if item.status not in ('done','discarded') %}
+      <button onclick="openModal('close-modal')"
+        class="p-btn p-btn-primary w-full">Marcar hecho / Descartar ▸</button>
+      {% else %}
+      <form hx-post="/ui/items/{{ item.id }}/reopen" hx-swap="none"
+            hx-confirm="¿Reabrir este ítem? Volverá al backlog."
+            action="/ui/items/{{ item.id }}/reopen" method="post">
+        <button class="p-btn p-btn-ghost w-full">Reabrir ▸</button>
+      </form>
+      {% endif %}
+    </div>
+
+  </aside>
+
 </div>
-{% endif %}
 
 <!-- Modal cerrar/descartar -->
 <div id="close-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="close-modal-title"
-     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg p-6 w-full max-w-md">
-    <h2 id="close-modal-title" class="font-semibold text-gray-900 mb-4">Cerrar ítem</h2>
-    <form action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
-      <div class="flex gap-4 text-sm">
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
+  <div class="p-card w-full max-w-md p-6">
+    <h2 id="close-modal-title" class="font-semibold text-ink mb-4">Cerrar ítem</h2>
+    {# hx-post: el handler responde 204 + HX-Refresh (solo htmx honra esa cabecera);
+       action/method quedan como fallback sin JS. #}
+    <form hx-post="/ui/items/{{ item.id }}/close" hx-swap="none"
+          action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
+      <div class="flex gap-4 text-sm text-body">
         <label class="flex items-center gap-2"><input type="radio" name="status" value="done" checked> Done</label>
         <label class="flex items-center gap-2"><input type="radio" name="status" value="discarded"> Discarded</label>
       </div>
-      <input name="reason" placeholder="Motivo (queda en el historial)" aria-label="Motivo del cierre"
-             class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-      <input name="commit_sha" placeholder="commit/SHA (opcional)" aria-label="Commit o SHA"
-             class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-      <div class="flex justify-end gap-2">
+      <div>
+        <label class="p-label" for="close-reason">Motivo</label>
+        <input id="close-reason" name="reason" placeholder="Motivo (queda en el historial)" aria-label="Motivo del cierre"
+               class="p-input">
+      </div>
+      <div>
+        <label class="p-label" for="close-commit">Commit</label>
+        <input id="close-commit" name="commit_sha" placeholder="commit/SHA (opcional)" aria-label="Commit o SHA"
+               class="p-input">
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
         <button type="button" onclick="closeModal('close-modal')"
-                class="text-sm border border-gray-300 rounded px-3 py-1.5">Cancelar</button>
-        <button type="submit" class="text-sm bg-green-600 text-white rounded px-3 py-1.5">Confirmar cierre</button>
+                class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">Confirmar cierre</button>
       </div>
     </form>
   </div>

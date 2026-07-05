@@ -1,27 +1,26 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 {% block title %}Admin{% endblock %}
 {% block content %}
 
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Administración</h1>
+<h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink mb-6">Administración</h1>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6 text-sm text-blue-800">
-  Solo los administradores pueden ver esta sección. Gestiona usuarios, tokens de servicio y monitorea los jobs de IA.
-</div>
+{{ hint('admin', 'Solo los administradores pueden ver esta sección. Gestiona usuarios, tokens de servicio y monitorea los jobs de IA.'|safe) }}
 
-<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-  <h2 class="font-semibold text-gray-800 mb-4">Usuarios ({{ users|length }})</h2>
+<div class="p-card p-5 mb-6">
+  <h2 class="text-lg font-semibold text-ink mb-3">Usuarios ({{ users|length }})</h2>
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-gray-500 border-b">
-      <th class="pb-2">Email</th><th>Nombre</th><th>Rol</th><th>Activo</th>
+    <thead><tr>
+      <th class="p-label text-left pb-2">Email</th><th class="p-label text-left pb-2">Nombre</th><th class="p-label text-left pb-2">Rol</th><th class="p-label text-left pb-2">Activo</th>
     </tr></thead>
     <tbody>
     {% for u in users %}
-    <tr class="border-b border-gray-100 last:border-0">
-      <td class="py-2">{{ u.email }}</td>
-      <td class="py-2 text-gray-600">{{ u.name }}</td>
-      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if u.account_role == 'owner' %}bg-purple-100 text-purple-700{% else %}bg-gray-100{% endif %}">{{ u.account_role }}</span></td>
-      <td class="py-2">{% if u.is_active %}✓{% else %}—{% endif %}</td>
+    <tr>
+      <td class="py-2 border-t border-hairline text-sm text-body">{{ u.email }}</td>
+      <td class="py-2 border-t border-hairline text-sm text-body">{{ u.name }}</td>
+      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill {% if u.account_role == 'owner' %}bg-brand-lavender/25 text-ink{% else %}bg-surface-strong text-body{% endif %}">{{ u.account_role }}</span></td>
+      <td class="py-2 border-t border-hairline text-sm text-body">{% if u.is_active %}✓{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -29,33 +28,35 @@
   </div>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="font-semibold text-gray-800">Tokens activos ({{ tokens|length }})</h2>
-    <form class="flex items-center gap-2" hx-post="/ui/admin/tokens" hx-target="#token-result" hx-swap="innerHTML"
-          hx-indicator="#token-spin">
+<div class="p-card p-5 mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <h2 class="text-lg font-semibold text-ink">Tokens activos ({{ tokens|length }})</h2>
+    <form class="flex flex-wrap items-center gap-2" hx-post="/ui/admin/tokens" hx-target="#token-result" hx-swap="innerHTML"
+          hx-indicator="#token-gen-btn">
       <input name="name" required placeholder="nombre del token" aria-label="Nombre del token"
-             class="border border-gray-300 rounded px-2 py-1 text-sm">
-      <select name="scopes" aria-label="Scope del token" class="border border-gray-300 rounded px-2 py-1 text-sm">
+             class="p-input p-input-sm">
+      <select name="scopes" aria-label="Scope del token" class="p-input p-input-sm">
         <option value="write">write</option>
         <option value="read">read</option>
       </select>
-      <button class="text-sm bg-gray-900 text-white rounded px-3 py-1">Generar token MCP</button>
-      <span id="token-spin" class="htmx-indicator text-xs text-gray-400">generando…</span>
+      <button id="token-gen-btn" class="p-btn p-btn-primary p-btn-sm">
+        <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
+        Generar token MCP
+      </button>
     </form>
   </div>
   <div id="token-result" aria-live="polite"></div>
   <div class="overflow-x-auto">
   <table class="w-full text-sm mt-3">
-    <thead><tr class="text-left text-gray-500 border-b">
-      <th class="pb-2">Nombre</th><th>Scope</th><th>Último uso</th>
+    <thead><tr>
+      <th class="p-label text-left pb-2">Nombre</th><th class="p-label text-left pb-2">Scope</th><th class="p-label text-left pb-2">Último uso</th>
     </tr></thead>
     <tbody>
     {% for t in tokens %}
-    <tr class="border-b border-gray-100 last:border-0">
-      <td class="py-2">{{ t.name }}</td>
-      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-gray-100">{{ t.scopes }}</span></td>
-      <td class="py-2 text-gray-500">{{ t.last_used_at | fecha }}</td>
+    <tr>
+      <td class="py-2 border-t border-hairline text-sm text-body">{{ t.name }}</td>
+      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill bg-surface-strong text-body">{{ t.scopes }}</span></td>
+      <td class="py-2 border-t border-hairline text-sm text-muted">{{ t.last_used_at | fecha }}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -63,20 +64,20 @@
   </div>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-  <h2 class="font-semibold text-gray-800 mb-4">Scopes ({{ scopes|length }})</h2>
+<div class="p-card p-5 mb-6">
+  <h2 class="text-lg font-semibold text-ink mb-3">Scopes ({{ scopes|length }})</h2>
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-gray-500 border-b">
-      <th class="pb-2">Nombre</th><th>Color</th><th>Repo</th><th>Archivado</th>
+    <thead><tr>
+      <th class="p-label text-left pb-2">Nombre</th><th class="p-label text-left pb-2">Color</th><th class="p-label text-left pb-2">Repo</th><th class="p-label text-left pb-2">Archivado</th>
     </tr></thead>
     <tbody>
     {% for s in scopes %}
-    <tr class="border-b border-gray-100 last:border-0">
-      <td class="py-2 font-medium">{{ s.name }}</td>
-      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-gray-100">{{ s.color or '—' }}</span></td>
-      <td class="py-2 text-gray-500 text-xs">{{ s.source_repo or '—' }}</td>
-      <td class="py-2">{% if s.archived %}Sí{% else %}No{% endif %}</td>
+    <tr>
+      <td class="py-2 border-t border-hairline text-sm font-medium text-ink">{{ s.name }}</td>
+      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill bg-surface-strong text-body">{{ s.color or '—' }}</span></td>
+      <td class="py-2 border-t border-hairline text-xs text-muted">{{ s.source_repo or '—' }}</td>
+      <td class="py-2 border-t border-hairline text-sm text-body">{% if s.archived %}Sí{% else %}No{% endif %}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -84,19 +85,19 @@
   </div>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 p-5">
-  <h2 class="font-semibold text-gray-800 mb-4">Jobs recientes ({{ runs|length }})</h2>
+<div class="p-card p-5">
+  <h2 class="text-lg font-semibold text-ink mb-3">Jobs recientes ({{ runs|length }})</h2>
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-gray-500 border-b">
-      <th class="pb-2">Kind</th><th>Status</th><th>Creado</th>
+    <thead><tr>
+      <th class="p-label text-left pb-2">Kind</th><th class="p-label text-left pb-2">Status</th><th class="p-label text-left pb-2">Creado</th>
     </tr></thead>
     <tbody>
     {% for r in runs %}
-    <tr class="border-b border-gray-100 last:border-0">
-      <td class="py-2 font-mono text-xs">{{ r.kind }}</td>
-      <td class="py-2"><span class="rounded px-1.5 py-0.5 text-xs {% if r.status=='error' %}bg-red-100 text-red-600{% elif r.status=='ok' %}bg-green-100 text-green-600{% else %}bg-gray-100{% endif %}">{{ r.status }}</span></td>
-      <td class="py-2 text-gray-400 text-xs">{{ r.created_at | fecha }}</td>
+    <tr>
+      <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ r.kind }}</td>
+      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill {% if r.status=='error' %}bg-error/15 text-error{% elif r.status=='ok' %}bg-success/15 text-success{% else %}bg-surface-strong text-body{% endif %}">{{ r.status }}</span></td>
+      <td class="py-2 border-t border-hairline text-xs text-muted">{{ r.created_at | fecha }}</td>
     </tr>
     {% endfor %}
     </tbody>

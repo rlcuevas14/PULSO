@@ -1,14 +1,14 @@
-<div class="border border-yellow-300 bg-yellow-50 rounded p-3 mt-3">
-  <div class="text-xs text-yellow-700 mb-2">
+<div class="border border-warning/40 bg-warning/5 rounded-xl p-4 mt-3">
+  <div class="text-xs text-warning mb-2">
     Borrador IA — stage <strong>{{ draft.stage }}</strong> ({{ draft.model }}). Revísalo y edítalo antes de avanzar.
   </div>
-  <form action="/ui/hilos/{{ thread.id }}/advance" method="post">
-    <textarea name="artifact_content" rows="12"
-              class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">{{ draft.content }}</textarea>
+  <form hx-post="/ui/hilos/{{ thread.id }}/advance" hx-swap="none"
+        action="/ui/hilos/{{ thread.id }}/advance" method="post">
+    <textarea name="artifact_content" rows="12" class="p-input font-mono">{{ draft.content }}</textarea>
     <div class="flex justify-end gap-2 mt-2">
       <button type="button" onclick="this.closest('div').parentElement.innerHTML=''"
-              class="text-sm border border-gray-300 rounded px-3 py-1.5">Descartar borrador</button>
-      <button type="submit" class="text-sm bg-indigo-600 text-white rounded px-3 py-1.5">Guardar y avanzar ▸</button>
+              class="p-btn p-btn-ghost p-btn-sm">Descartar borrador</button>
+      <button type="submit" class="p-btn p-btn-primary p-btn-sm">Guardar y avanzar ▸</button>
     </div>
   </form>
 </div>

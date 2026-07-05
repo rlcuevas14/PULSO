@@ -1,35 +1,43 @@
-<div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+{# Tinte canónico tipo→chip (Global Constraints — copiar, no importar). #}
+{% set T = {
+  "bug":       "bg-brand-coral/20",
+  "feature":   "bg-brand-teal/15",
+  "tech-debt": "bg-brand-ochre/25",
+  "infra":     "bg-brand-lavender/25",
+  "docs":      "bg-brand-mint/30",
+  "ops":       "bg-brand-peach/30",
+  "security":  "bg-warning/20",
+  "product":   "bg-brand-pink/20",
+  "idea":      "bg-brand-lavender/25",
+} %}
+<div>
   {% if not items %}
-  <div class="px-4 py-8 text-center text-sm text-gray-400">
-    No hay ítems con esos filtros. Crea uno con <strong>+ Nuevo ítem</strong>.
-  </div>
+  <div class="px-4 py-12 text-center text-sm text-muted">Sin ítems con estos filtros.</div>
   {% endif %}
   {% for item in items %}
-  <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+  <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-3 px-4 py-3 border-b border-hairline last:border-0 hover:bg-surface-strong">
     <div class="flex flex-col gap-1 shrink-0 items-start">
-      <span class="text-xs font-mono bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{{ item.type[:9] }}</span>
+      <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ item.type }}</span>
       {% if item.effort_ai %}
-      <span class="text-xs font-mono bg-green-100 text-green-700 rounded px-1.5 py-0.5">{{ item.effort_ai }}</span>
+      <span class="p-pill bg-surface-strong text-muted">{{ item.effort_ai }}</span>
       {% endif %}
     </div>
 
     <div class="flex-1 min-w-0">
-      <a href="/items/{{ item.id }}" class="block">
-        <div class="flex items-center gap-2 mb-0.5">
-          {% if blocked_ids and item.id|string in blocked_ids %}<span title="Bloqueado por otro ítem abierto">⛔</span>{% endif %}
-          {% if unblocker_ids and item.id|string in unblocker_ids %}<span title="Bloquea a otros (desbloqueador)">🔓</span>{% endif %}
-          <span class="text-sm font-medium text-gray-900 truncate">{{ item.title }}</span>
-          {% if recent_touch and recent_touch.get(item.id|string) %}<span title="Tocado en las últimas 24h" class="text-green-500">●</span>{% endif %}
-          {% if item.stale_risk %}<span class="text-xs text-yellow-600 shrink-0">⚠</span>{% endif %}
-        </div>
-        <div class="flex items-center gap-2 text-xs text-gray-400">
-          {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
-          {% if item.impact_ai %}<span>I{{ item.impact_ai }}</span>{% endif %}
-          <span class="text-gray-300">·</span>
-          <span>{{ item.origen }}</span>
-          <span>{{ scope_map.get(item.scope_id, '') }}</span>
-        </div>
-      </a>
+      <div class="flex items-center gap-2 mb-0.5">
+        {% if blocked_ids and item.id|string in blocked_ids %}<span title="Bloqueado por otro ítem abierto">⛔</span>{% endif %}
+        {% if unblocker_ids and item.id|string in unblocker_ids %}<span title="Bloquea a otros (desbloqueador)">🔓</span>{% endif %}
+        <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline truncate">{{ item.title }}</a>
+        {% if recent_touch and recent_touch.get(item.id|string) %}<span title="Tocado en las últimas 24h" class="text-success">●</span>{% endif %}
+        {% if item.stale_risk %}<span class="text-xs text-warning shrink-0">⚠</span>{% endif %}
+      </div>
+      <div class="flex items-center gap-2 text-xs text-muted">
+        {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
+        {% if item.impact_ai %}<span>I{{ item.impact_ai }}</span>{% endif %}
+        <span>·</span>
+        <span>{{ item.origen }}</span>
+        <span>{{ scope_map.get(item.scope_id, '') }}</span>
+      </div>
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
@@ -37,7 +45,7 @@
       {% set targets = non_terminal_targets(item.status) %}
       {% if targets %}
       <select title="Cambiar estado" aria-label="Cambiar estado del ítem"
-              class="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600"
+              class="p-input p-input-sm"
               hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
         <option value="">→ mover…</option>
         {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}

@@ -70,6 +70,7 @@ async def setup_submit(
     email: str = Form(...),
     password: str = Form(...),
     project_name: str = Form(...),
+    color: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
     if not await _no_users(db):
@@ -88,7 +89,7 @@ async def setup_submit(
 
     # Create the first project and a write token in the same transaction.
     from app.projects.service import create_project
-    project = await create_project(db, name=project_name, account_id=acc.id)
+    project = await create_project(db, name=project_name, account_id=acc.id, color=color or None)
     raw = secrets.token_urlsafe(32)
     token = ApiToken(
         name="claude-code",
@@ -104,5 +105,6 @@ async def setup_submit(
     request.session["current_project_id"] = str(project.id)
     request.session["current_project_name"] = project.name
     request.session["current_project_slug"] = project.slug
+    request.session["current_project_color"] = project.color or "#6366f1"
     request.session["new_token"] = raw
     return RedirectResponse(f"/projects/{project.slug}/settings", status_code=303)

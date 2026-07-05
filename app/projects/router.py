@@ -15,6 +15,7 @@ from app.database import get_db
 from app.projects import service as ps
 from app.projects.access import accessible_project_ids, require_project_access, user_role_on_project
 from app.templates_config import templates
+from app.ui.flash import flash_success
 
 router = APIRouter(tags=["projects"])
 
@@ -100,6 +101,7 @@ async def project_settings(
 @router.post("/projects/{slug}/settings")
 async def project_settings_update(
     slug: str,
+    request: Request,
     name: str = Form(...),
     description: str = Form(""),
     color: str = Form(""),
@@ -125,6 +127,9 @@ async def project_settings_update(
         "sentry_org": sentry_org.strip() or None,
     })
     await db.commit()
+    if request.session.get("current_project_id") == str(project.id):
+        request.session["current_project_color"] = project.color or "#6366f1"
+    flash_success(request, message="Configuración guardada")
     return RedirectResponse(f"/projects/{slug}/settings", status_code=303)
 
 
@@ -196,6 +201,8 @@ async def switch_project(
             request.session["current_project_id"] = str(project.id)
             request.session["current_project_name"] = project.name
             request.session["current_project_slug"] = project.slug
+            request.session["current_project_color"] = project.color or "#6366f1"
+            flash_success(request, message=f"Proyecto activo: {project.name}")
     except (ValueError, AttributeError):
         pass
     redirect = request.headers.get("referer", "/")

@@ -17,6 +17,7 @@ from app.jobs.models import AgentRun
 from app.projects.access import resolve_current_project, user_role_on_project
 from app.scopes.models import Scope
 from app.templates_config import templates
+from app.ui.flash import flash_success
 
 router = APIRouter(tags=["ui"])
 
@@ -57,49 +58,60 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    from app.threads.models import Thread
+    from app.webhooks.models import SentryIssue
+
     pid = await _project_id(db, user, request)
     counts_q = await db.execute(
         select(Item.status, func.count().label("n"))
         .where(Item.project_id == pid).group_by(Item.status)
     )
     counts = {row.status: row.n for row in counts_q}
-
     blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
+
+    quick_wins_n = int(await db.scalar(
+        select(func.count()).select_from(Item).where(
+            Item.project_id == pid, Item.impact_ai >= 4,
+            Item.effort_ai.in_(["XS", "S"]), Item.status.not_in(["done", "discarded"]),
+        )
+    ) or 0)
+    threads_active = int(await db.scalar(
+        select(func.count()).select_from(Thread).where(
+            Thread.project_id == pid, Thread.stage.not_in(["hecho", "descartado"]),
+        )
+    ) or 0)
+    incidents_new = int(await db.scalar(
+        select(func.count()).select_from(SentryIssue).where(
+            SentryIssue.project_id == pid, SentryIssue.status == "new",
+        )
+    ) or 0)
 
     recent_q = await db.execute(
         select(Item).where(Item.project_id == pid).order_by(Item.created_at.desc()).limit(10)
     )
     recent = recent_q.scalars().all()
-
-    qw_q = await db.execute(
-        select(Item)
-        .where(
-            Item.project_id == pid,
-            Item.impact_ai >= 4,
-            Item.effort_ai.in_(["XS", "S"]),
-            Item.status.not_in(["done", "discarded"]),
-        )
-        .order_by(Item.impact_ai.desc())
-        .limit(5)
-    )
-    quick_wins = qw_q.scalars().all()
-
     cost_q = await db.scalar(
         select(func.sum(AgentRun.cost_usd)).where(AgentRun.status == "ok", AgentRun.project_id == pid)
     )
-    monthly_cost = float(cost_q or 0)
+    scopes = list((await db.execute(
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
+    )).scalars().all())
 
+    cards = {
+        "open": sum(counts.get(s, 0) for s in ("backlog", "spec", "in-progress", "blocked", "in-review")),
+        "in_progress": counts.get("in-progress", 0),
+        "blocked": len(blocked_ids),
+        "quick_wins": quick_wins_n,
+        "threads_active": threads_active,
+        "incidents_new": incidents_new,
+        "ideas": counts.get("idea", 0),
+    }
     return templates.TemplateResponse(
-        request,
-        "dashboard.html",
+        request, "dashboard.html",
         {
-            "user": user,
-            "counts": counts,
-            "blocked_count": len(blocked_ids),
-            "recent": recent,
+            "user": user, "cards": cards, "recent": recent,
             "recent_touch": {str(i.id): _recent_touch(i) for i in recent},
-            "quick_wins": quick_wins,
-            "monthly_cost": monthly_cost,
+            "monthly_cost": float(cost_q or 0), "scopes": scopes,
         },
     )
 
@@ -308,6 +320,7 @@ async def ui_transition(
 @router.post("/ui/items/{item_id}/close")
 async def ui_close(
     item_id: uuid.UUID,
+    request: Request,
     status: str = Form(...),
     reason: str = Form(""),
     commit_sha: str = Form(""),
@@ -325,6 +338,10 @@ async def ui_close(
         await db.commit()
     except service.TransitionError as e:
         return Response(content=str(e), status_code=422)
+    if status == "done":
+        flash_success(request, title=item.title, celebrate=True)
+    else:
+        flash_success(request, message="Ítem descartado")
     return _refresh()
 
 
@@ -453,6 +470,7 @@ async def ui_create_item(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+    flash_success(request, message="Ítem creado")
     return RedirectResponse(f"/items/{item.id}", status_code=303)
 
 
@@ -542,12 +560,14 @@ async def ui_create_hilo(
     pid = await _project_id(db, user, request)
     t = await create_thread(db, scope_name, title, summary or None, project_id=pid)
     await db.commit()
+    flash_success(request, message="Hilo creado")
     return RedirectResponse(f"/hilos/{t.id}", status_code=303)
 
 
 @router.post("/ui/hilos/{thread_id}/advance")
 async def ui_advance_hilo(
     thread_id: uuid.UUID,
+    request: Request,
     artifact_content: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -565,12 +585,15 @@ async def ui_advance_hilo(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
+    if t.stage == "hecho":
+        flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
 @router.post("/ui/hilos/{thread_id}/stage")
 async def ui_set_hilo_stage(
     thread_id: uuid.UUID,
+    request: Request,
     stage: str = Form(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -588,6 +611,8 @@ async def ui_set_hilo_stage(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
+    if t.stage == "hecho":
+        flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
@@ -659,6 +684,7 @@ async def incidentes_page(
 @router.post("/ui/incidentes/{issue_id}/promote")
 async def ui_promote_issue(
     issue_id: uuid.UUID,
+    request: Request,
     priority: str = Form("p1"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
@@ -676,12 +702,14 @@ async def ui_promote_issue(
         priority = "p1"
     await wservice.promote_issue(db, issue, priority=priority, actor=user.email)
     await db.commit()
+    flash_success(request, message="Incidente promovido al backlog")
     return _refresh()
 
 
 @router.post("/ui/incidentes/{issue_id}/ignore")
 async def ui_ignore_issue(
     issue_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
@@ -695,6 +723,7 @@ async def ui_ignore_issue(
         return guard
     issue.status = "ignored"
     await db.commit()
+    flash_success(request, message="Incidente ignorado")
     return _refresh()
 
 
