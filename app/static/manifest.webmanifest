@@ -1,0 +1,13 @@
+{
+  "name": "Pulso",
+  "short_name": "Pulso",
+  "description": "The backlog your agent reads and writes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffaf0",
+  "theme_color": "#fffaf0",
+  "icons": [
+    { "src": "/static/brand/app-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/brand/app-icon-1024.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}

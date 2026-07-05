@@ -233,3 +233,11 @@ async def test_hilo_elaborate_degraded(client: AsyncClient, monkeypatch):
     # without an API key, elaborate degrades to a 200 error fragment (never 500)
     r = await client.post(f"/ui/hilos/{tid}/elaborate")
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_static_brand_assets_served(client: AsyncClient):
+    r = await client.get("/static/brand/pulso-favicon-16.svg")
+    assert r.status_code == 200 and "svg" in r.headers["content-type"]
+    r = await client.get("/static/manifest.webmanifest")
+    assert r.status_code == 200
