@@ -1,54 +1,76 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 {% block title %}Hilos{% endblock %}
 {% block content %}
 
+{# Mapa etapa→tinte (canónico — Task 14 lo copia, no lo importa). #}
+{% set STAGE_TINT = {
+  "idea":          "bg-brand-lavender/25",
+  "investigacion": "bg-brand-mint/30",
+  "historias":     "bg-brand-peach/30",
+  "spec":          "bg-brand-ochre/30",
+  "en-desarrollo": "bg-brand-teal/15",
+  "review":        "bg-brand-pink/20",
+  "hecho":         "bg-success/15",
+  "descartado":    "bg-surface-strong",
+} %}
+
 <div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-900">Hilos</h1>
-  <button onclick="openModal('new-hilo-modal')"
-          class="text-sm bg-gray-900 text-white rounded px-3 py-1.5 hover:bg-gray-700">+ Nuevo hilo</button>
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Hilos</h1>
+  <button onclick="openModal('new-hilo-modal')" class="p-btn p-btn-primary">+ Nuevo hilo</button>
 </div>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
-  <strong>¿Qué es un hilo?</strong> Una feature pesada que recorre stages:
+{{ hint('hilos', '<strong>¿Qué es un hilo?</strong> Una feature pesada que recorre stages:
   idea → investigación → historias → spec → en-desarrollo → review → hecho.
   El 80% de las features van rápido por el Backlog; usa Hilos solo para lo grande.
-  Avanza desde el detalle del hilo.
-</div>
+  Avanza desde el detalle del hilo.'|safe) }}
 
-<div class="flex gap-3 overflow-x-auto pb-4">
+<div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
   {% for stage in stages %}
-  <div class="bg-gray-100 rounded-lg p-2 min-w-[12rem] w-48 shrink-0">
-    <div class="text-xs font-semibold text-gray-500 px-1 mb-2">{{ stage }} ({{ by_stage.get(stage, [])|length }})</div>
+  <div class="snap-start shrink-0 w-56 bg-surface-soft border border-hairline rounded-2xl p-2">
+    <div class="flex items-center justify-between px-2 py-1.5">
+      <span class="p-pill {{ STAGE_TINT[stage] }} text-ink">{{ stage }}</span>
+      <span class="text-xs text-muted">{{ by_stage.get(stage, [])|length }}</span>
+    </div>
     {% for t in by_stage.get(stage, []) %}
-    <a href="/hilos/{{ t.id }}" class="block bg-white rounded border border-gray-200 p-2 mb-2 hover:border-gray-400">
-      <div class="text-sm font-medium text-gray-900 mb-1">{{ t.title }}</div>
-      <div class="text-xs text-gray-400">
+    <a href="/hilos/{{ t.id }}" class="block p-card p-3 mb-2 hover:bg-surface-strong border-l-2"
+       style="border-left-color:var(--accent)">
+      <div class="text-sm font-medium text-ink mb-1">{{ t.title }}</div>
+      <div class="text-xs text-muted">
         {{ counts[t.id|string].artifacts }} artefactos · {{ counts[t.id|string].items }} ítems
       </div>
     </a>
     {% else %}
-    <div class="text-xs text-gray-300 px-1 py-2">vacío</div>
+    <div class="p-2 text-xs text-muted">vacío</div>
     {% endfor %}
   </div>
   {% endfor %}
 </div>
 
 <div id="new-hilo-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="new-hilo-title"
-     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg p-6 w-full max-w-md">
-    <h2 id="new-hilo-title" class="font-semibold text-gray-900 mb-4">Nuevo hilo</h2>
-    <form action="/ui/hilos/create" method="post" class="space-y-3">
-      <input name="title" required placeholder="Título del hilo" aria-label="Título del hilo"
-             class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-      <select name="scope_name" required aria-label="Scope del hilo" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
-        {% for s in scopes %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
-      </select>
-      <textarea name="summary" rows="3" placeholder="Resumen (opcional)" aria-label="Resumen del hilo"
-                class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
-      <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeModal('new-hilo-modal')"
-                class="text-sm border border-gray-300 rounded px-3 py-1.5">Cancelar</button>
-        <button type="submit" class="text-sm bg-gray-900 text-white rounded px-3 py-1.5">Crear (idea)</button>
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
+  <div class="p-card w-full max-w-md p-6">
+    <h2 id="new-hilo-title" class="text-lg font-semibold text-ink mb-4">Nuevo hilo</h2>
+    <form action="/ui/hilos/create" method="post" class="space-y-4">
+      <div>
+        <label class="p-label" for="nh-title">Título</label>
+        <input id="nh-title" name="title" required placeholder="Título del hilo" aria-label="Título del hilo"
+               class="p-input">
+      </div>
+      <div>
+        <label class="p-label" for="nh-scope">Scope</label>
+        <select id="nh-scope" name="scope_name" required aria-label="Scope del hilo" class="p-input">
+          {% for s in scopes %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="p-label" for="nh-summary">Resumen</label>
+        <textarea id="nh-summary" name="summary" rows="3" placeholder="Resumen (opcional)"
+                  aria-label="Resumen del hilo" class="p-input"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="closeModal('new-hilo-modal')" class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">Crear (idea)</button>
       </div>
     </form>
   </div>
