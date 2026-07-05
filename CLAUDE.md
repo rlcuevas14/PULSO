@@ -48,7 +48,7 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 | `jobs/` | `AgentRun`; `worker.py` (poll-and-lease); `handlers.py` (`enrich`, `triage-sentry`) |
 | `ai/` | `llm.py` — isolated/mockable interface to Haiku (enrich/triage/generate_stage) + Gemini (embed). Degrades without API key |
 | `mcp/` | `server.py` (JSON-RPC transport + 17 tool registry + auth/scope + project-id failsafe); `tools.py` (implementations) |
-| `ui/` | `router.py` — screens (`/`, `/backlog`, `/priority`, `/threads`, `/incidents`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints |
+| `ui/` | `router.py` — screens (`/` card-launcher home, `/backlog`, `/prioridad`, `/hilos`, `/incidentes`, `/ideas`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints; `flash.py` (`flash_success` — pop-once session flash → celebration overlay on completions / green toast) |
 
 ---
 
@@ -136,6 +136,7 @@ Triggers `deploy.yml`: multi-platform build (amd64+arm64) → push to GHCR → S
 
 - **English throughout**: all enum values, error messages, MCP tool names, and UI copy are English. Thread stages are the only exception (still Spanish — out of scope).
 - **Every feature brings tests**; CI green before tagging.
+- **UI design system**: all tokens + `.p-*` component classes live in `app/templates/partials/_head.html` (Tailwind CDN + CSS variables; `darkMode:'class'`, light=Clay-cream / dark=warm near-black, per-project `--accent` from session). Never hardcode gray/blue palette classes in templates; never use opacity modifiers on semantic tokens (`bg-canvas/50` silently breaks — allowed only on `brand-*`/`success`/`warning`/`error`). Success feedback via `flash_success` (`app/ui/flash.py`); forms hitting handlers that return `204 + HX-Refresh` MUST be `hx-post` (plain forms dead-end on 204).
 - **LLM always via `app/ai/llm.py`** (isolated and mockable); degrades without API key, never breaks the worker.
 - **Trunk-based**: direct commit to `main` allowed; verify locally (ruff+mypy+pytest for the area) before pushing; deploy only by tag.
 - External webhooks/writes: verify HMAC signature, emit `ItemEvent`, sanitize untrusted content (XSS).
