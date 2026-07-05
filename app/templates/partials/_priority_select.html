@@ -6,7 +6,7 @@
   Uso: {% with item = it %}{% include "partials/_priority_select.html" %}{% endwith %}
 #}
 <select aria-label="Prioridad del ítem" title="Prioridad"
-        class="{{ select_class | default('text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600') }}"
+        class="p-input p-input-sm {{ select_class | default('') }}"
         hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
         hx-vals='{"field":"priority"}' name="value">
   <option value="" {% if not item.priority %}selected{% endif %}>—</option>

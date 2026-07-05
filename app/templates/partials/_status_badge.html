@@ -1,14 +1,17 @@
 {#
-  Badge de estado reutilizable. Centraliza la paleta de colores por estado.
+  Badge de estado reutilizable — mapa canónico estado→color (único lugar).
   Parámetros:
-    status  — estado del ítem (obligatorio).
-    size    — 'sm' (default, text-xs) por ahora único tamaño; reservado para futuro.
-  Uso: {% include "partials/_status_badge.html" with context %}  (pasa `status`)
-       o  {% with status = it.status %}{% include "partials/_status_badge.html" %}{% endwith %}
+    status — estado del ítem (obligatorio).
+  Uso: {% with status = it.status %}{% include "partials/_status_badge.html" %}{% endwith %}
 #}
-<span class="text-xs rounded px-1.5 py-0.5
-  {% if status == 'blocked' %}bg-red-100 text-red-700
-  {% elif status == 'in-progress' %}bg-blue-100 text-blue-700
-  {% elif status == 'done' %}bg-green-100 text-green-700
-  {% elif status == 'in-review' %}bg-purple-100 text-purple-700
-  {% else %}bg-gray-100 text-gray-600{% endif %}">{{ status }}</span>
+{% set S = {
+  "idea":        "bg-brand-lavender/25 text-ink",
+  "backlog":     "bg-surface-strong text-body",
+  "spec":        "bg-brand-mint/30 text-ink",
+  "in-progress": "bg-brand-ochre/30 text-ink",
+  "blocked":     "bg-warning/20 text-warning",
+  "in-review":   "bg-brand-peach/30 text-ink",
+  "done":        "bg-success/15 text-success",
+  "discarded":   "bg-surface-strong text-muted line-through",
+} %}
+<span class="p-pill {{ S.get(status, 'bg-surface-strong text-body') }}">{{ status }}</span>
