@@ -23,7 +23,7 @@
     <div>
       <p class="text-lg font-semibold">Backlog</p>
       <p class="text-sm opacity-80">{{ cards.open }} abiertos · {{ cards.in_progress }} en curso</p>
-      {% if cards.blocked %}<p class="text-xs mt-1 text-brand-ochre">⛔ {{ cards.blocked }} bloqueados por dependencias</p>{% endif %}
+      {% if cards.blocked %}<p class="text-xs mt-1 text-brand-ochre">⛔ {{ cards.blocked }} bloqueado{{ 's' if cards.blocked != 1 }} por dependencias</p>{% endif %}
     </div>
   </a>
   <a href="/prioridad" class="p-homecard bg-brand-ochre text-ink">
