@@ -1,0 +1,131 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#fffaf0">
+<link rel="icon" type="image/svg+xml" href="/static/brand/pulso-favicon-16.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32.png">
+<link rel="apple-touch-icon" href="/static/brand/apple-touch-180.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+{# No-FOUC: fija la clase dark + theme-color ANTES del primer paint. Debe quedar inline y bloqueante. #}
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("pulso-theme");
+      var dark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      if (dark) document.documentElement.classList.add("dark");
+      var m = document.querySelector('meta[name="theme-color"]');
+      if (m && dark) m.content = "#0e0e10";
+    } catch (e) { /* sin localStorage: queda light */ }
+  })();
+  function toggleTheme() {
+    var dark = document.documentElement.classList.toggle("dark");
+    try { localStorage.setItem("pulso-theme", dark ? "dark" : "light"); } catch (e) {}
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.content = dark ? "#0e0e10" : "#fffaf0";
+  }
+</script>
+{# TODO(pre-existente): vendorizar/compilar Tailwind para prod (el CDN es solo-dev). #}
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          canvas: "var(--canvas)",
+          "surface-soft": "var(--surface-soft)",
+          "surface-card": "var(--surface-card)",
+          "surface-strong": "var(--surface-strong)",
+          ink: "var(--ink)",
+          body: "var(--body)",
+          muted: "var(--muted)",
+          hairline: "var(--hairline)",
+          primary: "var(--primary)",
+          "on-primary": "var(--on-primary)",
+          accent: "var(--accent)",
+          "accent-fg": "var(--accent-fg)",
+          "brand-pink": "#ff4d8b",
+          "brand-teal": "#1a3a3a",
+          "brand-lavender": "#b8a4ed",
+          "brand-peach": "#ffb084",
+          "brand-ochre": "#e8b94a",
+          "brand-coral": "#ff6b5a",
+          "brand-mint": "#a4d4c5",
+          success: "#22c55e",
+          warning: "#f59e0b",
+          error: "#ef4444"
+        },
+        fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] }
+      }
+    }
+  };
+</script>
+<style type="text/css">
+  :root {
+    --canvas:#fffaf0; --surface-soft:#faf5e8; --surface-card:#f5f0e0; --surface-strong:#ebe6d6;
+    --ink:#0a0a0a; --body:#3a3a3a; --muted:#8a8578; --hairline:#eae5d9;
+    --primary:#0a0a0a; --on-primary:#ffffff;
+    --accent:#6366f1; --accent-fg:#ffffff;
+  }
+  html.dark {
+    --canvas:#0e0e10; --surface-soft:#17171a; --surface-card:#1c1c20; --surface-strong:#242429;
+    --ink:#f5f3ee; --body:#c9c7c1; --muted:#8f8d88; --hairline:#2a2a30;
+    --primary:#f5f3ee; --on-primary:#0e0e10;
+  }
+  /* ---- kit de componentes ---- */
+  .p-card { background:var(--surface-card); border:1px solid var(--hairline); border-radius:16px; }
+  html.dark .p-card { box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  .p-btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; height:44px;
+           padding:0 20px; border-radius:12px; font-size:14px; font-weight:600; line-height:1;
+           cursor:pointer; border:1px solid transparent; text-decoration:none;
+           transition:opacity .15s, transform .1s; }
+  .p-btn:hover { opacity:.85; } .p-btn:active { transform:scale(.98); }
+  .p-btn-primary { background:var(--primary); color:var(--on-primary); }
+  .p-btn-ghost { background:transparent; color:var(--ink); border-color:var(--hairline); }
+  .p-btn-sm { height:34px; padding:0 12px; font-size:13px; border-radius:10px; }
+  .p-input { height:44px; padding:0 14px; border-radius:12px; background:var(--canvas);
+             border:1px solid var(--hairline); color:var(--ink); font-size:14px; width:100%; }
+  select.p-input { padding-right:1.75rem; }
+  textarea.p-input { height:auto; min-height:96px; padding:10px 14px; }
+  .p-input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .p-input-sm { height:32px; font-size:12px; border-radius:8px; padding:0 8px; width:auto; }
+  .p-label { display:block; font-size:12px; font-weight:600; letter-spacing:.08em;
+             text-transform:uppercase; color:var(--muted); margin-bottom:.35rem; }
+  .p-pill { display:inline-flex; align-items:center; gap:.3rem; padding:2px 10px;
+            border-radius:9999px; font-size:12px; font-weight:500; white-space:nowrap; }
+  .p-navlink { color:var(--muted); font-size:14px; font-weight:500; padding:20px 2px 17px;
+               border-bottom:3px solid transparent; text-decoration:none; }
+  .p-navlink:hover { color:var(--ink); }
+  .p-navlink-active { color:var(--ink); border-bottom-color:var(--accent); }
+  .p-menu { position:relative; }
+  .p-menu > summary { list-style:none; cursor:pointer; }
+  .p-menu > summary::-webkit-details-marker { display:none; }
+  .p-menu-panel { position:absolute; right:0; top:calc(100% + 8px); min-width:220px; z-index:60;
+                  background:var(--surface-card); border:1px solid var(--hairline);
+                  border-radius:12px; padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+  .p-menu-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px;
+                 font-size:14px; color:var(--body); text-decoration:none; }
+  .p-menu-item:hover { background:var(--surface-strong); color:var(--ink); }
+  .p-homecard { border-radius:24px; padding:24px; min-height:150px; display:flex;
+                flex-direction:column; justify-content:space-between; text-decoration:none;
+                transition:transform .15s ease, box-shadow .15s ease; }
+  .p-homecard:hover { transform:translateY(-3px); box-shadow:0 10px 30px rgba(0,0,0,.15); }
+  /* spinner de marca: oculto hasta que htmx marca la request */
+  .p-spin { display:none; }
+  .htmx-request .p-spin, .htmx-request.p-spin { display:inline-block; }
+  .p-spin path { stroke-dasharray:61; animation:pulso-dash 1.6s ease-in-out infinite; }
+  .p-spin circle { animation:pulso-blip 1.6s linear infinite; }
+  @keyframes pulso-dash { 0%{stroke-dashoffset:61} 50%{stroke-dashoffset:0} 100%{stroke-dashoffset:-61} }
+  @keyframes pulso-blip { 0%,40%,100%{opacity:.35} 55%{opacity:1} }
+  @keyframes p-pop { from{opacity:0;transform:scale(.9)} to{opacity:1;transform:scale(1)} }
+  @keyframes p-draw { to{stroke-dashoffset:0} }
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after { animation-duration:.01ms !important; animation-iteration-count:1 !important;
+                           transition-duration:.01ms !important; }
+  }
+</style>
+<script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"
+        integrity="sha384-wS5l5IKJBvK6sPTKa2WZ1js3d947pvWXbPJ1OmWfEuxLgeHcEbjUUA5i9V5ZkpCw"
+        crossorigin="anonymous"></script>

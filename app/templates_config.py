@@ -24,3 +24,33 @@ def _fecha(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 
 # Filtro Jinja `fecha`: {{ item.created_at | fecha }} → '2026-06-15 14:30'.
 templates.env.filters["fecha"] = _fecha
+
+
+# Paleta de presets para el color de proyecto (indigo default + paleta de marca).
+BRAND_PRESETS = ["#6366f1", "#ff4d8b", "#1a3a3a", "#b8a4ed", "#ffb084", "#e8b94a", "#ff6b5a", "#a4d4c5"]
+
+
+def accent_fg(color: str | None) -> str:
+    """Foreground (ink/white) legible sobre el color de acento elegido libremente.
+
+    Umbral perceptual 0.35 sobre luminancia relativa WCAG: reproduce las elecciones
+    de texto por tarjeta del design template (blanco sobre teal/coral/pink/indigo,
+    tinta sobre ochre/peach/lavender/mint). Valores no parseables → blanco (default indigo).
+    """
+    c = (color or "#6366f1").lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    try:
+        r, g, b = (int(c[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except (ValueError, IndexError):
+        return "#ffffff"
+
+    def _lin(x: float) -> float:
+        return x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4
+
+    lum = 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+    return "#0a0a0a" if lum > 0.35 else "#ffffff"
+
+
+templates.env.globals["accent_fg"] = accent_fg
+templates.env.globals["BRAND_PRESETS"] = BRAND_PRESETS

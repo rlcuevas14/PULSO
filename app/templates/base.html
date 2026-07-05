@@ -1,16 +1,10 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" style="--accent: {{ request.session.get('current_project_color') or '#6366f1' }}; --accent-fg: {{ accent_fg(request.session.get('current_project_color')) }}">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Pulso{% endblock %}</title>
-  {# TODO: vendorizar/compilar Tailwind para prod (el CDN es solo-dev). #}
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"
-          integrity="sha384-wS5l5IKJBvK6sPTKa2WZ1js3d947pvWXbPJ1OmWfEuxLgeHcEbjUUA5i9V5ZkpCw"
-          crossorigin="anonymous"></script>
+  {% include "partials/_head.html" %}
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-canvas text-body font-sans min-h-screen flex flex-col">
   <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-6">
       <a href="/" class="font-bold text-gray-900 text-lg">Pulso</a>
@@ -40,7 +34,7 @@
     </div>
   </nav>
 
-  <main class="max-w-7xl mx-auto px-6 py-6">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full flex-1">
     {% block content %}{% endblock %}
   </main>
 
