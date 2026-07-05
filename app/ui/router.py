@@ -57,49 +57,60 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    from app.threads.models import Thread
+    from app.webhooks.models import SentryIssue
+
     pid = await _project_id(db, user, request)
     counts_q = await db.execute(
         select(Item.status, func.count().label("n"))
         .where(Item.project_id == pid).group_by(Item.status)
     )
     counts = {row.status: row.n for row in counts_q}
-
     blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
+
+    quick_wins_n = int(await db.scalar(
+        select(func.count()).select_from(Item).where(
+            Item.project_id == pid, Item.impact_ai >= 4,
+            Item.effort_ai.in_(["XS", "S"]), Item.status.not_in(["done", "discarded"]),
+        )
+    ) or 0)
+    threads_active = int(await db.scalar(
+        select(func.count()).select_from(Thread).where(
+            Thread.project_id == pid, Thread.stage.not_in(["hecho", "descartado"]),
+        )
+    ) or 0)
+    incidents_new = int(await db.scalar(
+        select(func.count()).select_from(SentryIssue).where(
+            SentryIssue.project_id == pid, SentryIssue.status == "new",
+        )
+    ) or 0)
 
     recent_q = await db.execute(
         select(Item).where(Item.project_id == pid).order_by(Item.created_at.desc()).limit(10)
     )
     recent = recent_q.scalars().all()
-
-    qw_q = await db.execute(
-        select(Item)
-        .where(
-            Item.project_id == pid,
-            Item.impact_ai >= 4,
-            Item.effort_ai.in_(["XS", "S"]),
-            Item.status.not_in(["done", "discarded"]),
-        )
-        .order_by(Item.impact_ai.desc())
-        .limit(5)
-    )
-    quick_wins = qw_q.scalars().all()
-
     cost_q = await db.scalar(
         select(func.sum(AgentRun.cost_usd)).where(AgentRun.status == "ok", AgentRun.project_id == pid)
     )
-    monthly_cost = float(cost_q or 0)
+    scopes = list((await db.execute(
+        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
+    )).scalars().all())
 
+    cards = {
+        "open": sum(counts.get(s, 0) for s in ("backlog", "spec", "in-progress", "blocked", "in-review")),
+        "in_progress": counts.get("in-progress", 0),
+        "blocked": len(blocked_ids),
+        "quick_wins": quick_wins_n,
+        "threads_active": threads_active,
+        "incidents_new": incidents_new,
+        "ideas": counts.get("idea", 0),
+    }
     return templates.TemplateResponse(
-        request,
-        "dashboard.html",
+        request, "dashboard.html",
         {
-            "user": user,
-            "counts": counts,
-            "blocked_count": len(blocked_ids),
-            "recent": recent,
+            "user": user, "cards": cards, "recent": recent,
             "recent_touch": {str(i.id): _recent_touch(i) for i in recent},
-            "quick_wins": quick_wins,
-            "monthly_cost": monthly_cost,
+            "monthly_cost": float(cost_q or 0), "scopes": scopes,
         },
     )
 

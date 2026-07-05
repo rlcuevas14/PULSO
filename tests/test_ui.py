@@ -58,7 +58,7 @@ async def test_dashboard_and_screens_render(client: AsyncClient):
     _uid, pid = await _login(client)
     await _seed_item(client, pid, title="On the board", impact_ai=5, effort_ai="XS")
     r = await client.get("/")
-    assert r.status_code == 200 and "Tablero" in r.text  # the dashboard, not the login page
+    assert r.status_code == 200 and 'id="home-cards"' in r.text  # the dashboard, not the login page
     for path in ("/backlog", "/prioridad", "/hilos", "/incidentes", "/ideas", "/projects"):
         rr = await client.get(path)
         assert rr.status_code == 200, path
@@ -241,3 +241,15 @@ async def test_static_brand_assets_served(client: AsyncClient):
     assert r.status_code == 200 and "svg" in r.headers["content-type"]
     r = await client.get("/static/manifest.webmanifest")
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_home_cards_stats(client: AsyncClient):
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Open A", status="backlog")
+    await _seed_item(client, pid, title="Quick win", status="backlog", impact_ai=5, effort_ai="XS")
+    await _seed_item(client, pid, title="An idea", status="idea")
+    r = await client.get("/")
+    assert r.status_code == 200
+    assert 'id="home-cards"' in r.text
+    assert "Backlog" in r.text and "Ideas" in r.text
