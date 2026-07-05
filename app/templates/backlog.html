@@ -1,75 +1,82 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 {% block title %}Backlog{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-900">Backlog</h1>
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <div class="flex items-baseline gap-3">
+    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Backlog</h1>
+    <span class="text-sm text-muted">{{ items|length }} ítems</span>
+  </div>
   <div class="flex gap-2">
-    <button onclick="openModal('new-item-modal')"
-            class="text-sm bg-gray-900 text-white rounded px-3 py-1.5 hover:bg-gray-700">+ Nuevo ítem</button>
-    <a href="/ideas" class="text-sm border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50">+ Idea</a>
+    <button onclick="openModal('new-item-modal')" class="p-btn p-btn-primary p-btn-sm">+ Nuevo ítem</button>
+    <a href="/ideas" class="p-btn p-btn-ghost p-btn-sm">+ Idea</a>
   </div>
 </div>
 
-<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-800">
-  <strong>¿Cómo usar?</strong> Filtra por scope, estado, tipo u origen.
-  <span class="font-mono">⛔</span> = bloqueado por otro ítem abierto (ciérralo o el bloqueador primero).
-  Ordena por <em>prioridad</em> o <em>topológico</em> (primero lo que no depende de nada).
-  Edita estado y prioridad directo en la fila.
+{{ hint('backlog', '<strong>¿Cómo usar?</strong> Filtra por scope, estado, tipo u origen. <span class="font-mono">⛔</span> = bloqueado por otro ítem abierto (ciérralo o el bloqueador primero). Ordena por <em>prioridad</em> o <em>topológico</em> (primero lo que no depende de nada). Edita estado y prioridad directo en la fila.'|safe) }}
+
+<div class="sticky top-[67px] z-40 bg-canvas backdrop-blur py-2 -mx-1 px-1 mb-4">
+  <form id="filters">
+    <details class="group">
+      <summary class="md:hidden p-btn p-btn-ghost p-btn-sm mb-2 list-none">Filtros ▾</summary>
+      <div class="hidden group-open:flex md:!flex flex-wrap gap-2 items-center">
+        <select name="scope" aria-label="Filtrar por scope" class="p-input p-input-sm"
+                hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+          <option value="">Todos los scopes</option>
+          {% for s in scopes %}
+          <option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="status" aria-label="Filtrar por estado" class="p-input p-input-sm"
+                hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+          <option value="">Todos los estados</option>
+          {% for s in ['idea','backlog','spec','in-progress','blocked','in-review','done','discarded'] %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="item_type" aria-label="Filtrar por tipo" class="p-input p-input-sm"
+                hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+          <option value="">Todos los tipos</option>
+          {% for t in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
+          <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="origen" aria-label="Filtrar por origen" class="p-input p-input-sm"
+                hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+          <option value="">Todos los orígenes</option>
+          {% for o in ['digest','human','ai-session','sentry','agent'] %}
+          <option value="{{ o }}" {% if filters.origen == o %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="order" aria-label="Ordenar por" class="p-input p-input-sm"
+                hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
+          <option value="priority" {% if filters.order == 'priority' %}selected{% endif %}>Priority</option>
+          <option value="impact" {% if filters.order == 'impact' %}selected{% endif %}>Highest impact</option>
+          <option value="topological" {% if filters.order == 'topological' %}selected{% endif %}>Topological</option>
+          <option value="recent" {% if filters.order == 'recent' %}selected{% endif %}>Most recent</option>
+        </select>
+
+        <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
+          <input type="checkbox" name="stale" value="true" aria-label="Mostrar solo ítems stale"
+                 class="accent-[color:var(--accent)] w-4 h-4" {% if filters.stale %}checked{% endif %}
+                 hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⚠ stale
+        </label>
+        <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
+          <input type="checkbox" name="graph_blocked" value="true" aria-label="Mostrar solo ítems bloqueados"
+                 class="accent-[color:var(--accent)] w-4 h-4" {% if filters.graph_blocked %}checked{% endif %}
+                 hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⛔ bloqueados
+        </label>
+      </div>
+    </details>
+  </form>
 </div>
 
-<form id="filters" class="flex flex-wrap gap-3 mb-5">
-  <select name="scope" aria-label="Filtrar por scope" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
-          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="">Todos los scopes</option>
-    {% for s in scopes %}
-    <option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>
-    {% endfor %}
-  </select>
-
-  <select name="status" aria-label="Filtrar por estado" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
-          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="">Todos los estados</option>
-    {% for s in ['idea','backlog','spec','in-progress','blocked','in-review','done','discarded'] %}
-    <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
-
-  <select name="item_type" aria-label="Filtrar por tipo" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
-          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="">Todos los tipos</option>
-    {% for t in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
-    <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
-    {% endfor %}
-  </select>
-
-  <select name="origen" aria-label="Filtrar por origen" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
-          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="">Todos los orígenes</option>
-    {% for o in ['digest','human','ai-session','sentry','agent'] %}
-    <option value="{{ o }}" {% if filters.origen == o %}selected{% endif %}>{{ o }}</option>
-    {% endfor %}
-  </select>
-
-  <select name="order" aria-label="Ordenar por" class="border border-gray-300 rounded px-3 py-1.5 text-sm"
-          hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true">
-    <option value="priority" {% if filters.order == 'priority' %}selected{% endif %}>Priority</option>
-    <option value="impact" {% if filters.order == 'impact' %}selected{% endif %}>Highest impact</option>
-    <option value="topological" {% if filters.order == 'topological' %}selected{% endif %}>Topological</option>
-    <option value="recent" {% if filters.order == 'recent' %}selected{% endif %}>Most recent</option>
-  </select>
-
-  <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-    <input type="checkbox" name="stale" value="true" aria-label="Mostrar solo ítems stale" {% if filters.stale %}checked{% endif %}
-           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⚠ stale
-  </label>
-  <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-    <input type="checkbox" name="graph_blocked" value="true" aria-label="Mostrar solo ítems bloqueados" {% if filters.graph_blocked %}checked{% endif %}
-           hx-get="/backlog" hx-target="#items-table" hx-include="#filters" hx-push-url="true"> ⛔ bloqueados
-  </label>
-</form>
-
-<div id="items-table">
+<div id="items-table" class="p-card overflow-hidden">
   {% include "partials/items_table.html" %}
 </div>
 
