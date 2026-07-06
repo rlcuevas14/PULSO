@@ -1,7 +1,11 @@
 from datetime import datetime
+from typing import Any
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
+from jinja2.runtime import Context
 
+from app import i18n
 from app.config import settings
 from app.items.lifecycle import allowed_targets, non_terminal_targets
 
@@ -11,6 +15,28 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["non_terminal_targets"] = non_terminal_targets
 templates.env.globals["allowed_targets"] = allowed_targets
 templates.env.globals["base_url"] = settings.base_url
+
+
+# i18n: la lengua sale de la sesión del request (pass_context), default inglés.
+@pass_context
+def _t(ctx: Context, key: str, **kwargs: Any) -> str:
+    return i18n.t(key, i18n.resolve_lang(ctx["request"]), **kwargs)
+
+
+@pass_context
+def _tn(ctx: Context, key: str, n: int, **kwargs: Any) -> str:
+    return i18n.tn(key, n, i18n.resolve_lang(ctx["request"]), **kwargs)
+
+
+@pass_context
+def _current_lang(ctx: Context) -> str:
+    return i18n.resolve_lang(ctx["request"])
+
+
+templates.env.globals["t"] = _t
+templates.env.globals["tn"] = _tn
+templates.env.globals["current_lang"] = _current_lang
+templates.env.globals["LANGS"] = i18n.LANGS
 
 
 def _fecha(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:

@@ -537,6 +537,45 @@ async def test_registro_in_nav_and_dashboard_homecard(client: AsyncClient):
     assert r2.status_code == 200
 
 
+# ---------- i18n ----------
+
+
+@pytest.mark.asyncio
+async def test_lang_default_english_and_switch(client: AsyncClient):
+    from app.auth.service import create_user
+
+    # Sin usuarios /auth/login redirige a /setup — crea uno para ver el login real.
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, f"lang{uuid.uuid4().hex[:6]}@t.cl", "Lang User", "password")
+        break
+
+    r = await client.get("/auth/login")
+    assert r.status_code == 200
+    assert 'lang="en"' in r.text and "Sign in" in r.text
+
+    r_es = await client.get("/ui/lang/es?next=/auth/login", follow_redirects=True)
+    assert 'lang="es"' in r_es.text and "Entrar" in r_es.text
+
+    r_fr = await client.get("/ui/lang/fr?next=/auth/login", follow_redirects=True)
+    assert 'lang="fr"' in r_fr.text and "Se connecter" in r_fr.text
+
+
+@pytest.mark.asyncio
+async def test_lang_switch_guards(client: AsyncClient):
+    assert (await client.get("/ui/lang/xx?next=/")).status_code == 404
+    r = await client.get("/ui/lang/en?next=//evil.com", follow_redirects=False)
+    assert r.headers["location"] == "/"
+
+
+@pytest.mark.asyncio
+async def test_lang_selector_in_navbar(client: AsyncClient):
+    _uid, pid = await _login(client)
+    r = await client.get("/")
+    assert r.status_code == 200
+    for code in ("en", "es", "fr"):
+        assert f"/ui/lang/{code}?next=" in r.text
+
+
 # ---------- Audit regressions (spec 2026-07-06) ----------
 
 

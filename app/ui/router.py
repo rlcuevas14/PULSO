@@ -22,6 +22,19 @@ from app.ui.flash import flash_success
 router = APIRouter(tags=["ui"])
 
 _OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
+
+
+@router.get("/ui/lang/{code}")
+async def ui_set_lang(code: str, request: Request, next: str = "/"):
+    """Language switch — no auth dependency so it also works on the login page."""
+    from app.i18n import SUPPORTED
+
+    if code not in SUPPORTED:
+        return Response(status_code=404)
+    request.session["lang"] = code
+    # Open-redirect guard: only same-site relative paths.
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    return RedirectResponse(target, status_code=303)
 _PRIORITY_RANK = {"p0": 0, "p1": 1, "p2": 2, "p3": 3, None: 9}
 
 
