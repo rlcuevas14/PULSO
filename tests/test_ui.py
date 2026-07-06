@@ -283,9 +283,9 @@ async def test_home_cards_stats(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_backlog_show_param(client: AsyncClient):
+
     from app.items.models import Item
     from app.scopes.models import Scope
-    from datetime import timezone
 
     _uid, pid = await _login(client)
     await _seed_item(client, pid, title="Open item", status="backlog")
@@ -420,9 +420,10 @@ async def test_close_modal_endpoint(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_registro_groups_by_week(client: AsyncClient):
+    import datetime as _dt
+
     from app.items.models import Item
     from app.scopes.models import Scope
-    import datetime as _dt
 
     _uid, pid = await _login(client)
     async for db in client.app.dependency_overrides[get_db]():
@@ -456,9 +457,10 @@ async def test_registro_groups_by_week(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_registro_close_event_reason(client: AsyncClient):
+    import datetime as _dt
+
     from app.items.models import Item, ItemEvent
     from app.scopes.models import Scope
-    import datetime as _dt
 
     _uid, pid = await _login(client)
     async for db in client.app.dependency_overrides[get_db]():
@@ -486,9 +488,10 @@ async def test_registro_close_event_reason(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_registro_filters_and_load_more(client: AsyncClient):
+    import datetime as _dt
+
     from app.items.models import Item
     from app.scopes.models import Scope
-    import datetime as _dt
 
     _uid, pid = await _login(client)
     async for db in client.app.dependency_overrides[get_db]():

@@ -1,0 +1,83 @@
+{# Archive rows partial. Used both as full page content and HX-Request swap target.
+   Requires: week_groups, close_event, scope_map, next_before. #}
+{% set T = {
+  "bug":       "bg-brand-coral/20",
+  "feature":   "bg-brand-teal/15",
+  "tech-debt": "bg-brand-ochre/25",
+  "infra":     "bg-brand-lavender/25",
+  "docs":      "bg-brand-mint/30",
+  "ops":       "bg-brand-peach/30",
+  "security":  "bg-warning/20",
+  "product":   "bg-brand-pink/20",
+  "idea":      "bg-brand-lavender/25",
+} %}
+{% set S = {
+  "done":      "bg-success/15 text-success",
+  "discarded": "bg-surface-strong text-muted line-through",
+} %}
+
+{% for week_key, week_label, week_items in week_groups %}
+<section class="mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-2 px-1">
+    <h2 class="text-base font-semibold text-ink">{{ week_label }}</h2>
+    <div class="flex items-center gap-2">
+      {% set done_count = week_items | selectattr('status', 'equalto', 'done') | list | length %}
+      {% set disc_count = week_items | selectattr('status', 'equalto', 'discarded') | list | length %}
+      {% if done_count %}<span class="p-pill bg-success/15 text-success text-xs">{{ done_count }} done</span>{% endif %}
+      {% if disc_count %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ disc_count }} discarded</span>{% endif %}
+      {% if week_key %}
+      <button type="button"
+        hx-get="/ui/registro/summary?week={{ week_key }}"
+        hx-target="#summary-{{ week_key }}"
+        hx-swap="innerHTML"
+        class="p-btn p-btn-ghost p-btn-sm text-xs">✨ Resumen IA</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if week_key %}<div id="summary-{{ week_key }}" class="mb-2"></div>{% endif %}
+
+  <div class="p-card overflow-hidden">
+    {% for item in week_items %}
+    {% set ev = close_event.get(item.id|string) %}
+    {% set reason = (ev.payload or {}).get('reason') if ev else None %}
+    {% set commit = (item.source_refs or {}).get('commit_sha') or ((ev.payload or {}).get('commit_sha') if ev else None) %}
+    <div class="flex flex-wrap md:flex-nowrap items-center gap-2 px-4 py-3 border-b border-hairline last:border-0 hover:bg-surface-strong">
+
+      <div class="shrink-0 w-20 text-xs text-muted">
+        {% if item.closed_at %}{{ item.closed_at.day }} {{ item.closed_at.strftime('%b') }}{% else %}—{% endif %}
+      </div>
+
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-0.5">
+          <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline truncate">{{ item.title }}</a>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+          <span class="p-pill {{ S.get(item.status, '') }}">{{ item.status }}</span>
+          <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ item.type }}</span>
+          {% if scope_map.get(item.scope_id|string) %}<span>{{ scope_map[item.scope_id|string] }}</span>{% endif %}
+          {% if reason %}<span class="text-body">{{ reason }}</span>{% endif %}
+          {% if commit %}
+          <span class="font-mono text-xs">
+            {% set short_sha = commit[:7] %}
+            {{ short_sha }}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+{% if next_before %}
+<div id="load-more-trigger" class="text-center py-4">
+  <button type="button"
+    hx-get="/registro?before={{ next_before }}{% if filters.q %}&amp;q={{ filters.q }}{% endif %}{% if filters.scope %}&amp;scope={{ filters.scope }}{% endif %}{% if filters.item_type %}&amp;item_type={{ filters.item_type }}{% endif %}"
+    hx-target="#registro-rows"
+    hx-swap="beforeend"
+    hx-on::after-request="document.getElementById('load-more-trigger').remove()"
+    class="p-btn p-btn-ghost p-btn-sm">Cargar más</button>
+</div>
+{% endif %}

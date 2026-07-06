@@ -50,6 +50,12 @@
     </span>
     <div><p class="text-lg font-semibold">Ideas</p><p class="text-sm opacity-70">{{ cards.ideas }}</p></div>
   </a>
+  <a href="/registro" class="p-homecard bg-brand-mint text-ink">
+    <span class="w-9 h-9 rounded-xl bg-black/10 flex items-center justify-center">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9 2 2 4-4"/></svg>
+    </span>
+    <div><p class="text-lg font-semibold">Archive</p><p class="text-sm opacity-70">{{ cards.closed_this_week }} esta semana</p></div>
+  </a>
 </div>
 {% if cards.open == 0 and cards.ideas == 0 %}
 <p class="text-sm text-muted mt-4">Empieza aquí: crea tu primer ítem con «＋ Nuevo ítem» o conecta tu agente vía MCP en Settings del proyecto.</p>

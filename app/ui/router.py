@@ -12,7 +12,7 @@ from app.auth.models import ApiToken, User
 from app.database import get_db
 from app.items import graph, service
 from app.items.lifecycle import allowed_targets, non_terminal_targets
-from app.items.models import Item
+from app.items.models import Item, ItemEvent
 from app.jobs.models import AgentRun
 from app.projects.access import resolve_current_project, user_role_on_project
 from app.scopes.models import Scope
@@ -97,6 +97,18 @@ async def dashboard(
         select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
 
+    from datetime import datetime as _dt_cls
+    week_start = _dt_cls.now(timezone.utc)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = week_start - timedelta(days=week_start.weekday())
+    closed_this_week = int(await db.scalar(
+        select(func.count()).select_from(Item).where(
+            Item.project_id == pid,
+            Item.status.in_(["done", "discarded"]),
+            Item.closed_at >= week_start,
+        )
+    ) or 0)
+
     cards = {
         "open": sum(counts.get(s, 0) for s in ("backlog", "spec", "in-progress", "blocked", "in-review")),
         "in_progress": counts.get("in-progress", 0),
@@ -105,6 +117,7 @@ async def dashboard(
         "threads_active": threads_active,
         "incidents_new": incidents_new,
         "ideas": counts.get("idea", 0),
+        "closed_this_week": closed_this_week,
     }
     return templates.TemplateResponse(
         request, "dashboard.html",
@@ -900,6 +913,186 @@ async def ideas_page(
     )).scalars().all())
     return templates.TemplateResponse(
         request, "ideas.html", {"user": user, "ideas": ideas, "scopes": scopes}
+    )
+
+
+# ---------- Archive (Registro) ----------
+
+_PAGE_SIZE = 50
+
+
+def _iso_week_label(dt: datetime | None) -> str:
+    """Return 'YYYY-Www' key for grouping; '' for None (→ 'Sin fecha')."""
+    if dt is None:
+        return ""
+    iso = dt.isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def _week_range_label(iso_week_key: str) -> str:
+    """'Semana del Mon DD – Sun DD, MMM YYYY' from 'YYYY-Www'."""
+    import datetime as _dt
+    year, week = int(iso_week_key[:4]), int(iso_week_key[6:])
+    mon = _dt.datetime.fromisocalendar(year, week, 1)
+    sun = mon + _dt.timedelta(days=6)
+    months_es = ["ene", "feb", "mar", "abr", "may", "jun",
+                 "jul", "ago", "sep", "oct", "nov", "dic"]
+    if mon.month == sun.month:
+        return f"Semana del {mon.day}–{sun.day} {months_es[sun.month - 1]} {sun.year}"
+    return (
+        f"Semana del {mon.day} {months_es[mon.month - 1]}"
+        f" – {sun.day} {months_es[sun.month - 1]} {sun.year}"
+    )
+
+
+@router.get("/registro", response_class=HTMLResponse)
+async def registro_page(
+    request: Request,
+    q: str | None = None,
+    scope: str | None = None,
+    item_type: str | None = None,
+    before: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from itertools import groupby
+
+    from app.items.search import search_items
+
+    pid = await _project_id(db, user, request)
+
+    stmt = select(Item).where(
+        Item.project_id == pid,
+        Item.status.in_(["done", "discarded"]),
+    )
+    if q:
+        ids = await search_items(db, q, project_id=pid)
+        stmt = stmt.where(Item.id.in_(ids))
+    if scope:
+        scope_row = await db.scalar(select(Scope).where(Scope.name == scope, Scope.project_id == pid))
+        if scope_row:
+            stmt = stmt.where(Item.scope_id == scope_row.id)
+    if item_type:
+        stmt = stmt.where(Item.type == item_type)
+    if before:
+        try:
+            import datetime as _dt
+            before_dt = _dt.datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
+            stmt = stmt.where(Item.closed_at < before_dt)
+        except ValueError:
+            pass
+
+    stmt = stmt.order_by(Item.closed_at.desc().nullslast()).limit(_PAGE_SIZE + 1)
+    all_items = list((await db.execute(stmt)).scalars().all())
+    has_more = len(all_items) > _PAGE_SIZE
+    items = all_items[:_PAGE_SIZE]
+
+    # Batch-fetch close events (avoids N+1)
+    item_ids = [i.id for i in items]
+    events = list((await db.execute(
+        select(ItemEvent).where(ItemEvent.item_id.in_(item_ids), ItemEvent.action == "closed")
+        .order_by(ItemEvent.created_at.desc())
+    )).scalars().all())
+    # Most-recent close event per item
+    close_event: dict[str, ItemEvent] = {}
+    for ev in events:
+        key = str(ev.item_id)
+        if key not in close_event:
+            close_event[key] = ev
+
+    # Scope name map
+    scope_ids = {i.scope_id for i in items if i.scope_id}
+    scope_rows = list((await db.execute(select(Scope).where(Scope.id.in_(scope_ids)))).scalars().all())
+    scope_map = {str(s.id): s.name for s in scope_rows}
+
+    # Group by ISO week
+    def _key(item: Item) -> str:
+        return _iso_week_label(item.closed_at)
+
+    week_groups: list[tuple[str, str, list[Item]]] = []
+    for key, grp in groupby(items, _key):
+        label = _week_range_label(key) if key else "Sin fecha"
+        week_groups.append((key, label, list(grp)))
+
+    # next_before for load-more
+    next_before: str | None = None
+    if has_more and items:
+        last_closed = items[-1].closed_at
+        next_before = last_closed.isoformat() if last_closed else None
+
+    scopes = list((await db.execute(
+        select(Scope).where(Scope.project_id == pid).order_by(Scope.name)
+    )).scalars().all())
+
+    ctx = {
+        "user": user,
+        "week_groups": week_groups,
+        "close_event": close_event,
+        "scope_map": scope_map,
+        "scopes": scopes,
+        "filters": {"q": q, "scope": scope, "item_type": item_type},
+        "next_before": next_before,
+    }
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/registro_rows.html", ctx)
+    return templates.TemplateResponse(request, "registro.html", ctx)
+
+
+@router.get("/ui/registro/summary", response_class=HTMLResponse)
+async def ui_registro_summary(
+    request: Request,
+    week: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.ai.llm import LLMUnavailable, summarize_closed
+
+    pid = await _project_id(db, user, request)
+
+    # Parse week key YYYY-Www → date range
+    try:
+        import datetime as _dt
+        year, wnum = int(week[:4]), int(week[6:])
+        mon = _dt.datetime.fromisocalendar(year, wnum, 1).replace(tzinfo=timezone.utc)
+        sun = mon + _dt.timedelta(days=6, hours=23, minutes=59, seconds=59)
+    except (ValueError, IndexError):
+        return HTMLResponse('<p class="text-sm text-error">Semana inválida.</p>', status_code=400)
+
+    items = list((await db.execute(
+        select(Item).where(
+            Item.project_id == pid,
+            Item.status.in_(["done", "discarded"]),
+            Item.closed_at >= mon,
+            Item.closed_at <= sun,
+        )
+    )).scalars().all())
+
+    item_ids = [i.id for i in items]
+    events = list((await db.execute(
+        select(ItemEvent).where(ItemEvent.item_id.in_(item_ids), ItemEvent.action == "closed")
+        .order_by(ItemEvent.created_at.desc())
+    )).scalars().all())
+    close_event = {str(ev.item_id): ev for ev in reversed(events)}
+
+    items_data = [
+        {
+            "title": i.title,
+            "type": i.type,
+            "status": i.status,
+            "reason": (close_event[str(i.id)].payload or {}).get("reason")
+            if str(i.id) in close_event else None,
+        }
+        for i in items
+    ]
+
+    try:
+        summary_md = await summarize_closed(items_data)
+    except LLMUnavailable:
+        summary_md = None
+
+    return templates.TemplateResponse(
+        request, "partials/registro_summary.html",
+        {"summary_md": summary_md, "week": week},
     )
 
 

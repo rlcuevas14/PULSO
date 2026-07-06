@@ -150,6 +150,44 @@ async def triage_sentry(title: str, context: str) -> dict[str, Any]:
     return {"triage": triage}
 
 
+_SUMMARY_PROMPT = """Eres un analista de producto. Resume los ítems cerrados en esta semana de desarrollo
+en 3-5 bullets breves (markdown, español, tuteo neutro). Enfócate en impacto: qué se resolvió,
+qué se descartó y por qué, tendencias notables. Devuelve SOLO el markdown.
+
+Ítems cerrados:
+{items_text}
+
+Resumen:"""
+
+
+async def summarize_closed(
+    items_with_reasons: list[dict[str, Any]],
+) -> str:
+    """Genera un resumen IA de ítems cerrados en la semana. Lanza LLMUnavailable sin API key.
+
+    items_with_reasons: lista de dicts con keys title, type, status, reason (optional).
+    """
+    if not settings.anthropic_api_key:
+        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+    lines = []
+    for i in items_with_reasons:
+        reason_text = f" — {i['reason']}" if i.get("reason") else ""
+        lines.append(f"- [{i.get('status', '?')}] ({i.get('type', '?')}) {i.get('title', '')}{reason_text}")
+    items_text = "\n".join(lines) or "(sin ítems)"
+    prompt = _SUMMARY_PROMPT.format(items_text=items_text)
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            _ANTHROPIC_URL,
+            headers={"x-api-key": settings.anthropic_api_key,
+                     "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": _HAIKU_MODEL, "max_tokens": 600,
+                  "messages": [{"role": "user", "content": prompt}]},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    return "".join(b.get("text", "") for b in data.get("content", []))
+
+
 async def embed_text(content: str) -> list[float] | None:
     """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación).
 
