@@ -38,9 +38,9 @@
     </p>
     <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
           hx-indicator="#backfill-submit" class="space-y-3 text-sm">
-      <input name="org" required placeholder="org slug (ej: tid-analytics)" aria-label="Slug de la organización en Sentry"
+      <input name="org" required placeholder="org slug (e.g. my-org)" aria-label="Slug de la organización en Sentry"
              class="p-input">
-      <input name="project" required placeholder="project slug (ej: efrain)" aria-label="Slug del proyecto en Sentry"
+      <input name="project" required placeholder="project slug (e.g. my-app)" aria-label="Slug del proyecto en Sentry"
              class="p-input">
       <input name="token" type="password" required placeholder="Sentry token" aria-label="Token de Sentry"
              class="p-input">

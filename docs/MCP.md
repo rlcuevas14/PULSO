@@ -1,50 +1,86 @@
-# Conectar Claude Code a Pulso (MCP-over-HTTP)
+# Connecting Claude Code to Pulso (MCP over HTTP)
 
-Pulso expone un endpoint MCP en `https://pulso.tidanalytics.com/mcp` (Streamable HTTP, modo JSON).
-Cualquier instancia de Claude Code se conecta con solo un token — sin instalar nada local.
+Pulso exposes an MCP endpoint at `https://<your-pulso-host>/mcp` (Streamable HTTP, JSON mode).
+Any Claude Code instance connects with just a token — nothing to install locally.
 
-## 1. Generar un token
+## 1. Generate a token
 
-Entra a `https://pulso.tidanalytics.com/admin` → **Generar token MCP** (scope `write` para poder
-crear/cerrar ítems desde la sesión). Copia el token (se muestra una sola vez).
+Tokens are **project-scoped**: go to `https://<your-pulso-host>/projects/<slug>/settings` →
+**Generate MCP token** (scope `write` to create/close items from a session). Copy the token —
+it is shown only once.
 
-## 2. Registrar el server en Claude Code
+> Do NOT use `/admin` to mint MCP tokens: tokens created there have no `project_id` and the
+> MCP endpoint rejects them.
 
-**Opción A — comando (escribe en `~/.claude.json`, scope local):**
+## 2. Register the server in Claude Code
+
+**Option A — command (writes to `~/.claude.json`, local scope):**
 ```bash
-claude mcp add --transport http pulso https://pulso.tidanalytics.com/mcp \
-  --header "Authorization: Bearer <TU_TOKEN>"
+claude mcp add --transport http my-project https://<your-pulso-host>/mcp \
+  --header "Authorization: Bearer <YOUR_TOKEN>"
 ```
 
-**Opción B — `.mcp.json` versionado en la raíz del repo (compartido con el equipo):**
+**Option B — `.mcp.json` checked into the repo root (shared with the team):**
 ```json
 {
   "mcpServers": {
-    "pulso": {
+    "my-project": {
       "type": "http",
-      "url": "https://pulso.tidanalytics.com/mcp",
+      "url": "https://<your-pulso-host>/mcp",
       "headers": { "Authorization": "Bearer ${PULSO_TOKEN}" }
     }
   }
 }
 ```
-Claude Code expande `${PULSO_TOKEN}` desde el entorno (no dejes el token en git).
-Verifica con `claude mcp list`.
+Claude Code expands `${PULSO_TOKEN}` from the environment (never commit the token).
+Verify with `claude mcp list`. New tools appear only after **restarting** Claude Code.
 
-## 3. Tools disponibles
+## 3. Available tools (17)
 
-| Tool | Scope | Para qué |
-|------|-------|----------|
-| `pulso_contexto(scope?, work_description?)` | read | Prioridades de inicio de sesión (3 capas: local + vecindad + semántica) |
-| `pulso_buscar(q, …)` | read | Búsqueda full-text |
-| `pulso_listar(scope?, status?, order?, …)` | read | Lista filtrada (order: impacto/prioridad/topologico) |
-| `pulso_crear(title, type, scope_name, …)` | write | Crear ítem (origen ia-sesion) |
-| `pulso_avanzar(item_id|query, to_status)` | write | Cambiar estado (validado) |
-| `pulso_completar(item_id|search_query, nota?, commit_sha?)` | write | Marcar hecho + reportar desbloqueados |
-| `pulso_relacionar(source, target, relation, note?)` | write | Crear arco del grafo |
+| Tool | Scope | Purpose |
+|------|-------|---------|
+| `pulso_context(area?, work_description?)` | read | Session briefing: quick wins, blockers, unlinked incidents, active threads |
+| `pulso_search(q, area?, type?, limit?)` | read | Full-text search |
+| `pulso_list(area?, status?, type?, order?, quickwins?, limit?)` | read | Filtered list (order: `impact`/`priority`/`topological`/`recent`) |
+| `pulso_areas()` | read | List areas (backlog groupings) with counts and examples |
+| `pulso_incidents(status?, triage?, limit?)` | read | List Sentry incidents |
+| `pulso_incident(issue_id)` | read | Incident detail (with stack trace when available) |
+| `pulso_thread_list(stage?)` | read | List development threads |
+| `pulso_thread(thread_id)` | read | Thread detail with artifacts and linked items |
+| `pulso_create(title, type, area_name, …)` | write | Create item (origin `ai-session`; creates the area if missing) |
+| `pulso_advance(item_id\|query, to_status)` | write | Change status (lifecycle-validated; terminals go via `pulso_complete`) |
+| `pulso_complete(item_id\|search_query, note?, commit_sha?)` | write | Mark done + report newly unblocked items |
+| `pulso_link(source, target, relation, note?)` | write | Create a graph edge (`blocks`/`requires`/`conflicts`/`related`/`part_of`) |
+| `pulso_move_area(item_id\|query, area_name)` | write | Move an item to another existing area |
+| `pulso_incident_resolve(issue_id, note?)` | write | Resolve a Sentry incident |
+| `pulso_thread_create(title, area_name, summary?)` | write | Create a development thread |
+| `pulso_thread_advance(thread_id, artifact_content?)` | write | Advance a thread to its next stage |
+| `pulso_thread_link(thread_id, item_id\|query)` | write | Link an item to a thread |
 
-Prompts: `briefing`, `decision`. Resource templates: `pulso://scope/{name}`, `pulso://graph/{item_id}`.
+Prompts: `briefing`, `decision`. Resource templates: `pulso://area/{name}`, `pulso://graph/{item_id}`.
 
-## 4. Protocolo (pre/post sesión)
+## 4. Breaking change — tool rename (Spanish → English)
 
-Ver la sección "Pulso — conducto pre/post sesión" en el `CLAUDE.md` del repo efrain.
+Older Pulso versions exposed Spanish tool names. They were renamed once, before the first
+public release:
+
+| Old (removed) | Current |
+|---------------|---------|
+| `pulso_contexto` | `pulso_context` |
+| `pulso_buscar` | `pulso_search` |
+| `pulso_listar` | `pulso_list` |
+| `pulso_crear` | `pulso_create` |
+| `pulso_avanzar` | `pulso_advance` |
+| `pulso_completar` | `pulso_complete` |
+| `pulso_relacionar` | `pulso_link` |
+
+Enum values were also renamed (statuses, types, origins — e.g. `hecho` → `done`,
+`ia-sesion` → `ai-session`). If an old client sends Spanish values, calls fail validation —
+update the client; there is no compatibility shim.
+
+## 5. Suggested session protocol
+
+- **Session start**: call `pulso_context` to get current priorities, blockers, and open incidents.
+- **During work**: `pulso_create` for anything worth tracking; `pulso_advance` as states change.
+- **Session end**: `pulso_complete` with `note` + `commit_sha` for everything shipped — the
+  commit links the item to code, and the note becomes the close reason shown in the Archive.

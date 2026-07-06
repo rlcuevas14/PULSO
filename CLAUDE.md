@@ -8,7 +8,7 @@
 - **Backlog + dependency graph + Sentry incidents + development threads** — all accessible via 17 MCP tools.
 - **Multi-project** — one database, N projects. Each MCP token is project-scoped; the agent cannot write to the wrong project.
 - **Self-hosted OSS** — Docker + Postgres, no external dependencies except optional AI keys.
-- **Repo**: `C:\Proyectos\pulso` (local spin-off of `rlcuevas14/eduk3-pulso`).
+- **Repo**: `rlcuevas14/PULSO` (open source).
 
 ---
 
@@ -105,10 +105,11 @@ Items returned include `area` (name) and `thread_id` when set. Graph is item↔i
 
 ## Run locally + tests
 
-**No pgvector locally** (degrades gracefully — `embedding` is migration-only column). Postgres on `localhost:5432` (`efrain`/`efrain`), database `pulso_test`:
+**pgvector not required locally** (degrades gracefully — `embedding` is migration-only column). Point `TEST_DATABASE_URL` at any local Postgres with an empty database, and set `DEBUG=true` (without it the session cookie gets the `secure` flag and every UI test 303-redirects to login):
 
 ```bash
-TEST_DATABASE_URL="postgresql+asyncpg://efrain:efrain@localhost:5432/pulso_test" \
+TEST_DATABASE_URL="postgresql+asyncpg://<user>:<password>@localhost:5432/pulso_test" \
+  DEBUG=true SECRET_KEY=any-test-secret \
   python -m pytest tests/ -q
 ruff check app/ tests/
 python -m mypy app/

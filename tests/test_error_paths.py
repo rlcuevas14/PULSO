@@ -199,7 +199,7 @@ async def test_origin_permitido_ok(client: AsyncClient):
     raw = await _token(client)
     r = await client.post(
         "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"},
-        headers={**_hdr(raw), "origin": "https://pulso.eduk3.cl"},
+        headers={**_hdr(raw), "origin": "https://pulso.example.com"},
     )
     assert r.status_code == 200
 
