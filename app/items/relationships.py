@@ -73,7 +73,7 @@ async def create_relationship(
 ) -> ItemRelationship:
     if relation not in RELATIONS:
         raise RelationshipError(
-            f"Relación inválida «{relation}». Usa: {', '.join(RELATIONS)}."
+            f"Invalid relation '{relation}'. Use one of: {', '.join(RELATIONS)}."
         )
     if source_id == target_id:
         raise RelationshipError("Un ítem no puede relacionarse consigo mismo.")

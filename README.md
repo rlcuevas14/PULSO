@@ -97,6 +97,8 @@ Transitions are validated — the agent can't make illegal moves. Terminal state
 - **AI enrichment** — impact/effort estimation via Claude Haiku. Optional; degrades gracefully without `ANTHROPIC_API_KEY`.
 - **Semantic search** — embedding-based neighbor lookup via Gemini + pgvector. Optional; requires both `GEMINI_API_KEY` and a Postgres instance with pgvector.
 - **No Node.js** — Tailwind and HTMX load from CDN. Server renders HTML; HTMX handles partial updates.
+- **Multilingual UI** — English (default), Spanish, and French, switchable from the navbar. Adding a language = one JSON file in `app/i18n/locales/` (CI enforces catalog completeness).
+- **Archive** — closed items grouped by ISO week with close reasons and linked commits, plus an on-demand AI weekly summary.
 
 ---
 

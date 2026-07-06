@@ -1,11 +1,11 @@
 {# AI weekly summary partial. Requires: summary_md (str|None), week (str). #}
 <details open class="p-card p-4 mt-2">
   <summary class="font-medium text-sm text-ink cursor-pointer select-none list-none mb-2">
-    ✨ Resumen IA — {{ week }}
+    {{ t("registro.ai_summary_week", week=week) }}
   </summary>
   {% if summary_md %}
   <div class="prose-sm max-w-none text-body whitespace-pre-wrap text-sm">{{ summary_md }}</div>
   {% else %}
-  <p class="text-sm text-muted">Resumen IA no disponible (configura ANTHROPIC_API_KEY).</p>
+  <p class="text-sm text-muted">{{ t("registro.ai_summary_unavailable") }}</p>
   {% endif %}
 </details>

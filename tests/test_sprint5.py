@@ -286,7 +286,7 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
         data={"org": "tid", "project": "acme", "token": "fake"}, cookies=cookies,
     )
     assert r.status_code == 200
-    assert "Importados 2 de 2" in r.text
+    assert "Imported 2 of 2" in r.text  # default EN
     async for db in client.app.dependency_overrides[get_db]():
         i1 = (await db.execute(
             __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid1)

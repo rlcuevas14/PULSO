@@ -1,6 +1,6 @@
 <div class="bg-success/10 border border-success/30 rounded-xl p-4 mt-3 text-sm">
-  <div class="text-success font-medium mb-2">Token «{{ name }}» ({{ scopes }}) creado — cópialo ahora, no se vuelve a mostrar:</div>
+  <div class="text-success font-medium mb-2">{{ t("admin.token_created", name=name, scopes=scopes) }}</div>
   <code class="block font-mono text-sm select-all text-ink break-all mb-3">{{ raw }}</code>
-  <div class="text-muted mb-1">Conecta Claude Code:</div>
+  <div class="text-muted mb-1">{{ t("admin.connect_claude") }}</div>
   <pre class="bg-canvas border border-hairline rounded-xl p-3 text-xs overflow-x-auto">claude mcp add --transport http pulso {{ base_url }}/mcp --header "Authorization: Bearer {{ raw }}"</pre>
 </div>

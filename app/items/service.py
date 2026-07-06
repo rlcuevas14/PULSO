@@ -38,7 +38,7 @@ async def apply_transition(db: AsyncSession, item: Item, to_status: str, actor: 
             f"'{to_status}' is terminal — use close/discard (with a reason), not a direct transition."
         )
     if not valid_transition(item.status, to_status):
-        raise TransitionError(f"Transición inválida: {item.status} → {to_status}")
+        raise TransitionError(f"Invalid transition: {item.status} → {to_status}")
     old = item.status
     if old != to_status:
         item.status = to_status
@@ -73,7 +73,7 @@ async def close_item(
     if status not in TERMINAL:
         raise TransitionError("status must be 'done' or 'discarded'")
     if not valid_transition(item.status, status):
-        raise TransitionError(f"Transición inválida: {item.status} → {status}")
+        raise TransitionError(f"Invalid transition: {item.status} → {status}")
 
     item.status = status
     item.closed_at = datetime.now(timezone.utc)

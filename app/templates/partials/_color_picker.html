@@ -2,10 +2,10 @@
 <div class="flex items-center gap-2 flex-wrap">
   {% for c in BRAND_PRESETS %}
   <button type="button" class="w-7 h-7 rounded-full border border-hairline hover:scale-110 transition-transform"
-          style="background:{{ c }}" onclick="pkPick('{{ c }}')" aria-label="Elegir color {{ c }}"></button>
+          style="background:{{ c }}" onclick="pkPick('{{ c }}')" aria-label="{{ t('common.pick_color', color=c) }}"></button>
   {% endfor %}
   <input type="color" name="color" id="pk-input" value="{{ current or '#6366f1' }}"
-         class="w-9 h-9 rounded-xl border border-hairline cursor-pointer" aria-label="Color personalizado"
+         class="w-9 h-9 rounded-xl border border-hairline cursor-pointer" aria-label="{{ t('common.custom_color') }}"
          oninput="pkPreview(this.value)">
   <span id="pk-preview" class="p-pill ml-1" style="background:{{ current or '#6366f1' }};color:{{ accent_fg(current) }}">
     <span class="inline-block w-2 h-2 rounded-full bg-current opacity-70"></span>{{ label }}

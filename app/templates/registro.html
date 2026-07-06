@@ -1,38 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Archive{% endblock %}
+{% block title %}{{ t("nav.archive") }}{% endblock %}
 {% block content %}
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Archive</h1>
-  <span class="text-sm text-muted">Historial de ítems cerrados, agrupados por semana.</span>
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">{{ t("nav.archive") }}</h1>
+  <span class="text-sm text-muted">{{ t("registro.subtitle") }}</span>
 </div>
 
 <div class="flex flex-wrap gap-2 items-center mb-4">
   <form id="reg-filters" class="flex flex-wrap gap-2 items-center">
 
-    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="Buscar…"
-           aria-label="Buscar en Archive"
+    <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="{{ t('common.search') }}"
+           aria-label="{{ t('registro.search_aria') }}"
            class="p-input p-input-sm flex-1 min-w-[140px]"
            hx-get="/registro" hx-target="#registro-rows" hx-include="#reg-filters" hx-push-url="true"
            hx-trigger="keyup changed delay:300ms, search">
 
-    <select name="scope" aria-label="Filtrar por scope" class="p-input p-input-sm"
+    <select name="scope" aria-label="{{ t('registro.filter_scope') }}" class="p-input p-input-sm"
             hx-get="/registro" hx-target="#registro-rows" hx-include="#reg-filters" hx-push-url="true">
-      <option value="">Todos los scopes</option>
+      <option value="">{{ t("registro.all_scopes") }}</option>
       {% for s in scopes %}
       <option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>
       {% endfor %}
     </select>
 
-    <select name="item_type" aria-label="Filtrar por tipo" class="p-input p-input-sm"
+    <select name="item_type" aria-label="{{ t('registro.filter_type') }}" class="p-input p-input-sm"
             hx-get="/registro" hx-target="#registro-rows" hx-include="#reg-filters" hx-push-url="true">
-      <option value="">Todos los tipos</option>
-      {% for t in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
-      <option value="{{ t }}" {% if filters.item_type == t %}selected{% endif %}>{{ t }}</option>
+      <option value="">{{ t("registro.all_types") }}</option>
+      {% for it in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
+      <option value="{{ it }}" {% if filters.item_type == it %}selected{% endif %}>{{ t("type." ~ it) }}</option>
       {% endfor %}
     </select>
 
-    <a href="/registro" class="p-btn p-btn-ghost p-btn-sm">Limpiar</a>
+    <a href="/registro" class="p-btn p-btn-ghost p-btn-sm">{{ t("common.clear_filters") }}</a>
   </form>
 </div>
 

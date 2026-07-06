@@ -18,19 +18,27 @@ templates.env.globals["base_url"] = settings.base_url
 
 
 # i18n: la lengua sale de la sesión del request (pass_context), default inglés.
+# ctx.get: dentro de un macro importado SIN `with context` no hay request — degrada
+# a inglés en vez de reventar el render (los imports de macros deben llevar
+# `with context` para heredar el idioma).
+def _lang_of(ctx: Context) -> str:
+    request = ctx.get("request")
+    return i18n.resolve_lang(request) if request is not None else i18n.DEFAULT_LANG
+
+
 @pass_context
 def _t(ctx: Context, key: str, **kwargs: Any) -> str:
-    return i18n.t(key, i18n.resolve_lang(ctx["request"]), **kwargs)
+    return i18n.t(key, _lang_of(ctx), **kwargs)
 
 
 @pass_context
 def _tn(ctx: Context, key: str, n: int, **kwargs: Any) -> str:
-    return i18n.tn(key, n, i18n.resolve_lang(ctx["request"]), **kwargs)
+    return i18n.tn(key, n, _lang_of(ctx), **kwargs)
 
 
 @pass_context
 def _current_lang(ctx: Context) -> str:
-    return i18n.resolve_lang(ctx["request"])
+    return _lang_of(ctx)
 
 
 templates.env.globals["t"] = _t

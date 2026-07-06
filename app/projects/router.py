@@ -12,6 +12,8 @@ from app.auth.models import ApiToken, User
 from app.auth.service import revoke_api_token
 from app.config import settings
 from app.database import get_db
+from app.i18n import resolve_lang
+from app.i18n import t as _t
 from app.projects import service as ps
 from app.projects.access import accessible_project_ids, require_project_access, user_role_on_project
 from app.templates_config import templates
@@ -129,7 +131,7 @@ async def project_settings_update(
     await db.commit()
     if request.session.get("current_project_id") == str(project.id):
         request.session["current_project_color"] = project.color or "#6366f1"
-    flash_success(request, message="Configuración guardada")
+    flash_success(request, message=_t("flash.settings_saved", resolve_lang(request)))
     return RedirectResponse(f"/projects/{slug}/settings", status_code=303)
 
 
@@ -202,7 +204,8 @@ async def switch_project(
             request.session["current_project_name"] = project.name
             request.session["current_project_slug"] = project.slug
             request.session["current_project_color"] = project.color or "#6366f1"
-            flash_success(request, message=f"Proyecto activo: {project.name}")
+            flash_success(request, message=_t(
+                "flash.project_active", resolve_lang(request), name=project.name))
     except (ValueError, AttributeError):
         pass
     redirect = request.headers.get("referer", "/")

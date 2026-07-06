@@ -102,7 +102,7 @@ async def test_hilos_pages_render(client: AsyncClient):
     tid = r.json()["id"]
     page = await client.get("/hilos", cookies=cookies)
     assert page.status_code == 200
-    assert "Hilos" in page.text
+    assert "Threads" in page.text  # default EN
     detail = await client.get(f"/hilos/{tid}", cookies=cookies)
     assert detail.status_code == 200
     assert "Render hilo" in detail.text

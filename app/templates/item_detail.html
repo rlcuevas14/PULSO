@@ -3,7 +3,7 @@
 {% block content %}
 
 <div class="mb-4">
-  <a href="/backlog" class="text-sm text-accent hover:underline">← Backlog</a>
+  <a href="/backlog" class="text-sm text-accent hover:underline">← {{ t("nav.backlog") }}</a>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-6 items-start">
@@ -15,7 +15,7 @@
       <h1 class="text-2xl font-semibold tracking-tight text-ink">{{ item.title }}</h1>
       <div class="flex items-center gap-2 shrink-0">
         {% if item.stale_risk %}
-        <span class="p-pill bg-warning/20 text-warning">⚠ Verificar si ya está resuelto</span>
+        <span class="p-pill bg-warning/20 text-warning">{{ t("item.stale_check") }}</span>
         {% endif %}
         {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
       </div>
@@ -27,23 +27,23 @@
 
     {% if item.impact_rationale %}
     <div class="p-card p-5 text-sm text-body">
-      <span class="p-label">Justificación impacto</span>
+      <span class="p-label">{{ t("item.impact_rationale") }}</span>
       {{ item.impact_rationale }}
     </div>
     {% endif %}
 
     {% if item.dependencies %}
     <div class="text-xs text-muted">
-      <span class="font-medium">Dependencias (texto del digest, referencia):</span> {{ item.dependencies }}
-      — el grafo de Relaciones es la fuente estructurada.
+      <span class="font-medium">{{ t("item.dependencies_label") }}</span> {{ item.dependencies }}
+      — {{ t("item.dependencies_note") }}
     </div>
     {% endif %}
 
     {% if blockers %}
     <div class="bg-warning/10 border border-warning/30 text-warning rounded-xl px-4 py-3 text-sm">
-      ⛔ <strong>Bloqueado por:</strong>
+      ⛔ <strong>{{ t("item.blocked_by") }}</strong>
       {% for b in blockers %}<a href="/items/{{ b.id }}" class="underline">{{ b.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
-      Ciérralos primero, o márcalo hecho igual solo si ya está resuelto.
+      {{ t("item.blocked_by_hint") }}
     </div>
     {% endif %}
 
@@ -53,14 +53,14 @@
     </div>
 
     <div class="p-card p-5">
-      <h2 class="font-semibold text-ink mb-4">Comentarios ({{ item.comments|length }})</h2>
+      <h2 class="font-semibold text-ink mb-4">{{ t("item.comments") }} ({{ item.comments|length }})</h2>
       <div class="space-y-4">
         {% for c in item.comments %}
         <div class="border-l-2 border-hairline pl-4"{% if c.kind == 'decision' %} style="border-left-color:var(--accent)"{% endif %}>
           <div class="flex items-center gap-2 mb-1">
             <span class="text-xs font-medium text-body">{{ c.author }}</span>
             <span class="text-xs text-muted">{{ c.created_at | fecha }}</span>
-            {% if c.kind == 'decision' %}<span class="p-pill bg-brand-lavender/25 text-ink">decision</span>{% endif %}
+            {% if c.kind == 'decision' %}<span class="p-pill bg-brand-lavender/25 text-ink">{{ t("kind." ~ c.kind) }}</span>{% endif %}
           </div>
           <div class="text-sm text-body whitespace-pre-wrap">{{ c.body_md }}</div>
         </div>
@@ -68,15 +68,15 @@
       </div>
       <form hx-post="/api/v1/items/{{ item.id }}/comments"
             hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }" class="mt-4">
-        <textarea name="body_md" rows="3" required placeholder="Agregar comentario..." aria-label="Nuevo comentario"
+        <textarea name="body_md" rows="3" required placeholder="{{ t('item.comment_placeholder') }}" aria-label="{{ t('item.new_comment') }}"
           class="p-input"></textarea>
-        <button type="submit" class="mt-2 p-btn p-btn-primary p-btn-sm">Comentar</button>
+        <button type="submit" class="mt-2 p-btn p-btn-primary p-btn-sm">{{ t("item.comment_submit") }}</button>
       </form>
     </div>
 
     {% if item.events %}
     <div class="p-card p-5">
-      <h2 class="font-semibold text-ink mb-4">Historial</h2>
+      <h2 class="font-semibold text-ink mb-4">{{ t("item.history") }}</h2>
       <div class="space-y-2">
         {% for e in item.events|reverse %}
         <div class="flex items-center gap-3 text-xs text-muted">
@@ -98,18 +98,18 @@
 
     <div class="p-card p-4 space-y-3">
       <div>
-        <span class="p-label">Estado</span>
+        <span class="p-label">{{ t("item.status") }}</span>
         {% if transitions %}
-        <select aria-label="Cambiar estado del ítem" class="p-input p-input-sm w-full"
+        <select aria-label="{{ t('item.change_status') }}" class="p-input p-input-sm w-full"
                 hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
-          <option value="">{{ item.status }} →</option>
-          {% for t in transitions %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          <option value="">{{ t("status." ~ item.status) }} →</option>
+          {% for tr in transitions %}<option value="{{ tr }}">{{ t("status." ~ tr) }}</option>{% endfor %}
         </select>
-        {% else %}<span class="text-sm text-body">{{ item.status }}</span>{% endif %}
+        {% else %}<span class="text-sm text-body">{{ t("status." ~ item.status) }}</span>{% endif %}
       </div>
       <div>
-        <span class="p-label">Esfuerzo</span>
-        <select aria-label="Esfuerzo estimado" class="p-input p-input-sm w-full"
+        <span class="p-label">{{ t("item.effort") }}</span>
+        <select aria-label="{{ t('item.estimated_effort') }}" class="p-input p-input-sm w-full"
                 hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
                 hx-vals='{"field":"effort_ai"}' name="value">
           <option value="" {% if not item.effort_ai %}selected{% endif %}>—</option>
@@ -117,8 +117,8 @@
         </select>
       </div>
       <div>
-        <span class="p-label">Impacto</span>
-        <select aria-label="Impacto estimado" class="p-input p-input-sm w-full"
+        <span class="p-label">{{ t("item.impact") }}</span>
+        <select aria-label="{{ t('item.estimated_impact') }}" class="p-input p-input-sm w-full"
                 hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
                 hx-vals='{"field":"impact_ai"}' name="value">
           <option value="" {% if not item.impact_ai %}selected{% endif %}>—</option>
@@ -126,37 +126,37 @@
         </select>
       </div>
       <div>
-        <span class="p-label">Prioridad</span>
+        <span class="p-label">{{ t("item.priority") }}</span>
         {% with select_class = 'w-full' %}
         {% include "partials/_priority_select.html" %}
         {% endwith %}
       </div>
       <div class="pt-3 border-t border-hairline space-y-1 text-xs text-muted">
-        <p>Tipo: {{ item.type }}</p>
-        <p>Scope: {{ scope.name if scope else '—' }}</p>
-        <p>Origen: {{ item.origen }}</p>
-        <p>Creado: {{ item.created_at | fecha }}</p>
-        <p>Actualizado: {{ item.updated_at | fecha }}</p>
+        <p>{{ t("item.type") }}: {{ t("type." ~ item.type) }}</p>
+        <p>{{ t("item.scope") }}: {{ scope.name if scope else '—' }}</p>
+        <p>{{ t("item.origin") }}: {{ t("origin." ~ item.origen) }}</p>
+        <p>{{ t("item.created") }}: {{ item.created_at | fecha }}</p>
+        <p>{{ t("item.updated") }}: {{ item.updated_at | fecha }}</p>
       </div>
     </div>
 
     <div class="p-card p-4 space-y-2">
       <button id="enrich-btn" hx-post="/api/v1/items/{{ item.id }}/enrich" hx-swap="none"
         hx-indicator="#enrich-btn"
-        hx-on:htmx:after-request="if(event.detail.successful){ this.textContent = 'Encolado ✓'; }"
+        hx-on:htmx:after-request='if(event.detail.successful){ this.textContent = {{ t("item.enrich_queued") | tojson }}; }'
         class="p-btn p-btn-ghost w-full">
         <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
-        ✨ Analizar con IA
+        {{ t("item.enrich") }}
       </button>
 
       {% if item.status not in ('done','discarded') %}
       <button onclick="openModal('close-modal')"
-        class="p-btn p-btn-primary w-full">Marcar hecho / Descartar ▸</button>
+        class="p-btn p-btn-primary w-full">{{ t("item.close_action") }}</button>
       {% else %}
       <form hx-post="/ui/items/{{ item.id }}/reopen" hx-swap="none"
-            hx-confirm="¿Reabrir este ítem? Volverá al backlog."
+            hx-confirm="{{ t('item.reopen_confirm') }}"
             action="/ui/items/{{ item.id }}/reopen" method="post">
-        <button class="p-btn p-btn-ghost w-full">Reabrir ▸</button>
+        <button class="p-btn p-btn-ghost w-full">{{ t("item.reopen") }}</button>
       </form>
       {% endif %}
     </div>

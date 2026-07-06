@@ -175,7 +175,7 @@ async def create_item(
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
+        raise HTTPException(status_code=422, detail=f"Invalid data: {e.orig}") from e
     await db.refresh(item)
     return item
 
@@ -303,7 +303,7 @@ async def patch_item(
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
+        raise HTTPException(status_code=422, detail=f"Invalid data: {e.orig}") from e
     await db.refresh(item)
     return item
 
@@ -358,7 +358,7 @@ async def add_comment(
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
+        raise HTTPException(status_code=422, detail=f"Invalid data: {e.orig}") from e
     await db.refresh(comment)
     return {"id": str(comment.id), "created_at": comment.created_at.isoformat()}
 
@@ -443,7 +443,7 @@ async def create_relationship_endpoint(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail=f"Datos inválidos: {e.orig}") from e
+        raise HTTPException(status_code=422, detail=f"Invalid data: {e.orig}") from e
     return {
         "source_id": str(rel.source_id),
         "target_id": str(rel.target_id),

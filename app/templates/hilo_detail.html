@@ -14,24 +14,24 @@
   "descartado":    "bg-surface-strong",
 } %}
 
-<div class="mb-4"><a href="/hilos" class="text-sm underline underline-offset-2" style="color:var(--accent)">← Hilos</a></div>
+<div class="mb-4"><a href="/hilos" class="text-sm underline underline-offset-2" style="color:var(--accent)">← {{ t("nav.threads") }}</a></div>
 
 <div class="p-card p-5 mb-5">
   <div class="flex items-start justify-between gap-4">
     <h1 class="text-2xl font-semibold tracking-tight text-ink">{{ thread.title }}</h1>
-    <span class="p-pill {{ STAGE_TINT.get(thread.stage, 'bg-surface-strong') }} text-ink shrink-0">{{ thread.stage }}</span>
+    <span class="p-pill {{ STAGE_TINT.get(thread.stage, 'bg-surface-strong') }} text-ink shrink-0">{{ t("stage." ~ thread.stage) }}</span>
   </div>
 
   {% if thread.stage == "descartado" %}
-  <div class="py-3"><span class="p-pill bg-surface-strong text-muted line-through">descartado</span></div>
+  <div class="py-3"><span class="p-pill bg-surface-strong text-muted line-through">{{ t("stage.descartado") }}</span></div>
   {% else %}
   {% set STAGES = ["idea","investigacion","historias","spec","en-desarrollo","review","hecho"] %}
-  <ol class="flex items-center gap-1 overflow-x-auto py-3" aria-label="Etapas del hilo">
+  <ol class="flex items-center gap-1 overflow-x-auto py-3" aria-label="{{ t('threads.stages_aria') }}">
     {% for s in STAGES %}
     {% set done = STAGES.index(thread.stage) > loop.index0 if thread.stage in STAGES else false %}
     <li class="flex items-center gap-1 shrink-0">
       <span class="p-pill {% if s == thread.stage %}text-white{% elif done %}bg-success/15 text-success{% else %}bg-surface-strong text-muted{% endif %}"
-            {% if s == thread.stage %}style="background:var(--accent);color:var(--accent-fg)"{% endif %}>{{ s }}</span>
+            {% if s == thread.stage %}style="background:var(--accent);color:var(--accent-fg)"{% endif %}>{{ t("stage." ~ s) }}</span>
       {% if not loop.last %}<span class="w-4 h-px bg-hairline"></span>{% endif %}
     </li>
     {% endfor %}
@@ -43,7 +43,7 @@
   {% if thread.stage not in ('hecho', 'descartado') %}
   <div class="border border-hairline rounded-xl p-4 mb-2 bg-surface-soft">
     <div class="text-sm font-medium text-body mb-2">
-      {% if next_stage %}Siguiente stage: <span style="color:var(--accent)">{{ next_stage }}</span>{% else %}Stage final{% endif %}
+      {% if next_stage %}{{ t("threads.next_stage") }} <span style="color:var(--accent)">{{ t("stage." ~ next_stage) }}</span>{% else %}{{ t("threads.final_stage") }}{% endif %}
     </div>
     <div class="flex flex-wrap gap-2 items-center">
       {% if next_stage %}
@@ -51,26 +51,26 @@
               hx-post="/ui/hilos/{{ thread.id }}/elaborate" hx-target="#draft-area" hx-swap="innerHTML"
               hx-indicator="#elab-btn">
         <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
-        ✨ Elaborar con IA
+        {{ t("threads.elaborate_ai") }}
       </button>
       {# hx-post: el handler responde 204 + HX-Refresh (solo htmx la honra). #}
       <form hx-post="/ui/hilos/{{ thread.id }}/advance" hx-swap="none"
             action="/ui/hilos/{{ thread.id }}/advance" method="post" class="inline">
-        <button class="p-btn p-btn-primary">Avanzar a {{ next_stage }} ▸</button>
+        <button class="p-btn p-btn-primary">{{ t("threads.advance_to", stage=t("stage." ~ next_stage)) }}</button>
       </form>
       {% endif %}
       {% if prev_stage %}
       <form hx-post="/ui/hilos/{{ thread.id }}/stage" hx-swap="none"
             action="/ui/hilos/{{ thread.id }}/stage" method="post" class="inline">
         <input type="hidden" name="stage" value="{{ prev_stage }}">
-        <button class="p-btn p-btn-ghost p-btn-sm">◂ Volver a {{ prev_stage }}</button>
+        <button class="p-btn p-btn-ghost p-btn-sm">{{ t("threads.back_to", stage=t("stage." ~ prev_stage)) }}</button>
       </form>
       {% endif %}
       <form hx-post="/ui/hilos/{{ thread.id }}/stage" hx-swap="none"
-            hx-confirm="¿Descartar este hilo?"
+            hx-confirm="{{ t('threads.discard_confirm') }}"
             action="/ui/hilos/{{ thread.id }}/stage" method="post" class="inline ml-auto">
         <input type="hidden" name="stage" value="descartado">
-        <button class="p-btn p-btn-ghost p-btn-sm text-error">Descartar hilo</button>
+        <button class="p-btn p-btn-ghost p-btn-sm text-error">{{ t("threads.discard") }}</button>
       </form>
     </div>
   </div>
@@ -79,25 +79,25 @@
 </div>
 
 <div class="mb-5">
-  <h2 class="font-semibold text-ink mb-3">Artefactos ({{ artifacts|length }})</h2>
+  <h2 class="font-semibold text-ink mb-3">{{ t("threads.artifacts_heading", n=artifacts|length) }}</h2>
   <div class="space-y-2">
     {% for a in artifacts %}
     <details class="p-card">
       <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-ink hover:bg-surface-strong rounded-2xl">
-        {{ a.stage }}
+        {{ t("stage." ~ a.stage) }}
         <span class="p-pill bg-surface-strong text-muted ml-1">{{ a.kind }}</span>
         <span class="text-xs text-muted ml-1">{{ a.created_at | fecha }}</span>
       </summary>
       <div class="px-4 pb-4 text-sm text-body whitespace-pre-wrap">{{ a.content_md }}</div>
     </details>
     {% else %}
-    <p class="text-sm text-muted">Aún no hay artefactos. Avanza el stage guardando uno, o usa "Elaborar con IA".</p>
+    <p class="text-sm text-muted">{{ t("threads.artifacts_empty") }}</p>
     {% endfor %}
   </div>
 </div>
 
 <div>
-  <h2 class="font-semibold text-ink mb-3">Ítems linkeados ({{ linked|length }})</h2>
+  <h2 class="font-semibold text-ink mb-3">{{ t("threads.linked_items_heading", n=linked|length) }}</h2>
   <div class="p-card divide-y divide-hairline">
     {% for it in linked %}
     <a href="/items/{{ it.id }}" class="flex items-center gap-2 px-4 py-3 text-sm hover:bg-surface-strong first:rounded-t-2xl last:rounded-b-2xl">
@@ -105,7 +105,7 @@
       {% with status = it.status %}{% include "partials/_status_badge.html" %}{% endwith %}
     </a>
     {% else %}
-    <p class="px-4 py-3 text-sm text-muted">Sin ítems. Crea uno desde el Backlog y asígnalo a este hilo (futuro), o trabaja el funnel por stages.</p>
+    <p class="px-4 py-3 text-sm text-muted">{{ t("threads.linked_empty") }}</p>
     {% endfor %}
   </div>
 </div>

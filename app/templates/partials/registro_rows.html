@@ -23,14 +23,14 @@
     <div class="flex items-center gap-2">
       {% set done_count = week_items | selectattr('status', 'equalto', 'done') | list | length %}
       {% set disc_count = week_items | selectattr('status', 'equalto', 'discarded') | list | length %}
-      {% if done_count %}<span class="p-pill bg-success/15 text-success text-xs">{{ done_count }} done</span>{% endif %}
-      {% if disc_count %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ disc_count }} discarded</span>{% endif %}
+      {% if done_count %}<span class="p-pill bg-success/15 text-success text-xs">{{ tn("registro.done_count", done_count) }}</span>{% endif %}
+      {% if disc_count %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ tn("registro.discarded_count", disc_count) }}</span>{% endif %}
       {% if week_key %}
       <button type="button"
         hx-get="/ui/registro/summary?week={{ week_key }}"
         hx-target="#summary-{{ week_key }}"
         hx-swap="innerHTML"
-        class="p-btn p-btn-ghost p-btn-sm text-xs">✨ Resumen IA</button>
+        class="p-btn p-btn-ghost p-btn-sm text-xs">{{ t("registro.ai_summary") }}</button>
       {% endif %}
     </div>
   </div>
@@ -44,7 +44,7 @@
     <div class="flex flex-wrap md:flex-nowrap items-center gap-2 px-4 py-3 border-b border-hairline last:border-0 hover:bg-surface-strong">
 
       <div class="shrink-0 w-20 text-xs text-muted">
-        {% if item.closed_at %}{{ item.closed_at.day }} {{ item.closed_at.strftime('%b') }}{% else %}—{% endif %}
+        {% if item.closed_at %}{{ item.closed_at.day }} {{ t("month." ~ item.closed_at.month) }}{% else %}—{% endif %}
       </div>
 
       <div class="flex-1 min-w-0">
@@ -52,8 +52,8 @@
           <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline truncate">{{ item.title }}</a>
         </div>
         <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-          <span class="p-pill {{ S.get(item.status, '') }}">{{ item.status }}</span>
-          <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ item.type }}</span>
+          <span class="p-pill {{ S.get(item.status, '') }}">{{ t("status." ~ item.status) }}</span>
+          <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ t("type." ~ item.type) }}</span>
           {% if scope_map.get(item.scope_id|string) %}<span>{{ scope_map[item.scope_id|string] }}</span>{% endif %}
           {% if reason %}<span class="text-body">{{ reason }}</span>{% endif %}
           {% if commit %}
@@ -75,8 +75,8 @@
 
 {% if not week_groups and not is_load_more %}
 <div class="py-16 text-center text-sm text-muted">
-  No hay ítems cerrados con estos filtros.
-  <a href="/registro" class="ml-1 text-accent hover:underline">Limpiar filtros</a>
+  {{ t("registro.empty_filtered") }}
+  <a href="/registro" class="ml-1 text-accent hover:underline">{{ t("common.clear_filters") }}</a>
 </div>
 {% endif %}
 
@@ -87,6 +87,6 @@
     hx-target="#registro-rows"
     hx-swap="beforeend"
     hx-on::after-request="this.parentElement.remove()"
-    class="p-btn p-btn-ghost p-btn-sm">Cargar más</button>
+    class="p-btn p-btn-ghost p-btn-sm">{{ t("common.load_more") }}</button>
 </div>
 {% endif %}

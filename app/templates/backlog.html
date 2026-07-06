@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% from "partials/_hint.html" import hint %}
-{% block title %}Backlog{% endblock %}
+{% from "partials/_hint.html" import hint with context %}
+{% block title %}{{ t("nav.backlog") }}{% endblock %}
 {% block content %}
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
   <div class="flex items-baseline gap-3">
-    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Backlog</h1>
-    <span class="text-sm text-muted">{{ items|length }} ítems</span>
+    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">{{ t("nav.backlog") }}</h1>
+    <span class="text-sm text-muted">{{ tn("common.items", items|length) }}</span>
   </div>
   <div class="flex gap-2">
-    <button onclick="openModal('new-item-modal')" class="p-btn p-btn-primary p-btn-sm">+ Nuevo ítem</button>
-    <a href="/ideas" class="p-btn p-btn-ghost p-btn-sm">+ Idea</a>
+    <button onclick="openModal('new-item-modal')" class="p-btn p-btn-primary p-btn-sm">{{ t("backlog.new_item") }}</button>
+    <a href="/ideas" class="p-btn p-btn-ghost p-btn-sm">{{ t("backlog.new_idea") }}</a>
   </div>
 </div>
 
-{{ hint('backlog', '<strong>¿Cómo usar?</strong> <em>Abiertos</em> oculta lo terminado (búscalo en Archive). <span class="font-mono">🤖</span> = listo para el agente: especificado, marcado <em>agent_ready</em>, sin bloqueadores. <span class="font-mono">⛔</span> = bloqueado por otro ítem abierto.'|safe) }}
+{{ hint('backlog', t("backlog.hint")|safe) }}
 
 <div class="sticky top-[67px] z-40 bg-canvas backdrop-blur py-2 -mx-1 px-1 mb-4">
   <form id="filters">
@@ -33,7 +33,7 @@
 
       {# View toggle #}
       <div class="flex rounded-lg overflow-hidden border border-hairline shrink-0">
-        {% for val, label in [('list','Lista'),('board','Tablero')] %}
+        {% for val, label in [('list', t("backlog.view_list")), ('board', t("backlog.view_board"))] %}
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"view":"{{ val }}"}'
@@ -45,7 +45,7 @@
 
       {# Show chips #}
       <div class="flex rounded-lg overflow-hidden border border-hairline shrink-0">
-        {% for val, label in [('open','Abiertos'),('closed','Cerrados'),('all','Todos')] %}
+        {% for val, label in [('open', t("backlog.show_open")), ('closed', t("backlog.show_closed")), ('all', t("common.all"))] %}
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"show":"{{ val }}"}'
@@ -56,84 +56,84 @@
       </div>
 
       {# Search input #}
-      <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="Buscar…"
-             aria-label="Buscar ítems"
+      <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="{{ t('common.search') }}"
+             aria-label="{{ t('backlog.search_items') }}"
              class="p-input p-input-sm flex-1 min-w-[140px]"
              hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
              hx-trigger="keyup changed delay:300ms, search">
 
       {# Clear button #}
-      <a href="/backlog" class="p-btn p-btn-ghost p-btn-sm shrink-0">Limpiar</a>
+      <a href="/backlog" class="p-btn p-btn-ghost p-btn-sm shrink-0">{{ t("backlog.clear") }}</a>
     </div>
 
     {# ── Collapsible: selects + chips rápidos ── #}
     <details class="group">
-      <summary class="p-btn p-btn-ghost p-btn-sm mb-2 list-none w-fit cursor-pointer">Más filtros ▾</summary>
+      <summary class="p-btn p-btn-ghost p-btn-sm mb-2 list-none w-fit cursor-pointer">{{ t("backlog.more_filters") }}</summary>
       <div class="flex flex-wrap gap-2 items-center pt-1">
 
-        <select name="scope" aria-label="Filtrar por scope" class="p-input p-input-sm"
+        <select name="scope" aria-label="{{ t('backlog.filter_by_scope') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Todos los scopes</option>
+          <option value="">{{ t("backlog.all_scopes") }}</option>
           {% for s in scopes %}
           <option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>
           {% endfor %}
         </select>
 
-        <select name="status" aria-label="Filtrar por estado" class="p-input p-input-sm"
+        <select name="status" aria-label="{{ t('backlog.filter_by_status') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Todos los estados</option>
+          <option value="">{{ t("backlog.all_statuses") }}</option>
           {% for s in ['idea','backlog','spec','in-progress','blocked','in-review','done','discarded'] %}
-          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ t("status." ~ s) }}</option>
           {% endfor %}
         </select>
 
-        <select name="item_type" aria-label="Filtrar por tipo" class="p-input p-input-sm"
+        <select name="item_type" aria-label="{{ t('backlog.filter_by_type') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Todos los tipos</option>
-          {% for t in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
-          <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
+          <option value="">{{ t("backlog.all_types") }}</option>
+          {% for ty in ['bug','feature','tech-debt','infra','docs','ops','security','product','idea'] %}
+          <option value="{{ ty }}" {% if filters.type == ty %}selected{% endif %}>{{ t("type." ~ ty) }}</option>
           {% endfor %}
         </select>
 
-        <select name="priority" aria-label="Filtrar por prioridad" class="p-input p-input-sm"
+        <select name="priority" aria-label="{{ t('backlog.filter_by_priority') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Prioridad</option>
+          <option value="">{{ t("backlog.priority") }}</option>
           {% for p in ['p0','p1','p2','p3'] %}
           <option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ p }}</option>
           {% endfor %}
         </select>
 
-        <select name="effort" aria-label="Filtrar por esfuerzo" class="p-input p-input-sm"
+        <select name="effort" aria-label="{{ t('backlog.filter_by_effort') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Esfuerzo</option>
+          <option value="">{{ t("backlog.effort") }}</option>
           {% for e in ['XS','S','M','L','XL'] %}
           <option value="{{ e }}" {% if filters.effort == e %}selected{% endif %}>{{ e }}</option>
           {% endfor %}
         </select>
 
-        <select name="origen" aria-label="Filtrar por origen" class="p-input p-input-sm"
+        <select name="origen" aria-label="{{ t('backlog.filter_by_origin') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="">Todos los orígenes</option>
+          <option value="">{{ t("backlog.all_origins") }}</option>
           {% for o in ['digest','human','ai-session','sentry','agent'] %}
-          <option value="{{ o }}" {% if filters.origen == o %}selected{% endif %}>{{ o }}</option>
+          <option value="{{ o }}" {% if filters.origen == o %}selected{% endif %}>{{ t("origin." ~ o) }}</option>
           {% endfor %}
         </select>
 
-        <select name="order" aria-label="Ordenar por" class="p-input p-input-sm"
+        <select name="order" aria-label="{{ t('backlog.order_by') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value="priority"    {% if (filters.order or 'priority') == 'priority' %}selected{% endif %}>Prioridad</option>
-          <option value="impact"      {% if filters.order == 'impact' %}selected{% endif %}>Mayor impacto</option>
-          <option value="topological" {% if filters.order == 'topological' %}selected{% endif %}>Topológico</option>
-          <option value="recent"      {% if filters.order == 'recent' %}selected{% endif %}>Más reciente</option>
+          <option value="priority"    {% if (filters.order or 'priority') == 'priority' %}selected{% endif %}>{{ t("backlog.priority") }}</option>
+          <option value="impact"      {% if filters.order == 'impact' %}selected{% endif %}>{{ t("backlog.order_impact") }}</option>
+          <option value="topological" {% if filters.order == 'topological' %}selected{% endif %}>{{ t("backlog.order_topological") }}</option>
+          <option value="recent"      {% if filters.order == 'recent' %}selected{% endif %}>{{ t("backlog.order_recent") }}</option>
         </select>
 
-        <select name="group" aria-label="Agrupar por" class="p-input p-input-sm"
+        <select name="group" aria-label="{{ t('backlog.group_by') }}" class="p-input p-input-sm"
                 hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true">
-          <option value=""         {% if not filters.group %}selected{% endif %}>Sin agrupar</option>
-          <option value="scope"    {% if filters.group == 'scope' %}selected{% endif %}>Scope</option>
-          <option value="type"     {% if filters.group == 'type' %}selected{% endif %}>Tipo</option>
-          <option value="priority" {% if filters.group == 'priority' %}selected{% endif %}>Prioridad</option>
-          <option value="status"   {% if filters.group == 'status' %}selected{% endif %}>Estado</option>
+          <option value=""         {% if not filters.group %}selected{% endif %}>{{ t("backlog.group_none") }}</option>
+          <option value="scope"    {% if filters.group == 'scope' %}selected{% endif %}>{{ t("backlog.group_scope") }}</option>
+          <option value="type"     {% if filters.group == 'type' %}selected{% endif %}>{{ t("backlog.group_type") }}</option>
+          <option value="priority" {% if filters.group == 'priority' %}selected{% endif %}>{{ t("backlog.priority") }}</option>
+          <option value="status"   {% if filters.group == 'status' %}selected{% endif %}>{{ t("backlog.group_status") }}</option>
         </select>
 
         {# Quick filter chips — toggle on/off via hx-vals override #}
@@ -142,31 +142,31 @@
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"quickwins":"{{ "" if filters.quickwins else "true" }}"}'
           class="{{ chip }}{% if filters.quickwins %}bg-success/15 border-success/40 text-success{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
-          ⚡ Quick wins
+          {{ t("backlog.chip_quickwins") }}
         </button>
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"urgent":"{{ "" if filters.urgent else "true" }}"}'
           class="{{ chip }}{% if filters.urgent %}bg-error/15 border-error/40 text-error{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
-          🔥 Urgente (p0/p1)
+          {{ t("backlog.chip_urgent") }}
         </button>
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"agent_ready":"{{ "" if filters.agent_ready else "true" }}"}'
           class="{{ chip }}{% if filters.agent_ready %}bg-brand-mint/30 border-brand-mint/40 text-ink{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
-          🤖 Agent ready
+          {{ t("backlog.chip_agent_ready") }}
         </button>
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"graph_blocked":"{{ "" if filters.graph_blocked else "true" }}"}'
           class="{{ chip }}{% if filters.graph_blocked %}bg-warning/15 border-warning/40 text-warning{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
-          ⛔ Bloqueados
+          {{ t("backlog.chip_blocked") }}
         </button>
         <button type="button"
           hx-get="/backlog" hx-target="#items-view" hx-include="#filters" hx-push-url="true"
           hx-vals='{"stale":"{{ "" if filters.stale else "true" }}"}'
           class="{{ chip }}{% if filters.stale %}bg-warning/15 border-warning/40 text-warning{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
-          ⚠ Stale
+          {{ t("backlog.chip_stale") }}
         </button>
       </div>
     </details>

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ project.name }} — Settings — Pulso{% endblock %}
+{% block title %}{{ project.name }} — {{ t("projects.settings") }} — Pulso{% endblock %}
 {% block content %}
-{% from "partials/_color_picker.html" import color_picker %}
+{% from "partials/_color_picker.html" import color_picker with context %}
 <div class="max-w-2xl">
   <div class="flex items-center gap-2 mb-6 text-sm text-muted">
-    <a href="/projects" class="hover:text-ink">Projects</a>
+    <a href="/projects" class="hover:text-ink">{{ t("nav.projects") }}</a>
     <span>/</span>
     <span class="font-medium text-ink">{{ project.name }}</span>
   </div>
@@ -12,12 +12,12 @@
   {# ── MCP Connect ─────────────────────────────────────── #}
   <div class="border rounded-2xl p-5 mb-6"
        style="border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--canvas))">
-    <h2 class="font-semibold text-ink mb-1">Connect Claude Code</h2>
-    <p class="text-xs text-muted mb-3">Generate a write token, then run this command in your Claude Code session:</p>
+    <h2 class="font-semibold text-ink mb-1">{{ t("projects.connect_claude") }}</h2>
+    <p class="text-xs text-muted mb-3">{{ t("projects.connect_hint") }}</p>
 
     {% if new_token %}
     <div class="bg-canvas border border-hairline rounded-xl p-3 mb-3 text-xs">
-      <strong class="text-ink">New token (shown once):</strong>
+      <strong class="text-ink">{{ t("projects.new_token_once") }}</strong>
       <code class="block font-mono text-sm mt-1 break-all select-all text-ink">{{ new_token }}</code>
     </div>
     {% endif %}
@@ -25,43 +25,45 @@
     <pre id="mcp-snippet" class="bg-canvas border border-hairline rounded-xl p-3 text-xs overflow-x-auto">{{ snippet }}</pre>
     <div class="flex items-center gap-3 mt-2">
       <button type="button" class="p-btn p-btn-ghost p-btn-sm"
-              onclick="var b=this;navigator.clipboard.writeText(document.getElementById('mcp-snippet').innerText).then(function(){b.textContent='Copiado ✓';setTimeout(function(){b.textContent='Copiar';},1500);})">Copiar</button>
-      <p class="text-xs text-muted">Replace &lt;TOKEN&gt; with a write token from the list below.</p>
+              data-copy="{{ t('common.copy') }}" data-copied="{{ t('common.copied') }}"
+              onclick="var b=this;navigator.clipboard.writeText(document.getElementById('mcp-snippet').innerText).then(function(){b.textContent=b.dataset.copied;setTimeout(function(){b.textContent=b.dataset.copy;},1500);})">{{ t("common.copy") }}</button>
+      <p class="text-xs text-muted">{{ t("projects.replace_token_hint") }}</p>
     </div>
   </div>
 
   {# ── Tokens ──────────────────────────────────────────── #}
   <div class="p-card p-5 mb-6">
-    <h2 class="font-semibold text-ink mb-3">API Tokens</h2>
+    <h2 class="font-semibold text-ink mb-3">{{ t("projects.api_tokens") }}</h2>
 
     <form method="post" action="/projects/{{ project.slug }}/tokens" class="flex items-center gap-2 mb-4">
-      <input name="token_name" type="text" required placeholder="Token name (e.g. claude-code)"
+      <input name="token_name" type="text" required placeholder="{{ t('projects.token_name_placeholder') }}"
         class="p-input flex-1 text-sm">
       <select name="scopes" class="p-input text-sm">
         <option value="write">write</option>
         <option value="read">read</option>
       </select>
-      <button type="submit" class="p-btn p-btn-primary p-btn-sm">Generate</button>
+      <button type="submit" class="p-btn p-btn-primary p-btn-sm">{{ t("projects.generate_token") }}</button>
     </form>
 
     {% if tokens %}
     <table class="w-full text-sm">
       <thead><tr>
-        <th class="p-label text-left pb-2">Name</th>
-        <th class="p-label text-left pb-2">Scope</th>
-        <th class="p-label text-left pb-2">Created</th>
+        <th class="p-label text-left pb-2">{{ t("common.name") }}</th>
+        <th class="p-label text-left pb-2">{{ t("common.scope") }}</th>
+        <th class="p-label text-left pb-2">{{ t("common.created") }}</th>
         <th class="pb-2"></th>
       </tr></thead>
       <tbody>
-      {% for t in tokens %}
+      {% for tok in tokens %}
       <tr>
-        <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ t.name }}</td>
-        <td class="py-2 border-t border-hairline text-xs text-muted">{{ t.scopes }}</td>
-        <td class="py-2 border-t border-hairline text-xs text-muted">{{ t.created_at | fecha }}</td>
+        <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ tok.name }}</td>
+        <td class="py-2 border-t border-hairline text-xs text-muted">{{ tok.scopes }}</td>
+        <td class="py-2 border-t border-hairline text-xs text-muted">{{ tok.created_at | fecha }}</td>
         <td class="py-2 border-t border-hairline text-right">
-          <form method="post" action="/projects/{{ project.slug }}/tokens/{{ t.id }}/revoke" class="inline">
+          <form method="post" action="/projects/{{ project.slug }}/tokens/{{ tok.id }}/revoke" class="inline">
             <button type="submit" class="p-btn p-btn-sm p-btn-ghost text-error"
-              onclick="return confirm('Revoke token {{ t.name }}?')">Revoke</button>
+              data-confirm="{{ t('projects.revoke_confirm', name=tok.name) }}"
+              onclick="return confirm(this.dataset.confirm)">{{ t("projects.revoke") }}</button>
           </form>
         </td>
       </tr>
@@ -69,32 +71,32 @@
       </tbody>
     </table>
     {% else %}
-    <p class="text-sm text-muted">No active tokens.</p>
+    <p class="text-sm text-muted">{{ t("projects.no_tokens") }}</p>
     {% endif %}
   </div>
 
   {# ── Project settings ─────────────────────────────────── #}
   {% if user.account_role == 'owner' %}
   <div class="p-card p-5">
-    <h2 class="font-semibold text-ink mb-4">Project settings</h2>
+    <h2 class="font-semibold text-ink mb-4">{{ t("nav.project_settings") }}</h2>
     <form method="post" action="/projects/{{ project.slug }}/settings" class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2">
-          <label class="p-label">Name</label>
+          <label class="p-label">{{ t("common.name") }}</label>
           <input name="name" type="text" required value="{{ project.name }}"
             class="w-full p-input text-sm">
         </div>
         <div class="col-span-2">
-          <label class="p-label">Description</label>
+          <label class="p-label">{{ t("common.description") }}</label>
           <input name="description" type="text" value="{{ project.description or '' }}"
             class="w-full p-input text-sm">
         </div>
         <div class="col-span-2">
-          <label class="p-label">Color</label>
+          <label class="p-label">{{ t("common.color") }}</label>
           {{ color_picker(project.color, project.name) }}
         </div>
         <div class="col-span-2">
-          <label class="p-label">Repo URL</label>
+          <label class="p-label">{{ t("projects.repo_url") }}</label>
           <input name="repo_url" type="url" value="{{ project.repo_url or '' }}"
             placeholder="https://github.com/user/repo"
             class="w-full p-input text-sm">
@@ -102,32 +104,32 @@
       </div>
 
       <details class="border-t border-hairline pt-4">
-        <summary class="text-sm text-muted cursor-pointer hover:text-ink">Webhook &amp; Sentry secrets (optional)</summary>
+        <summary class="text-sm text-muted cursor-pointer hover:text-ink">{{ t("projects.webhook_secrets") }}</summary>
         <div class="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label class="p-label">GitHub webhook secret</label>
+            <label class="p-label">{{ t("projects.github_webhook_secret") }}</label>
             <input name="github_webhook_secret" type="text" value="{{ project.github_webhook_secret or '' }}"
               class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="p-label">Sentry client secret</label>
+            <label class="p-label">{{ t("projects.sentry_client_secret") }}</label>
             <input name="sentry_client_secret" type="text" value="{{ project.sentry_client_secret or '' }}"
               class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="p-label">Sentry API token</label>
+            <label class="p-label">{{ t("projects.sentry_api_token") }}</label>
             <input name="sentry_api_token" type="text" value="{{ project.sentry_api_token or '' }}"
               class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="p-label">Sentry org</label>
+            <label class="p-label">{{ t("projects.sentry_org") }}</label>
             <input name="sentry_org" type="text" value="{{ project.sentry_org or '' }}"
               class="w-full p-input text-xs">
           </div>
         </div>
       </details>
 
-      <button type="submit" class="p-btn p-btn-primary">Save</button>
+      <button type="submit" class="p-btn p-btn-primary">{{ t("common.save") }}</button>
     </form>
   </div>
   {% endif %}

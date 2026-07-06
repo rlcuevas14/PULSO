@@ -135,7 +135,7 @@ async def test_prioridad_page_renders(client: AsyncClient):
     await _make(client, cookies, scope_id, impact_ai=5)
     r = await client.get("/prioridad", cookies=cookies)
     assert r.status_code == 200
-    assert "Prioridad" in r.text
+    assert "Priority" in r.text  # default EN
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_item_detail_and_backlog_render(client: AsyncClient):
     item_id = await _make(client, cookies, scope_id)
     detail = await client.get(f"/items/{item_id}", cookies=cookies)
     assert detail.status_code == 200
-    assert "Relaciones (grafo)" in detail.text
+    assert "Relationships (graph)" in detail.text  # default EN
     backlog = await client.get("/backlog", cookies=cookies)
     assert backlog.status_code == 200
     dash = await client.get("/", cookies=cookies)

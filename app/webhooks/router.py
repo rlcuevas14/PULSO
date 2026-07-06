@@ -20,7 +20,7 @@ async def sentry_webhook(request: Request, db: AsyncSession = Depends(get_db)) -
     body = await request.body()
     sig = request.headers.get("sentry-hook-signature")
     if not service.verify_sentry_signature(settings.sentry_client_secret, body, sig):
-        return JSONResponse({"error": "firma inválida"}, status_code=401)
+        return JSONResponse({"error": "invalid signature"}, status_code=401)
     try:
         payload = json.loads(body)
         result = await service.ingest_sentry(db, payload)
@@ -37,7 +37,7 @@ async def github_webhook(request: Request, db: AsyncSession = Depends(get_db)) -
     body = await request.body()
     sig = request.headers.get("x-hub-signature-256")
     if not service.verify_github_signature(settings.github_webhook_secret, body, sig):
-        return JSONResponse({"error": "firma inválida"}, status_code=401)
+        return JSONResponse({"error": "invalid signature"}, status_code=401)
 
     event = request.headers.get("x-github-event", "")
     if event not in ("push",):
