@@ -33,7 +33,7 @@ async def _login(client: AsyncClient, role: str = "admin"):
 
 
 async def _seed_item(client, pid, *, title="Task", status="backlog", type="feature",
-                     impact_ai=None, effort_ai=None, priority=None):
+                     impact_ai=None, effort_ai=None, priority=None, agent_ready=False):
     from app.items.models import Item
     from app.scopes.models import Scope
 
@@ -46,6 +46,7 @@ async def _seed_item(client, pid, *, title="Task", status="backlog", type="featu
         item = Item(
             scope_id=scope.id, project_id=pid, title=title, type=type, status=status,
             origen="human", impact_ai=impact_ai, effort_ai=effort_ai, priority=priority,
+            agent_ready=agent_ready,
         )
         db.add(item)
         await db.commit()
@@ -241,6 +242,29 @@ async def test_static_brand_assets_served(client: AsyncClient):
     assert r.status_code == 200 and "svg" in r.headers["content-type"]
     r = await client.get("/static/manifest.webmanifest")
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_list_items_topological_order_fixed(client: AsyncClient):
+    """service.list_items(order='topological') must order blocker before blocked item."""
+    from app.items.models import ItemRelationship
+    from app.items.service import list_items
+
+    _uid, pid = await _login(client)
+    a_id, _ = await _seed_item(client, pid, title="Topo-A depends on nothing")
+    b_id, _ = await _seed_item(client, pid, title="Topo-B blocked by A")
+
+    async for db in client.app.dependency_overrides[get_db]():
+        rel = ItemRelationship(source_id=a_id, target_id=b_id, relation="blocks")
+        db.add(rel)
+        await db.commit()
+
+        items = await list_items(db, project_id=pid, order="topological")
+        ids_in_order = [str(i.id) for i in items]
+        assert ids_in_order.index(str(a_id)) < ids_in_order.index(str(b_id)), (
+            "topological order: blocker (a) must appear before its target (b)"
+        )
+        break
 
 
 @pytest.mark.asyncio

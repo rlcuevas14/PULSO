@@ -250,5 +250,5 @@ async def list_items(
         q = q.limit(limit)
 
     items = list((await db.execute(q)).scalars().all())
-    topo_rank = await _topo_order_ids(db, items) if order == "topologico" else None
+    topo_rank = await _topo_order_ids(db, items) if order == "topological" else None
     return _order_items(items, order, topo_rank)
