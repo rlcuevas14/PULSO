@@ -1,0 +1,49 @@
+name: VM Fix frontnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why (audit trail)"
+        required: true
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Attach app to infra_frontnet via override
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/pulso
+            echo "=== caddy mounts ==="
+            docker inspect infra-caddy-1 --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' | head -6
+            CADDYFILE=$(docker inspect infra-caddy-1 --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' | grep -i caddy | head -1)
+            echo "=== Caddyfile pulso block ($CADDYFILE) ==="
+            grep -B2 -A8 -i "pulso" "$CADDYFILE" 2>/dev/null || echo "(no pulso block found in $CADDYFILE)"
+            echo "=== app networks before ==="
+            docker inspect pulso-app-1 --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+            echo "=== writing docker-compose.override.yml (VM-specific, deploy never touches it) ==="
+            cat > docker-compose.override.yml <<'OVR'
+# VM-specific overrides. The deploy pipeline only syncs docker-compose.yml,
+# so anything the base compose must not know (shared proxy network) lives here.
+services:
+  app:
+    networks:
+      - default
+      - infra_frontnet
+networks:
+  infra_frontnet:
+    external: true
+OVR
+            docker compose --env-file .env up -d app
+            sleep 4
+            echo "=== app networks after ==="
+            docker inspect pulso-app-1 --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+            echo "=== end-to-end through caddy (local) ==="
+            curl -sk -o /dev/null -w "https via caddy: %{http_code}\n" --resolve pulso.tidanalytics.com:443:127.0.0.1 https://pulso.tidanalytics.com/ || true
