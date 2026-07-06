@@ -277,3 +277,258 @@ async def test_home_cards_stats(client: AsyncClient):
     assert r.status_code == 200
     assert 'id="home-cards"' in r.text
     assert "Backlog" in r.text and "Ideas" in r.text
+
+
+# ---------- Backlog redesign tests ----------
+
+@pytest.mark.asyncio
+async def test_backlog_show_param(client: AsyncClient):
+    from app.items.models import Item
+    from app.scopes.models import Scope
+    from datetime import timezone
+
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Open item", status="backlog")
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        import datetime as _dt
+        done = Item(scope_id=scope.id, project_id=pid, title="Done item", type="feature",
+                    status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc))
+        db.add(done)
+        await db.commit()
+        break
+
+    # Default (show=open) excludes done
+    r = await client.get("/backlog")
+    assert r.status_code == 200
+    assert "Open item" in r.text
+    assert "Done item" not in r.text
+
+    # show=closed shows only closed
+    r2 = await client.get("/backlog?show=closed")
+    assert r2.status_code == 200
+    assert "Done item" in r2.text
+    assert "Open item" not in r2.text
+
+    # show=all shows both
+    r3 = await client.get("/backlog?show=all")
+    assert r3.status_code == 200
+    assert "Open item" in r3.text
+    assert "Done item" in r3.text
+
+    # Explicit status= overrides show=
+    r4 = await client.get("/backlog?status=backlog&show=closed")
+    assert "Open item" in r4.text
+    assert "Done item" not in r4.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_search_q(client: AsyncClient):
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="xyzunique backlog feature")
+    await _seed_item(client, pid, title="completely different title")
+    r = await client.get("/backlog?q=xyzunique")
+    assert r.status_code == 200
+    assert "xyzunique backlog feature" in r.text
+    assert "completely different title" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_filter_priority_effort(client: AsyncClient):
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="P0 item", priority="p0", effort_ai="M")
+    await _seed_item(client, pid, title="P2 item", priority="p2", effort_ai="XL")
+    r = await client.get("/backlog?priority=p0")
+    assert r.status_code == 200
+    assert "P0 item" in r.text
+    assert "P2 item" not in r.text
+    r2 = await client.get("/backlog?effort=M")
+    assert r2.status_code == 200
+    assert "P0 item" in r2.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_chips_quickwins_urgent_agent_ready(client: AsyncClient):
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-chips", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        qw = Item(scope_id=scope.id, project_id=pid, title="Quick win item", type="feature",
+                  status="backlog", origen="human", impact_ai=5, effort_ai="XS")
+        ar = Item(scope_id=scope.id, project_id=pid, title="Agent ready item", type="feature",
+                  status="backlog", origen="human", agent_ready=True)
+        slow = Item(scope_id=scope.id, project_id=pid, title="Slow heavy item", type="feature",
+                    status="backlog", origen="human", impact_ai=1, effort_ai="XL")
+        db.add_all([qw, ar, slow])
+        await db.commit()
+        break
+
+    r = await client.get("/backlog?quickwins=true")
+    assert r.status_code == 200
+    assert "Quick win item" in r.text
+    assert "Slow heavy item" not in r.text
+
+    r2 = await client.get("/backlog?agent_ready=true")
+    assert r2.status_code == 200
+    assert "Agent ready item" in r2.text
+    assert "Quick win item" not in r2.text
+
+    r3 = await client.get("/backlog?urgent=true")
+    assert r3.status_code == 200  # at least doesn't crash
+
+
+@pytest.mark.asyncio
+async def test_backlog_view_board(client: AsyncClient):
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Board item backlog", status="backlog")
+    await _seed_item(client, pid, title="Board item in-progress", status="in-progress")
+    r = await client.get("/backlog?view=board")
+    assert r.status_code == 200
+    r2 = await client.get("/backlog?view=board", headers={"HX-Request": "true"})
+    assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_backlog_group_by(client: AsyncClient):
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Group test item")
+    r = await client.get("/backlog?group=type")
+    assert r.status_code == 200
+    assert "Group test item" in r.text
+
+
+@pytest.mark.asyncio
+async def test_close_modal_endpoint(client: AsyncClient):
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, status="backlog")
+
+    r = await client.get(f"/ui/items/{item_id}/close-modal")
+    assert r.status_code == 200
+    assert "done" in r.text
+    assert "discarded" in r.text
+
+    r404 = await client.get(f"/ui/items/{uuid.uuid4()}/close-modal")
+    assert r404.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_registro_groups_by_week(client: AsyncClient):
+    from app.items.models import Item
+    from app.scopes.models import Scope
+    import datetime as _dt
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-reg", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        closed1 = Item(scope_id=scope.id, project_id=pid, title="Closed this week",
+                       type="feature", status="done", origen="human",
+                       closed_at=_dt.datetime.now(_dt.timezone.utc))
+        closed2 = Item(scope_id=scope.id, project_id=pid, title="Old closed item",
+                       type="bug", status="discarded", origen="human",
+                       closed_at=_dt.datetime(2020, 1, 6, tzinfo=_dt.timezone.utc))
+        no_date = Item(scope_id=scope.id, project_id=pid, title="No date closed",
+                       type="docs", status="done", origen="human", closed_at=None)
+        db.add_all([closed1, closed2, no_date])
+        await db.commit()
+        break
+
+    r = await client.get("/registro")
+    assert r.status_code == 200
+    assert "Closed this week" in r.text
+    assert "Old closed item" in r.text
+    assert "Sin fecha" in r.text
+
+    r2 = await client.get("/registro", headers={"HX-Request": "true"})
+    assert r2.status_code == 200
+    assert "Closed this week" in r2.text
+
+
+@pytest.mark.asyncio
+async def test_registro_close_event_reason(client: AsyncClient):
+    from app.items.models import Item, ItemEvent
+    from app.scopes.models import Scope
+    import datetime as _dt
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-reason", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        item = Item(scope_id=scope.id, project_id=pid, title="With reason item",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc))
+        db.add(item)
+        await db.flush()
+        ev = ItemEvent(item_id=item.id, actor="user@test", action="closed",
+                       payload={"status": "done", "reason": "shipped v2", "commit_sha": "abc123"})
+        db.add(ev)
+        await db.commit()
+        break
+
+    r = await client.get("/registro")
+    assert r.status_code == 200
+    assert "shipped v2" in r.text
+    assert "abc123" in r.text
+
+
+@pytest.mark.asyncio
+async def test_registro_filters_and_load_more(client: AsyncClient):
+    from app.items.models import Item
+    from app.scopes.models import Scope
+    import datetime as _dt
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-filters", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Bug closed item",
+                    type="bug", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Feature closed item",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        await db.commit()
+        break
+
+    r = await client.get("/registro?item_type=bug")
+    assert r.status_code == 200
+    assert "Bug closed item" in r.text
+    assert "Feature closed item" not in r.text
+
+    r2 = await client.get("/registro?before=2020-01-01")
+    assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_registro_summary_no_api_key(client: AsyncClient, monkeypatch):
+    monkeypatch.setattr("app.config.settings.anthropic_api_key", "")
+    _uid, pid = await _login(client)
+    r = await client.get("/ui/registro/summary?week=2026-W27")
+    assert r.status_code == 200
+    assert "no disponible" in r.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_registro_in_nav_and_dashboard_homecard(client: AsyncClient):
+    _uid, pid = await _login(client)
+    r = await client.get("/")
+    assert r.status_code == 200
+    assert "/registro" in r.text
+    r2 = await client.get("/registro")
+    assert r2.status_code == 200

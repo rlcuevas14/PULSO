@@ -118,35 +118,102 @@ async def dashboard(
 
 # ---------- Backlog ----------
 
+_BOARD_STATUSES = ["idea", "backlog", "spec", "in-progress", "in-review", "blocked"]
+
+
 @router.get("/backlog", response_class=HTMLResponse)
 async def backlog(
     request: Request,
+    # existing params
     scope: str | None = None,
     status: str | None = None,
     item_type: str | None = None,
     origen: str | None = None,
     stale: bool | None = None,
     graph_blocked: bool | None = None,
-    order: str = "prioridad",
+    order: str = "priority",
+    # new params
+    show: str = "open",         # "open" | "all" | "closed"
+    q: str | None = None,       # FTS search
+    priority: str | None = None,
+    effort: str | None = None,
+    quickwins: bool = False,
+    urgent: bool = False,
+    agent_ready: bool = False,
+    view: str = "list",         # "list" | "board"
+    group: str = "",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    from sqlalchemy import case as sa_case
+
+    from app.items.search import search_items as _fts
+
     pid = await _project_id(db, user, request)
-    q = select(Item).where(Item.project_id == pid)
-    if scope:
-        scope_row = await db.scalar(select(Scope).where(Scope.name == scope, Scope.project_id == pid))
-        if scope_row:
-            q = q.where(Item.scope_id == scope_row.id)
+    q_base = select(Item).where(Item.project_id == pid)
+
+    # status / show filter
     if status:
-        q = q.where(Item.status == status)
+        q_base = q_base.where(Item.status == status)
+    elif view == "board":
+        q_base = q_base.where(Item.status.in_(_BOARD_STATUSES))
+    elif show == "open":
+        q_base = q_base.where(Item.status.in_(_OPEN))
+    elif show == "closed":
+        q_base = q_base.where(Item.status.in_(["done", "discarded"]))
+    # show == "all": no filter
+
+    if scope:
+        scope_row = await db.scalar(
+            select(Scope).where(Scope.name == scope, Scope.project_id == pid)
+        )
+        if scope_row:
+            q_base = q_base.where(Item.scope_id == scope_row.id)
+        else:
+            q_base = q_base.where(Item.id == uuid.UUID(int=0))
+
     if item_type:
-        q = q.where(Item.type == item_type)
+        q_base = q_base.where(Item.type == item_type)
     if origen:
-        q = q.where(Item.origen == origen)
+        q_base = q_base.where(Item.origen == origen)
     if stale is not None:
-        q = q.where(Item.stale_risk == stale)
-    q = q.limit(300)
-    items = list((await db.execute(q)).scalars().all())
+        q_base = q_base.where(Item.stale_risk == stale)
+    if priority:
+        q_base = q_base.where(Item.priority == priority)
+    if effort:
+        q_base = q_base.where(Item.effort_ai == effort)
+    if urgent:
+        q_base = q_base.where(Item.priority.in_(["p0", "p1"]))
+    if quickwins:
+        q_base = q_base.where(Item.impact_ai >= 4, Item.effort_ai.in_(["XS", "S"]))
+    if agent_ready:
+        q_base = q_base.where(Item.agent_ready.is_(True))
+
+    # SQL ordering — topological stays in Python
+    if order in ("priority", "prioridad"):
+        q_base = q_base.order_by(
+            sa_case(
+                (Item.priority == "p0", 0),
+                (Item.priority == "p1", 1),
+                (Item.priority == "p2", 2),
+                (Item.priority == "p3", 3),
+                else_=9,
+            ),
+            Item.impact_ai.desc().nullslast(),
+        )
+    elif order == "impact":
+        q_base = q_base.order_by(Item.impact_ai.desc().nullslast())
+    elif order == "recent":
+        q_base = q_base.order_by(Item.created_at.desc())
+
+    q_base = q_base.limit(300)
+    items = list((await db.execute(q_base)).scalars().all())
+
+    # FTS search (post-filter by ids to combine with other SQL filters)
+    if q:
+        fts_rows = await _fts(db, q, project_id=pid)
+        matched = {r["id"] for r in fts_rows}
+        items = [i for i in items if str(i.id) in matched]
 
     blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
     unblocker_ids = await graph.unblocker_ids(db, project_id=pid)
@@ -154,27 +221,71 @@ async def backlog(
     if graph_blocked:
         items = [i for i in items if str(i.id) in blocked_ids]
 
-    items = _order_items(items, order, await _topo_order_ids(db, items) if order == "topological" else None)
+    # Topological ordering (Python; needs graph)
+    if order in ("topological", "topologico"):
+        topo = await _topo_order_ids(db, items)
+        items = _order_items(items, "topological", topo)
+
+    # ready_ids: agent_ready + open state + not graph-blocked
+    ready_ids = {
+        str(i.id) for i in items
+        if i.agent_ready and i.status in ("backlog", "spec") and str(i.id) not in blocked_ids
+    }
 
     scopes = list((await db.execute(
         select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
     scope_map = {s.id: s.name for s in scopes}
 
-    ctx = {
+    ctx: dict = {
         "user": user,
         "items": items,
         "scopes": scopes,
         "scope_map": scope_map,
         "blocked_ids": blocked_ids,
         "unblocker_ids": unblocker_ids,
+        "ready_ids": ready_ids,
         "recent_touch": {str(i.id): _recent_touch(i) for i in items},
         "filters": {
             "scope": scope, "status": status, "type": item_type, "origen": origen,
             "stale": stale, "graph_blocked": graph_blocked, "order": order,
+            "show": show, "q": q, "priority": priority, "effort": effort,
+            "quickwins": quickwins, "urgent": urgent, "agent_ready": agent_ready,
+            "view": view, "group": group,
         },
     }
+
+    # Board context
+    if view == "board":
+        by_status: dict[str, list] = {s: [] for s in _BOARD_STATUSES}
+        for item in items:
+            if item.status in by_status:
+                by_status[item.status].append(item)
+        ctx["by_status"] = by_status
+        ctx["board_statuses"] = _BOARD_STATUSES
+
+    # Group-by context
+    if group and group != "none" and view != "board":
+        grouped: dict[str, list] = {}
+        for item in items:
+            if group == "scope":
+                key = scope_map.get(item.scope_id, "(sin scope)")
+            elif group == "type":
+                key = item.type or "(sin tipo)"
+            elif group == "priority":
+                key = item.priority or "(sin prioridad)"
+            elif group == "status":
+                key = item.status
+            else:
+                key = "(sin grupo)"
+            grouped.setdefault(key, []).append(item)
+        ctx["groups"] = sorted(grouped.items())
+
     if request.headers.get("HX-Request"):
+        if view == "board":
+            return templates.TemplateResponse(request, "partials/items_board.html", ctx)
+        if group and group != "none":
+            return templates.TemplateResponse(request, "partials/items_grouped.html", ctx)
         return templates.TemplateResponse(request, "partials/items_table.html", ctx)
     return templates.TemplateResponse(request, "backlog.html", ctx)
 
