@@ -166,35 +166,7 @@
 </div>
 
 <!-- Modal cerrar/descartar -->
-<div id="close-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="close-modal-title"
-     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
-  <div class="p-card w-full max-w-md p-6">
-    <h2 id="close-modal-title" class="font-semibold text-ink mb-4">Cerrar ítem</h2>
-    {# hx-post: el handler responde 204 + HX-Refresh (solo htmx honra esa cabecera);
-       action/method quedan como fallback sin JS. #}
-    <form hx-post="/ui/items/{{ item.id }}/close" hx-swap="none"
-          action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
-      <div class="flex gap-4 text-sm text-body">
-        <label class="flex items-center gap-2"><input type="radio" name="status" value="done" checked> Done</label>
-        <label class="flex items-center gap-2"><input type="radio" name="status" value="discarded"> Discarded</label>
-      </div>
-      <div>
-        <label class="p-label" for="close-reason">Motivo</label>
-        <input id="close-reason" name="reason" placeholder="Motivo (queda en el historial)" aria-label="Motivo del cierre"
-               class="p-input">
-      </div>
-      <div>
-        <label class="p-label" for="close-commit">Commit</label>
-        <input id="close-commit" name="commit_sha" placeholder="commit/SHA (opcional)" aria-label="Commit o SHA"
-               class="p-input">
-      </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" onclick="closeModal('close-modal')"
-                class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
-        <button type="submit" class="p-btn p-btn-primary p-btn-sm">Confirmar cierre</button>
-      </div>
-    </form>
-  </div>
-</div>
+{% set modal_id = 'close-modal' %}
+{% include "partials/_close_modal.html" %}
 
 {% endblock %}

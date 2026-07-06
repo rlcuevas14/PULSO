@@ -476,6 +476,22 @@ async def ui_reopen(
     return _refresh()
 
 
+@router.get("/ui/items/{item_id}/close-modal", response_class=HTMLResponse)
+async def ui_close_modal(
+    item_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    item = await service.get_item(db, item_id)
+    if item is None:
+        return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id)
+    if guard is not None:
+        return guard
+    return templates.TemplateResponse(request, "partials/_close_modal.html", {"item": item})
+
+
 @router.post("/ui/items/{item_id}/field")
 async def ui_set_field(
     item_id: uuid.UUID,

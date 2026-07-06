@@ -41,6 +41,9 @@
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
+      {% if ready_ids and item.id|string in ready_ids %}
+      <span title="Agent-ready: especificado, marcado agent_ready, sin bloqueos" class="text-base">🤖</span>
+      {% endif %}
       {% include "partials/_priority_select.html" %}
       {% set targets = non_terminal_targets(item.status) %}
       {% if targets %}
@@ -50,6 +53,11 @@
         <option value="">→ mover…</option>
         {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
       </select>
+      <button type="button" title="Cerrar ítem"
+              hx-get="/ui/items/{{ item.id }}/close-modal"
+              hx-target="#modal-slot"
+              hx-on::after-swap="openModal('close-modal-{{ item.id }}')"
+              class="p-btn p-btn-ghost p-btn-sm px-2 text-success">✓</button>
       {% endif %}
     </div>
   </div>

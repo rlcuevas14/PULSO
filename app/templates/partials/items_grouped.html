@@ -1,0 +1,13 @@
+{# Group-by list view. Requires: groups = [(label, [Item, ...]), ...] #}
+{% for label, group_items in groups %}
+<details open class="border-b border-hairline last:border-0">
+  <summary class="flex items-center justify-between px-4 py-2 cursor-pointer select-none hover:bg-surface-strong list-none">
+    <span class="text-sm font-semibold text-ink">{{ label }}</span>
+    <span class="p-pill bg-surface-strong text-muted text-xs">{{ group_items|length }}</span>
+  </summary>
+  {% set items = group_items %}
+  {% include "partials/items_table.html" %}
+</details>
+{% else %}
+<div class="px-4 py-12 text-center text-sm text-muted">Sin ítems con estos filtros.</div>
+{% endfor %}
