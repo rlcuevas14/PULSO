@@ -165,6 +165,10 @@ async def backlog(
     pid = await _project_id(db, user, request)
     q_base = select(Item).where(Item.project_id == pid)
 
+    # El tablero nunca muestra terminales: un filtro de estado terminal se ignora (spec §1.5).
+    if view == "board" and status in ("done", "discarded"):
+        status = None
+
     # status / show filter
     if status:
         q_base = q_base.where(Item.status == status)
@@ -202,7 +206,17 @@ async def backlog(
     if agent_ready:
         q_base = q_base.where(Item.agent_ready.is_(True))
 
-    # SQL ordering — topological stays in Python
+    # FTS: filtra en SQL (antes del LIMIT) para no perder matches fuera del top-300.
+    fts_rank: dict[str, int] | None = None
+    if q:
+        fts_rows = await _fts(db, q, project_id=pid, limit=300)
+        if fts_rows:
+            q_base = q_base.where(Item.id.in_([uuid.UUID(r["id"]) for r in fts_rows]))
+            fts_rank = {r["id"]: n for n, r in enumerate(fts_rows)}
+        else:
+            q_base = q_base.where(Item.id == uuid.UUID(int=0))
+
+    # SQL ordering — topological stays in Python (alias españoles: URLs viejas)
     if order in ("priority", "prioridad"):
         q_base = q_base.order_by(
             sa_case(
@@ -214,19 +228,17 @@ async def backlog(
             ),
             Item.impact_ai.desc().nullslast(),
         )
-    elif order == "impact":
+    elif order in ("impact", "impacto"):
         q_base = q_base.order_by(Item.impact_ai.desc().nullslast())
-    elif order == "recent":
+    elif order in ("recent", "reciente"):
         q_base = q_base.order_by(Item.created_at.desc())
 
     q_base = q_base.limit(300)
     items = list((await db.execute(q_base)).scalars().all())
 
-    # FTS search (post-filter by ids to combine with other SQL filters)
-    if q:
-        fts_rows = await _fts(db, q, project_id=pid)
-        matched = {r["id"] for r in fts_rows}
-        items = [i for i in items if str(i.id) in matched]
+    # Con búsqueda activa y orden default, el orden es relevance (rank del FTS).
+    if fts_rank is not None and order in ("priority", "prioridad"):
+        items.sort(key=lambda i: fts_rank.get(str(i.id), 1_000_000))
 
     blocked_ids = await graph.graph_blocked_ids(db, project_id=pid)
     unblocker_ids = await graph.unblocker_ids(db, project_id=pid)
@@ -292,7 +304,12 @@ async def backlog(
             else:
                 key = "(sin grupo)"
             grouped.setdefault(key, []).append(item)
-        ctx["groups"] = sorted(grouped.items())
+        if group == "status":
+            # Orden de funnel, no alfabético
+            _sidx = {s: n for n, s in enumerate([*_BOARD_STATUSES, "done", "discarded"])}
+            ctx["groups"] = sorted(grouped.items(), key=lambda kv: _sidx.get(kv[0], 99))
+        else:
+            ctx["groups"] = sorted(grouped.items())
 
     if request.headers.get("HX-Request"):
         if view == "board":
@@ -918,7 +935,12 @@ async def ideas_page(
 
 # ---------- Archive (Registro) ----------
 
-_PAGE_SIZE = 50
+# Ventana por página: 12 semanas con contenido (spec §2.1). El corte es en límite de
+# semana para que "Cargar más" nunca duplique headers de semana.
+_WEEKS_PER_PAGE = 12
+# ponytail: cap de fetch por página; >500 cerrados en 12 semanas es irreal para esta
+# herramienta — si llega a doler, paginar dentro de la semana.
+_FETCH_CAP = 500
 
 
 def _iso_week_label(dt: datetime | None) -> str:
@@ -955,40 +977,76 @@ async def registro_page(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
+    import datetime as _dt
     from itertools import groupby
 
     from app.items.search import search_items
 
-    pid = await _project_id(db, user, request)
+    project = await resolve_current_project(db, user, request)
+    pid = project.id if project else uuid.UUID(int=0)
 
-    stmt = select(Item).where(
+    base = select(Item).where(
         Item.project_id == pid,
         Item.status.in_(["done", "discarded"]),
     )
     if q:
-        ids = await search_items(db, q, project_id=pid)
-        stmt = stmt.where(Item.id.in_(ids))
+        ids = [uuid.UUID(r["id"]) for r in await search_items(db, q, project_id=pid, limit=300)]
+        base = base.where(Item.id.in_(ids)) if ids else base.where(Item.id == uuid.UUID(int=0))
     if scope:
         scope_row = await db.scalar(select(Scope).where(Scope.name == scope, Scope.project_id == pid))
         if scope_row:
-            stmt = stmt.where(Item.scope_id == scope_row.id)
+            base = base.where(Item.scope_id == scope_row.id)
     if item_type:
-        stmt = stmt.where(Item.type == item_type)
+        base = base.where(Item.type == item_type)
+
+    before_dt: datetime | None = None
     if before:
         try:
-            import datetime as _dt
-            before_dt = _dt.datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
-            stmt = stmt.where(Item.closed_at < before_dt)
+            before_dt = _dt.datetime.fromisoformat(before)
+            if before_dt.tzinfo is None:
+                before_dt = before_dt.replace(tzinfo=timezone.utc)
         except ValueError:
-            pass
+            before_dt = None
 
-    stmt = stmt.order_by(Item.closed_at.desc().nullslast()).limit(_PAGE_SIZE + 1)
-    all_items = list((await db.execute(stmt)).scalars().all())
-    has_more = len(all_items) > _PAGE_SIZE
-    items = all_items[:_PAGE_SIZE]
+    dated = base.where(Item.closed_at.isnot(None))
+    if before_dt:
+        dated = dated.where(Item.closed_at < before_dt)
+    dated = dated.order_by(Item.closed_at.desc()).limit(_FETCH_CAP)
+    items = list((await db.execute(dated)).scalars().all())
+
+    # Agrupar por semana ISO y cortar la página en límite de semana (12 semanas).
+    groups_all = [
+        (key, list(grp)) for key, grp in groupby(items, key=lambda i: _iso_week_label(i.closed_at))
+    ]
+    page = groups_all[:_WEEKS_PER_PAGE]
+    has_more_dated = len(groups_all) > _WEEKS_PER_PAGE or len(items) == _FETCH_CAP
+
+    next_before: str | None = None
+    if has_more_dated and page:
+        # Lunes 00:00 UTC de la semana más vieja incluida: todo lo estrictamente
+        # anterior pertenece a semanas previas → sin headers duplicados.
+        last_key = page[-1][0]
+        y, w = int(last_key[:4]), int(last_key[6:])
+        next_before = _dt.datetime.fromisocalendar(y, w, 1).replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+
+    week_groups: list[tuple[str, str, list[Item]]] = [
+        (key, _week_range_label(key), grp) for key, grp in page
+    ]
+
+    # "Sin fecha" (terminales legacy sin closed_at): solo en la última página.
+    if not has_more_dated:
+        undated = list((await db.execute(
+            base.where(Item.closed_at.is_(None)).order_by(Item.created_at.desc())
+        )).scalars().all())
+        if undated:
+            week_groups.append(("", "Sin fecha", undated))
+
+    page_items = [i for _, _, grp in week_groups for i in grp]
 
     # Batch-fetch close events (avoids N+1)
-    item_ids = [i.id for i in items]
+    item_ids = [i.id for i in page_items]
     events = list((await db.execute(
         select(ItemEvent).where(ItemEvent.item_id.in_(item_ids), ItemEvent.action == "closed")
         .order_by(ItemEvent.created_at.desc())
@@ -1001,24 +1059,9 @@ async def registro_page(
             close_event[key] = ev
 
     # Scope name map
-    scope_ids = {i.scope_id for i in items if i.scope_id}
+    scope_ids = {i.scope_id for i in page_items if i.scope_id}
     scope_rows = list((await db.execute(select(Scope).where(Scope.id.in_(scope_ids)))).scalars().all())
     scope_map = {str(s.id): s.name for s in scope_rows}
-
-    # Group by ISO week
-    def _key(item: Item) -> str:
-        return _iso_week_label(item.closed_at)
-
-    week_groups: list[tuple[str, str, list[Item]]] = []
-    for key, grp in groupby(items, _key):
-        label = _week_range_label(key) if key else "Sin fecha"
-        week_groups.append((key, label, list(grp)))
-
-    # next_before for load-more
-    next_before: str | None = None
-    if has_more and items:
-        last_closed = items[-1].closed_at
-        next_before = last_closed.isoformat() if last_closed else None
 
     scopes = list((await db.execute(
         select(Scope).where(Scope.project_id == pid).order_by(Scope.name)
@@ -1026,12 +1069,14 @@ async def registro_page(
 
     ctx = {
         "user": user,
+        "project": project,
         "week_groups": week_groups,
         "close_event": close_event,
         "scope_map": scope_map,
         "scopes": scopes,
         "filters": {"q": q, "scope": scope, "item_type": item_type},
         "next_before": next_before,
+        "is_load_more": before_dt is not None,
     }
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "partials/registro_rows.html", ctx)

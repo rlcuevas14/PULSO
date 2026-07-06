@@ -12,7 +12,10 @@
 } %}
 <div>
   {% if not items %}
-  <div class="px-4 py-12 text-center text-sm text-muted">Sin ítems con estos filtros.</div>
+  <div class="px-4 py-12 text-center text-sm text-muted">
+    Sin ítems con estos filtros.
+    <a href="/backlog" class="ml-1 text-accent hover:underline">Limpiar filtros</a>
+  </div>
   {% endif %}
   {% for item in items %}
   <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-3 px-4 py-3 border-b border-hairline last:border-0 hover:bg-surface-strong">
@@ -44,6 +47,8 @@
       {% if ready_ids and item.id|string in ready_ids %}
       <span title="Agent-ready: especificado, marcado agent_ready, sin bloqueos" class="text-base">🤖</span>
       {% endif %}
+      {# Acciones solo en estados no terminales — reabrir se hace desde el detalle. #}
+      {% if item.status not in ('done', 'discarded') %}
       {% include "partials/_priority_select.html" %}
       {% set targets = non_terminal_targets(item.status) %}
       {% if targets %}
@@ -53,7 +58,8 @@
         <option value="">→ mover…</option>
         {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
       </select>
-      <button type="button" title="Cerrar ítem"
+      {% endif %}
+      <button type="button" title="Cerrar ítem" aria-label="Cerrar ítem"
               hx-get="/ui/items/{{ item.id }}/close-modal"
               hx-target="#modal-slot"
               hx-on::after-swap="openModal('close-modal-{{ item.id }}')"

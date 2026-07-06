@@ -9,5 +9,8 @@
   {% include "partials/items_table.html" %}
 </details>
 {% else %}
-<div class="px-4 py-12 text-center text-sm text-muted">Sin ítems con estos filtros.</div>
+<div class="px-4 py-12 text-center text-sm text-muted">
+  Sin ítems con estos filtros.
+  <a href="/backlog" class="ml-1 text-accent hover:underline">Limpiar filtros</a>
+</div>
 {% endfor %}

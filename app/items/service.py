@@ -42,6 +42,10 @@ async def apply_transition(db: AsyncSession, item: Item, to_status: str, actor: 
     old = item.status
     if old != to_status:
         item.status = to_status
+        # Salir de un terminal (done→backlog) es una reapertura: sin limpiar closed_at
+        # el ítem aparecería en el backlog Y en el registro a la vez.
+        if old in TERMINAL:
+            item.closed_at = None
         await db.flush()
         db.add(ItemEvent(
             item_id=item.id, actor=actor, action="status_changed",
