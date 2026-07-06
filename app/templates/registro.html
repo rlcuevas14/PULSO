@@ -40,11 +40,4 @@
   {% include "partials/registro_rows.html" %}
 </div>
 
-{% if not week_groups %}
-<div class="py-16 text-center text-sm text-muted">
-  No hay ítems cerrados con estos filtros.
-  <a href="/backlog" class="ml-1 text-accent hover:underline">← Volver al Backlog</a>
-</div>
-{% endif %}
-
 {% endblock %}

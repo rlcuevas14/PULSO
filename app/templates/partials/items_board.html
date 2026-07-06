@@ -1,12 +1,12 @@
 {# Kanban board — 6 open statuses, no done/discarded (spec decision). #}
 {# Status color map — copied from _status_badge.html (convention: copy, not import). #}
 {% set SC = {
-  "idea":        ("bg-brand-lavender/25 text-brand-lavender", "💡"),
-  "backlog":     ("bg-surface-strong text-muted",             "📋"),
-  "spec":        ("bg-brand-teal/15 text-brand-teal",         "📐"),
-  "in-progress": ("bg-brand-ochre/25 text-brand-ochre",       "⚙"),
-  "in-review":   ("bg-brand-peach/30 text-brand-ochre",       "👁"),
-  "blocked":     ("bg-error/15 text-error",                   "⛔"),
+  "idea":        ("bg-brand-lavender/25 text-ink",  "💡"),
+  "backlog":     ("bg-surface-strong text-body",    "📋"),
+  "spec":        ("bg-brand-mint/30 text-ink",      "📐"),
+  "in-progress": ("bg-brand-ochre/30 text-ink",     "⚙"),
+  "in-review":   ("bg-brand-peach/30 text-ink",     "👁"),
+  "blocked":     ("bg-warning/20 text-warning",     "⛔"),
 } %}
 {% set T = {
   "bug":       "bg-brand-coral/20",
@@ -59,12 +59,12 @@
           <option value="">→ mover…</option>
           {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
-        <button type="button" title="Cerrar ítem"
+        {% endif %}
+        <button type="button" title="Cerrar ítem" aria-label="Cerrar ítem"
                 hx-get="/ui/items/{{ item.id }}/close-modal"
                 hx-target="#modal-slot"
                 hx-on::after-swap="openModal('close-modal-{{ item.id }}')"
                 class="p-btn p-btn-ghost p-btn-sm px-2 text-success">✓</button>
-        {% endif %}
       </div>
     </div>
     {% endfor %}

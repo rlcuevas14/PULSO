@@ -535,3 +535,158 @@ async def test_registro_in_nav_and_dashboard_homecard(client: AsyncClient):
     assert "/registro" in r.text
     r2 = await client.get("/registro")
     assert r2.status_code == 200
+
+
+# ---------- Audit regressions (spec 2026-07-06) ----------
+
+
+@pytest.mark.asyncio
+async def test_close_modal_lifecycle_targets(client: AsyncClient):
+    """Spec §1.6: radios según targets terminales — desde 'spec' solo se puede descartar."""
+    _uid, pid = await _login(client)
+    spec_id, _ = await _seed_item(client, pid, title="Spec-state item", status="spec")
+    r = await client.get(f"/ui/items/{spec_id}/close-modal")
+    assert r.status_code == 200
+    assert 'value="discarded"' in r.text
+    assert 'value="done"' not in r.text
+
+    bl_id, _ = await _seed_item(client, pid, title="Backlog-state item", status="backlog")
+    r2 = await client.get(f"/ui/items/{bl_id}/close-modal")
+    assert 'value="done"' in r2.text and 'value="discarded"' in r2.text
+
+
+@pytest.mark.asyncio
+async def test_transition_out_of_terminal_clears_closed_at(client: AsyncClient):
+    """done→backlog vía apply_transition (alcanzable por MCP pulso_advance) limpia closed_at."""
+    import datetime as _dt
+
+    from app.items import service
+    from app.items.models import Item
+
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, status="backlog")
+    async for db in client.app.dependency_overrides[get_db]():
+        item = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one()
+        item.status = "done"
+        item.closed_at = _dt.datetime.now(_dt.timezone.utc)
+        await db.flush()
+        await service.apply_transition(db, item, "backlog", "test@t.cl")
+        await db.commit()
+        await db.refresh(item)
+        assert item.status == "backlog"
+        assert item.closed_at is None
+        break
+
+
+@pytest.mark.asyncio
+async def test_registro_search_q(client: AsyncClient):
+    """Regresión: /registro?q= pasaba dicts de search_items a Item.id.in_()."""
+    import datetime as _dt
+
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-regq", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Facturacion electronica lista",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Otro cierre irrelevante",
+                    type="bug", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        await db.commit()
+        break
+
+    r = await client.get("/registro?q=facturacion")
+    assert r.status_code == 200
+    assert "Facturacion electronica lista" in r.text
+    assert "Otro cierre irrelevante" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_registro_commit_links_to_repo_url(client: AsyncClient):
+    """Spec §2.1: sha corto linkeado a {repo_url}/commit/{sha} cuando repo_url está definido."""
+    import datetime as _dt
+
+    from app.items.models import Item
+    from app.projects.models import Project
+    from app.scopes.models import Scope
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        proj = (await db.execute(select(Project).where(Project.id == pid))).scalar_one()
+        proj.repo_url = "https://github.com/acme/repo"
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-sha", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Item with commit",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc),
+                    source_refs={"commit_sha": "deadbeef1234567"}))
+        await db.commit()
+        break
+
+    r = await client.get("/registro")
+    assert r.status_code == 200
+    assert 'https://github.com/acme/repo/commit/deadbeef1234567' in r.text
+    assert "deadbee" in r.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_status_overrides_show(client: AsyncClient):
+    """Spec §1.1: un status concreto manda sobre show (default open)."""
+    import datetime as _dt
+
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Abierto normal", status="backlog")
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Cerrado explicito",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        await db.commit()
+        break
+
+    # show default = open, pero status=done es más específico y gana
+    r = await client.get("/backlog?status=done")
+    assert r.status_code == 200
+    assert "Cerrado explicito" in r.text
+    assert "Abierto normal" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_closed_rows_have_no_actions(client: AsyncClient):
+    """Spec §1.6: el botón ✓ (y mover) solo en estados no terminales."""
+    import datetime as _dt
+
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    _uid, pid = await _login(client)
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = (await db.execute(select(Scope).where(Scope.project_id == pid))).scalars().first()
+        if scope is None:
+            scope = Scope(name="area-closed", project_id=pid)
+            db.add(scope)
+            await db.flush()
+        db.add(Item(scope_id=scope.id, project_id=pid, title="Ya cerrado item",
+                    type="feature", status="done", origen="human",
+                    closed_at=_dt.datetime.now(_dt.timezone.utc)))
+        await db.commit()
+        break
+
+    r = await client.get("/backlog?show=closed")
+    assert r.status_code == 200
+    assert "Ya cerrado item" in r.text
+    assert "/close-modal" not in r.text
+    assert "→ mover…" not in r.text

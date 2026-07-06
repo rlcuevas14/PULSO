@@ -57,10 +57,12 @@
           {% if scope_map.get(item.scope_id|string) %}<span>{{ scope_map[item.scope_id|string] }}</span>{% endif %}
           {% if reason %}<span class="text-body">{{ reason }}</span>{% endif %}
           {% if commit %}
-          <span class="font-mono text-xs">
-            {% set short_sha = commit[:7] %}
-            {{ short_sha }}
-          </span>
+            {% if project and project.repo_url %}
+            <a href="{{ project.repo_url.rstrip('/') }}/commit/{{ commit }}" target="_blank" rel="noopener"
+               class="font-mono text-xs text-accent hover:underline">{{ commit[:7] }}</a>
+            {% else %}
+            <span class="font-mono text-xs">{{ commit[:7] }}</span>
+            {% endif %}
           {% endif %}
         </div>
       </div>
@@ -71,13 +73,20 @@
 </section>
 {% endfor %}
 
+{% if not week_groups and not is_load_more %}
+<div class="py-16 text-center text-sm text-muted">
+  No hay ítems cerrados con estos filtros.
+  <a href="/registro" class="ml-1 text-accent hover:underline">Limpiar filtros</a>
+</div>
+{% endif %}
+
 {% if next_before %}
-<div id="load-more-trigger" class="text-center py-4">
+<div class="text-center py-4">
   <button type="button"
     hx-get="/registro?before={{ next_before }}{% if filters.q %}&amp;q={{ filters.q }}{% endif %}{% if filters.scope %}&amp;scope={{ filters.scope }}{% endif %}{% if filters.item_type %}&amp;item_type={{ filters.item_type }}{% endif %}"
     hx-target="#registro-rows"
     hx-swap="beforeend"
-    hx-on::after-request="document.getElementById('load-more-trigger').remove()"
+    hx-on::after-request="this.parentElement.remove()"
     class="p-btn p-btn-ghost p-btn-sm">Cargar más</button>
 </div>
 {% endif %}
