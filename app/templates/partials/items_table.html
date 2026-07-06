@@ -13,14 +13,14 @@
 <div>
   {% if not items %}
   <div class="px-4 py-12 text-center text-sm text-muted">
-    Sin ítems con estos filtros.
-    <a href="/backlog" class="ml-1 text-accent hover:underline">Limpiar filtros</a>
+    {{ t("common.empty_filtered") }}
+    <a href="/backlog" class="ml-1 text-accent hover:underline">{{ t("common.clear_filters") }}</a>
   </div>
   {% endif %}
   {% for item in items %}
   <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-3 px-4 py-3 border-b border-hairline last:border-0 hover:bg-surface-strong">
     <div class="flex flex-col gap-1 shrink-0 items-start">
-      <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ item.type }}</span>
+      <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink">{{ t("type." ~ item.type) }}</span>
       {% if item.effort_ai %}
       <span class="p-pill bg-surface-strong text-muted">{{ item.effort_ai }}</span>
       {% endif %}
@@ -28,38 +28,38 @@
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 mb-0.5">
-        {% if blocked_ids and item.id|string in blocked_ids %}<span title="Bloqueado por otro ítem abierto">⛔</span>{% endif %}
-        {% if unblocker_ids and item.id|string in unblocker_ids %}<span title="Bloquea a otros (desbloqueador)">🔓</span>{% endif %}
+        {% if blocked_ids and item.id|string in blocked_ids %}<span title="{{ t('backlog.tip_blocked') }}">⛔</span>{% endif %}
+        {% if unblocker_ids and item.id|string in unblocker_ids %}<span title="{{ t('backlog.tip_unblocker') }}">🔓</span>{% endif %}
         <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline truncate">{{ item.title }}</a>
-        {% if recent_touch and recent_touch.get(item.id|string) %}<span title="Tocado en las últimas 24h" class="text-success">●</span>{% endif %}
+        {% if recent_touch and recent_touch.get(item.id|string) %}<span title="{{ t('backlog.tip_recent') }}" class="text-success">●</span>{% endif %}
         {% if item.stale_risk %}<span class="text-xs text-warning shrink-0">⚠</span>{% endif %}
       </div>
       <div class="flex items-center gap-2 text-xs text-muted">
         {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
         {% if item.impact_ai %}<span>I{{ item.impact_ai }}</span>{% endif %}
         <span>·</span>
-        <span>{{ item.origen }}</span>
+        <span>{{ t("origin." ~ item.origen) }}</span>
         <span>{{ scope_map.get(item.scope_id, '') }}</span>
       </div>
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
       {% if ready_ids and item.id|string in ready_ids %}
-      <span title="Agent-ready: especificado, marcado agent_ready, sin bloqueos" class="text-base">🤖</span>
+      <span title="{{ t('backlog.tip_agent_ready') }}" class="text-base">🤖</span>
       {% endif %}
       {# Acciones solo en estados no terminales — reabrir se hace desde el detalle. #}
       {% if item.status not in ('done', 'discarded') %}
       {% include "partials/_priority_select.html" %}
       {% set targets = non_terminal_targets(item.status) %}
       {% if targets %}
-      <select title="Cambiar estado" aria-label="Cambiar estado del ítem"
+      <select title="{{ t('backlog.change_status') }}" aria-label="{{ t('backlog.change_status_aria') }}"
               class="p-input p-input-sm"
               hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
-        <option value="">→ mover…</option>
-        {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        <option value="">{{ t("backlog.move_to") }}</option>
+        {% for tgt in targets %}<option value="{{ tgt }}">{{ t("status." ~ tgt) }}</option>{% endfor %}
       </select>
       {% endif %}
-      <button type="button" title="Cerrar ítem" aria-label="Cerrar ítem"
+      <button type="button" title="{{ t('backlog.close_item') }}" aria-label="{{ t('backlog.close_item') }}"
               hx-get="/ui/items/{{ item.id }}/close-modal"
               hx-target="#modal-slot"
               hx-on::after-swap="openModal('close-modal-{{ item.id }}')"

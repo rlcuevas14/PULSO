@@ -5,7 +5,7 @@
     select_class — clases CSS para el <select> (opcional; default = variante de fila).
   Uso: {% with item = it %}{% include "partials/_priority_select.html" %}{% endwith %}
 #}
-<select aria-label="Prioridad del ítem" title="Prioridad"
+<select aria-label="{{ t('priority.item_aria') }}" title="{{ t('priority.title') }}"
         class="p-input p-input-sm {{ select_class | default('') }}"
         hx-post="/ui/items/{{ item.id }}/field" hx-trigger="change" hx-swap="none"
         hx-vals='{"field":"priority"}' name="value">

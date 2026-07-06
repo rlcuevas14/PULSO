@@ -23,16 +23,16 @@ class LLMUnavailable(RuntimeError):
     """No hay API key configurada para el proveedor."""
 
 
-_ENRICH_PROMPT = """Eres un analista de producto. Evalúa este ítem de backlog y responde SOLO con JSON.
+_ENRICH_PROMPT = """You are a product analyst. Evaluate this backlog item and reply ONLY with JSON.
 
-Título: {title}
-Tipo: {item_type}
-Resumen: {summary}
+Title: {title}
+Type: {item_type}
+Summary: {summary}
 
-Devuelve un objeto JSON con exactamente estas claves:
-- "impact": entero 1-5 (5 = altísimo impacto en usuarios/negocio)
-- "effort": una de "XS","S","M","L","XL" (esfuerzo estimado de implementación)
-- "rationale": una frase breve en español (tuteo neutro) justificando el impacto
+Return a JSON object with exactly these keys:
+- "impact": integer 1-5 (5 = very high user/business impact)
+- "effort": one of "XS","S","M","L","XL" (estimated implementation effort)
+- "rationale": one short sentence justifying the impact, written in the same language as the item content
 
 JSON:"""
 
@@ -75,16 +75,16 @@ async def enrich_item(title: str, summary: str | None, item_type: str) -> dict[s
 
 _SONNET_MODEL = "claude-sonnet-4-6"
 
-_STAGE_PROMPT = """Eres un ingeniero de producto. Genera el artefacto del stage "{stage}" para
-este hilo de desarrollo, en español (tuteo neutro, sin voseo). Devuelve SOLO markdown.
+_STAGE_PROMPT = """You are a product engineer. Generate the "{stage}" stage artifact for this
+development thread, written in the same language as the thread content. Return ONLY markdown.
 
-Hilo: {title}
-Resumen: {summary}
+Thread: {title}
+Summary: {summary}
 
-Artefactos previos:
+Previous artifacts:
 {artifacts}
 
-Genera el contenido del stage "{stage}":"""
+Generate the "{stage}" stage content:"""
 
 
 async def generate_stage(stage: str, title: str, summary: str | None, artifacts: str) -> dict[str, Any]:
@@ -113,17 +113,17 @@ async def generate_stage(stage: str, title: str, summary: str | None, artifacts:
     return {"content": content, "model": model}
 
 
-_TRIAGE_PROMPT = """Eres un ingeniero de confiabilidad. Clasifica este error de Sentry y
-responde SOLO con JSON.
+_TRIAGE_PROMPT = """You are a reliability engineer. Classify this Sentry error and
+reply ONLY with JSON.
 
-Título: {title}
-Contexto: {context}
+Title: {title}
+Context: {context}
 
-Devuelve {{"triage": "<una de: bug-real, input-malo, 3rd-party, ruido>"}}.
-- bug-real: bug genuino de nuestro código que hay que arreglar.
-- input-malo: error por datos/entrada inválida del usuario, no es bug.
-- 3rd-party: falla de un servicio externo, no de nuestro código.
-- ruido: transitorio/irrelevante (timeout aislado, bot, healthcheck).
+Return {{"triage": "<one of: bug-real, input-malo, 3rd-party, ruido>"}}.
+- bug-real: genuine bug in our code that must be fixed.
+- input-malo: error caused by invalid user data/input, not a bug.
+- 3rd-party: external service failure, not our code.
+- ruido: transient/irrelevant (isolated timeout, bot, healthcheck).
 
 JSON:"""
 
@@ -150,22 +150,26 @@ async def triage_sentry(title: str, context: str) -> dict[str, Any]:
     return {"triage": triage}
 
 
-_SUMMARY_PROMPT = """Eres un analista de producto. Resume los ítems cerrados en esta semana de desarrollo
-en 3-5 bullets breves (markdown, español, tuteo neutro). Enfócate en impacto: qué se resolvió,
-qué se descartó y por qué, tendencias notables. Devuelve SOLO el markdown.
+_SUMMARY_PROMPT = """You are a product analyst. Summarize the items closed during this development
+week in 3-5 short bullets (markdown), written in {language}. Focus on impact: what got resolved,
+what was discarded and why, notable trends. Return ONLY the markdown.
 
-Ítems cerrados:
+Closed items:
 {items_text}
 
-Resumen:"""
+Summary:"""
+
+_SUMMARY_LANGUAGES = {"en": "English", "es": "Latin American Spanish", "fr": "French"}
 
 
 async def summarize_closed(
     items_with_reasons: list[dict[str, Any]],
+    lang: str = "en",
 ) -> str:
-    """Genera un resumen IA de ítems cerrados en la semana. Lanza LLMUnavailable sin API key.
+    """Genera un resumen IA de ítems cerrados en la semana, en el idioma de la UI.
 
     items_with_reasons: lista de dicts con keys title, type, status, reason (optional).
+    Lanza LLMUnavailable sin API key.
     """
     if not settings.anthropic_api_key:
         raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
@@ -173,8 +177,11 @@ async def summarize_closed(
     for i in items_with_reasons:
         reason_text = f" — {i['reason']}" if i.get("reason") else ""
         lines.append(f"- [{i.get('status', '?')}] ({i.get('type', '?')}) {i.get('title', '')}{reason_text}")
-    items_text = "\n".join(lines) or "(sin ítems)"
-    prompt = _SUMMARY_PROMPT.format(items_text=items_text)
+    items_text = "\n".join(lines) or "(no items)"
+    prompt = _SUMMARY_PROMPT.format(
+        items_text=items_text,
+        language=_SUMMARY_LANGUAGES.get(lang, "English"),
+    )
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             _ANTHROPIC_URL,

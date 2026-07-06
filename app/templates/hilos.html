@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% from "partials/_hint.html" import hint %}
-{% block title %}Hilos{% endblock %}
+{% from "partials/_hint.html" import hint with context %}
+{% block title %}{{ t("nav.threads") }}{% endblock %}
 {% block content %}
 
 {# Mapa etapa→tinte (canónico — Task 14 lo copia, no lo importa). #}
@@ -16,32 +16,29 @@
 } %}
 
 <div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">Hilos</h1>
-  <button onclick="openModal('new-hilo-modal')" class="p-btn p-btn-primary">+ Nuevo hilo</button>
+  <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink">{{ t("nav.threads") }}</h1>
+  <button onclick="openModal('new-hilo-modal')" class="p-btn p-btn-primary">{{ t("threads.new_thread") }}</button>
 </div>
 
-{{ hint('hilos', '<strong>¿Qué es un hilo?</strong> Una feature pesada que recorre stages:
-  idea → investigación → historias → spec → en-desarrollo → review → hecho.
-  El 80% de las features van rápido por el Backlog; usa Hilos solo para lo grande.
-  Avanza desde el detalle del hilo.'|safe) }}
+{{ hint('hilos', t("threads.hint") | safe) }}
 
 <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
   {% for stage in stages %}
   <div class="snap-start shrink-0 w-56 bg-surface-soft border border-hairline rounded-2xl p-2">
     <div class="flex items-center justify-between px-2 py-1.5">
-      <span class="p-pill {{ STAGE_TINT[stage] }} text-ink">{{ stage }}</span>
+      <span class="p-pill {{ STAGE_TINT[stage] }} text-ink">{{ t("stage." ~ stage) }}</span>
       <span class="text-xs text-muted">{{ by_stage.get(stage, [])|length }}</span>
     </div>
-    {% for t in by_stage.get(stage, []) %}
-    <a href="/hilos/{{ t.id }}" class="block p-card p-3 mb-2 hover:bg-surface-strong border-l-2"
+    {% for th in by_stage.get(stage, []) %}
+    <a href="/hilos/{{ th.id }}" class="block p-card p-3 mb-2 hover:bg-surface-strong border-l-2"
        style="border-left-color:var(--accent)">
-      <div class="text-sm font-medium text-ink mb-1">{{ t.title }}</div>
+      <div class="text-sm font-medium text-ink mb-1">{{ th.title }}</div>
       <div class="text-xs text-muted">
-        {{ counts[t.id|string].artifacts }} artefactos · {{ counts[t.id|string].items }} ítems
+        {{ tn("threads.artifacts_count", counts[th.id|string].artifacts) }} · {{ tn("common.items", counts[th.id|string].items) }}
       </div>
     </a>
     {% else %}
-    <div class="p-2 text-xs text-muted">vacío</div>
+    <div class="p-2 text-xs text-muted">{{ t("threads.empty_column") }}</div>
     {% endfor %}
   </div>
   {% endfor %}
@@ -50,27 +47,27 @@
 <div id="new-hilo-modal" data-modal role="dialog" aria-modal="true" aria-labelledby="new-hilo-title"
      class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
   <div class="p-card w-full max-w-md p-6">
-    <h2 id="new-hilo-title" class="text-lg font-semibold text-ink mb-4">Nuevo hilo</h2>
+    <h2 id="new-hilo-title" class="text-lg font-semibold text-ink mb-4">{{ t("threads.new_thread_title") }}</h2>
     <form action="/ui/hilos/create" method="post" class="space-y-4">
       <div>
-        <label class="p-label" for="nh-title">Título</label>
-        <input id="nh-title" name="title" required placeholder="Título del hilo" aria-label="Título del hilo"
+        <label class="p-label" for="nh-title">{{ t("threads.title_label") }}</label>
+        <input id="nh-title" name="title" required placeholder="{{ t('threads.title_placeholder') }}" aria-label="{{ t('threads.title_placeholder') }}"
                class="p-input">
       </div>
       <div>
-        <label class="p-label" for="nh-scope">Scope</label>
-        <select id="nh-scope" name="scope_name" required aria-label="Scope del hilo" class="p-input">
+        <label class="p-label" for="nh-scope">{{ t("threads.scope_label") }}</label>
+        <select id="nh-scope" name="scope_name" required aria-label="{{ t('threads.scope_aria') }}" class="p-input">
           {% for s in scopes %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
         </select>
       </div>
       <div>
-        <label class="p-label" for="nh-summary">Resumen</label>
-        <textarea id="nh-summary" name="summary" rows="3" placeholder="Resumen (opcional)"
-                  aria-label="Resumen del hilo" class="p-input"></textarea>
+        <label class="p-label" for="nh-summary">{{ t("threads.summary_label") }}</label>
+        <textarea id="nh-summary" name="summary" rows="3" placeholder="{{ t('threads.summary_placeholder') }}"
+                  aria-label="{{ t('threads.summary_aria') }}" class="p-input"></textarea>
       </div>
       <div class="flex justify-end gap-2 pt-1">
-        <button type="button" onclick="closeModal('new-hilo-modal')" class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
-        <button type="submit" class="p-btn p-btn-primary p-btn-sm">Crear (idea)</button>
+        <button type="button" onclick="closeModal('new-hilo-modal')" class="p-btn p-btn-ghost p-btn-sm">{{ t("common.cancel") }}</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">{{ t("threads.create_idea") }}</button>
       </div>
     </form>
   </div>

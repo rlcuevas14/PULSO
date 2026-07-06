@@ -58,7 +58,7 @@ async def test_sentry_lands_in_container_not_backlog(client: AsyncClient, monkey
 
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
-    body = json.dumps({"id": sid, "title": "boom NPE", "project": "efrain-api"}).encode()
+    body = json.dumps({"id": sid, "title": "boom NPE", "project": "acme-api"}).encode()
     r = await client.post(
         "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
@@ -88,7 +88,7 @@ async def test_manual_promote_creates_backlog_item(client: AsyncClient, monkeypa
 
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
-    body = json.dumps({"id": sid, "title": "bug real grave", "project": "efrain-api"}).encode()
+    body = json.dumps({"id": sid, "title": "bug real grave", "project": "acme-api"}).encode()
     await client.post(
         "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
@@ -136,7 +136,7 @@ async def test_sentry_triage_hides_noise(client: AsyncClient, monkeypatch):
 
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
-    body = json.dumps({"id": sid, "title": "timeout aislado", "project": "efrain-api"}).encode()
+    body = json.dumps({"id": sid, "title": "timeout aislado", "project": "acme-api"}).encode()
     await client.post(
         "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
@@ -170,7 +170,7 @@ async def test_sentry_triage_promotes_bug_real(client: AsyncClient, monkeypatch)
 
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     sid = f"sentry-{uuid.uuid4().hex[:8]}"
-    body = json.dumps({"id": sid, "title": "KeyError en reportes", "project": "efrain-api"}).encode()
+    body = json.dumps({"id": sid, "title": "KeyError en reportes", "project": "acme-api"}).encode()
     await client.post(
         "/webhooks/sentry", content=body,
         headers={"sentry-hook-signature": _sentry_sig("supersecret", body)},
@@ -283,10 +283,10 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(wservice, "fetch_sentry_issues", fake_fetch)
     r = await client.post(
         "/ui/incidentes/backfill",
-        data={"org": "tid", "project": "efrain", "token": "fake"}, cookies=cookies,
+        data={"org": "tid", "project": "acme", "token": "fake"}, cookies=cookies,
     )
     assert r.status_code == 200
-    assert "Importados 2 de 2" in r.text
+    assert "Imported 2 of 2" in r.text  # default EN
     async for db in client.app.dependency_overrides[get_db]():
         i1 = (await db.execute(
             __import__("sqlalchemy").select(SentryIssue).where(SentryIssue.sentry_issue_id == sid1)

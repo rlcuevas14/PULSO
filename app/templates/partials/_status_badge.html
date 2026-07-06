@@ -14,4 +14,4 @@
   "done":        "bg-success/15 text-success",
   "discarded":   "bg-surface-strong text-muted line-through",
 } %}
-<span class="p-pill {{ S.get(status, 'bg-surface-strong text-body') }}">{{ status }}</span>
+<span class="p-pill {{ S.get(status, 'bg-surface-strong text-body') }}">{{ t("status." ~ status) }}</span>

@@ -100,7 +100,7 @@ async def test_ui_create_relationship_returns_partial(client: AsyncClient):
         data={"relation": "blocks", "target_query": "destino unico abc"}, cookies=cookies,
     )
     assert r.status_code == 200
-    assert "Relaciones (grafo)" in r.text
+    assert "Relationships (graph)" in r.text  # default EN
     assert "destino unico abc" in r.text
 
 

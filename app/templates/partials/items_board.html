@@ -28,7 +28,7 @@
 
     {# Column header #}
     <div class="flex items-center justify-between px-1 py-0.5">
-      <span class="p-pill text-xs font-semibold {{ sc_pair[0] }}">{{ sc_pair[1] }} {{ status }}</span>
+      <span class="p-pill text-xs font-semibold {{ sc_pair[0] }}">{{ sc_pair[1] }} {{ t("status." ~ status) }}</span>
       <span class="text-xs text-muted font-medium">{{ col_items|length }}</span>
     </div>
 
@@ -38,14 +38,14 @@
       <div class="flex items-start justify-between gap-1">
         <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline leading-snug">{{ item.title }}</a>
         <div class="flex gap-1 shrink-0 text-sm leading-none pt-0.5">
-          {% if blocked_ids and item.id|string in blocked_ids %}<span title="Bloqueado">⛔</span>{% endif %}
-          {% if ready_ids and item.id|string in ready_ids %}<span title="Agent-ready">🤖</span>{% endif %}
-          {% if item.stale_risk %}<span title="Stale risk" class="text-warning">⚠</span>{% endif %}
+          {% if blocked_ids and item.id|string in blocked_ids %}<span title="{{ t('backlog.tip_blocked') }}">⛔</span>{% endif %}
+          {% if ready_ids and item.id|string in ready_ids %}<span title="{{ t('backlog.tip_agent_ready') }}">🤖</span>{% endif %}
+          {% if item.stale_risk %}<span title="{{ t('backlog.tip_stale') }}" class="text-warning">⚠</span>{% endif %}
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-1">
-        <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink text-xs">{{ item.type }}</span>
+        <span class="p-pill {{ T.get(item.type, 'bg-surface-strong') }} text-ink text-xs">{{ t("type." ~ item.type) }}</span>
         {% if item.effort_ai %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ item.effort_ai }}</span>{% endif %}
         {% if item.impact_ai %}<span class="p-pill bg-surface-strong text-muted text-xs">I{{ item.impact_ai }}</span>{% endif %}
       </div>
@@ -54,13 +54,13 @@
         {% include "partials/_priority_select.html" %}
         {% set targets = non_terminal_targets(item.status) %}
         {% if targets %}
-        <select title="Mover a…" aria-label="Cambiar estado" class="p-input p-input-sm flex-1"
+        <select title="{{ t('backlog.move_to_title') }}" aria-label="{{ t('backlog.change_status') }}" class="p-input p-input-sm flex-1"
                 hx-post="/ui/items/{{ item.id }}/transition" hx-trigger="change" hx-swap="none" name="status">
-          <option value="">→ mover…</option>
-          {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          <option value="">{{ t("backlog.move_to") }}</option>
+          {% for tgt in targets %}<option value="{{ tgt }}">{{ t("status." ~ tgt) }}</option>{% endfor %}
         </select>
         {% endif %}
-        <button type="button" title="Cerrar ítem" aria-label="Cerrar ítem"
+        <button type="button" title="{{ t('backlog.close_item') }}" aria-label="{{ t('backlog.close_item') }}"
                 hx-get="/ui/items/{{ item.id }}/close-modal"
                 hx-target="#modal-slot"
                 hx-on::after-swap="openModal('close-modal-{{ item.id }}')"
@@ -70,7 +70,7 @@
     {% endfor %}
 
     {% if not col_items %}
-    <div class="text-xs text-muted text-center py-4 opacity-60">Vacío</div>
+    <div class="text-xs text-muted text-center py-4 opacity-60">{{ t("backlog.board_empty") }}</div>
     {% endif %}
   </div>
   {% endfor %}

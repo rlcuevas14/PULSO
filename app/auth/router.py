@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.models import ApiToken, User
 from app.auth.service import authenticate
 from app.database import get_db
+from app.i18n import resolve_lang
+from app.i18n import t as _t
 from app.templates_config import templates
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -41,7 +43,7 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"error": "Incorrect email or password"},
+            {"error": _t("login.error_credentials", resolve_lang(request))},
             status_code=401,
         )
     request.session["user_id"] = str(user.id)
@@ -78,7 +80,7 @@ async def setup_submit(
     if len(password) < 8:
         return templates.TemplateResponse(
             request, "setup.html",
-            {"error": "Password must be at least 8 characters"},
+            {"error": _t("setup.error_password_length", resolve_lang(request))},
             status_code=422,
         )
     from app.accounts.service import create_account

@@ -2,7 +2,7 @@
   <table class="w-full min-w-[560px] border-separate border-spacing-1">
     <thead>
       <tr>
-        <th class="text-xs uppercase tracking-wider text-muted font-normal p-1">Impacto ↓ / Esfuerzo →</th>
+        <th class="text-xs uppercase tracking-wider text-muted font-normal p-1">{{ t("priority.axis_header") }}</th>
         {% for e in efforts %}<th class="text-xs uppercase tracking-wider text-muted font-medium p-1">{{ e }}</th>{% endfor %}
       </tr>
     </thead>
@@ -29,12 +29,12 @@
 {% if unestimated %}
 <div class="p-card p-4 mt-6">
   <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
-    <div class="text-sm text-muted">Sin estimar ({{ unestimated|length }}) — estima con IA o a mano:</div>
+    <div class="text-sm text-muted">{{ t("priority.unestimated", n=unestimated|length) }}</div>
     <button class="p-btn p-btn-primary"
             hx-post="/api/v1/items/enrich-pending" hx-swap="none"
-            hx-on:htmx:after-request="this.textContent='Encolados ✓'">
+            hx-on:htmx:after-request='this.textContent={{ t("priority.enqueued") | tojson }}'>
       <svg class="p-spin" width="18" height="18" viewBox="0 0 48 48" fill="none"><path d="M4 25 H11 L17 13 L24 36 L29 25 H33" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="41" cy="25" r="4.5" fill="#ff4d8b"/></svg>
-      Enriquecer pendientes con IA
+      {{ t("priority.enrich_pending") }}
     </button>
   </div>
   <div class="flex flex-wrap gap-1">
@@ -45,7 +45,7 @@
 </div>
 {% endif %}
 
-<h2 class="text-lg font-semibold text-ink mt-8 mb-3">Lista priorizada</h2>
+<h2 class="text-lg font-semibold text-ink mt-8 mb-3">{{ t("priority.ranked_list") }}</h2>
 <div class="p-card divide-y divide-hairline">
   {% for it in items %}
   <div class="flex items-center gap-3 px-4 py-3 hover:bg-surface-strong first:rounded-t-2xl last:rounded-b-2xl">

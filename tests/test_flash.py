@@ -12,9 +12,9 @@ async def test_close_done_celebrates_once(client: AsyncClient):
     r = await client.post(f"/ui/items/{item_id}/close", data={"status": "done", "reason": "ok"})
     assert r.status_code == 204
     r1 = await client.get("/")
-    assert "¡Completado!" in r1.text and "Ship it" in r1.text
+    assert "Done!" in r1.text and "Ship it" in r1.text  # default EN; es="¡Completado!"
     r2 = await client.get("/")          # pop-once: nunca se repite al refrescar
-    assert "¡Completado!" not in r2.text
+    assert "Done!" not in r2.text
 
 
 @pytest.mark.asyncio
@@ -26,4 +26,4 @@ async def test_close_discarded_toasts_not_celebrates(client: AsyncClient):
     r1 = await client.get("/")
     # el mensaje pasa por |tojson (ensure_ascii): "Ítem" llega como "Ítem" — se
     # asserta el fragmento ASCII del mensaje.
-    assert "¡Completado!" not in r1.text and "tem descartado" in r1.text
+    assert "Done!" not in r1.text and "Item discarded" in r1.text  # default EN

@@ -1,6 +1,4 @@
-<h2 class="font-semibold text-ink mb-3">Relaciones (grafo)</h2>
-{% set rel_labels = {'blocks':'bloquea a','requires':'requiere','conflicts':'conflictúa con','related':'relacionado con','part_of':'parte de'} %}
-{% set rel_in_labels = {'blocks':'bloqueado por','requires':'requerido por','conflicts':'conflictúa con','related':'relacionado con','part_of':'contiene a'} %}
+<h2 class="font-semibold text-ink mb-3">{{ t("relation.heading") }}</h2>
 
 {% if subgraph and subgraph.arcs %}
 <div class="mb-4">
@@ -9,37 +7,37 @@
   {% set other_title = arc.target_title if outgoing else arc.source_title %}
   {% set other_id = arc.target_id if outgoing else arc.source_id %}
   {% set other_status = arc.target_status if outgoing else arc.source_status %}
-  {% set label = rel_labels[arc.relation] if outgoing else rel_in_labels[arc.relation] %}
+  {% set label = t("relation." ~ arc.relation) if outgoing else t("relation.in." ~ arc.relation) %}
   <div class="flex items-center gap-2 text-sm py-1.5 {% if other_status in ('done','discarded') %}opacity-50 line-through{% endif %}">
     <span class="p-pill bg-surface-strong text-muted shrink-0">
       {% if arc.relation == 'blocks' %}⛔{% elif arc.relation == 'requires' %}🔗{% elif arc.relation == 'conflicts' %}⚡{% elif arc.relation == 'part_of' %}⤴{% else %}◦{% endif %}
       {{ label }}</span>
     <a href="/items/{{ other_id }}" class="text-ink hover:underline truncate">{{ other_title }}</a>
-    <span class="text-xs text-muted">[{{ other_status }}]</span>
-    <button title="Borrar arco" class="text-error hover:bg-error/10 rounded p-1 ml-auto"
+    <span class="text-xs text-muted">[{{ t("status." ~ other_status) }}]</span>
+    <button title="{{ t('relation.delete_title') }}" class="text-error hover:bg-error/10 rounded p-1 ml-auto"
             hx-delete="/ui/items/{{ item.id }}/relationships?source={{ arc.source_id }}&target={{ arc.target_id }}&relation={{ arc.relation }}"
-            hx-confirm="¿Borrar esta relación?" hx-target="#relations-section" hx-swap="innerHTML">✕</button>
+            hx-confirm="{{ t('relation.delete_confirm') }}" hx-target="#relations-section" hx-swap="innerHTML">✕</button>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<p class="text-sm text-muted mb-4">Sin relaciones. Agrega una abajo cuando descubras una dependencia.</p>
+<p class="text-sm text-muted mb-4">{{ t("relation.empty") }}</p>
 {% endif %}
 
 <form class="flex flex-wrap items-center gap-2 text-sm border-t border-hairline pt-3"
       hx-post="/ui/items/{{ item.id }}/relationships"
       hx-target="#relations-section" hx-swap="innerHTML"
       hx-on:htmx:after-request="if(event.detail.successful) this.reset()">
-  <span class="text-muted">Este ítem</span>
+  <span class="text-muted">{{ t("relation.this_item") }}</span>
   <select name="relation" class="p-input p-input-sm">
-    <option value="blocks">bloquea a</option>
-    <option value="requires">requiere</option>
-    <option value="conflicts">conflictúa con</option>
-    <option value="related">relacionado con</option>
-    <option value="part_of">parte de</option>
+    <option value="blocks">{{ t("relation.blocks") }}</option>
+    <option value="requires">{{ t("relation.requires") }}</option>
+    <option value="conflicts">{{ t("relation.conflicts") }}</option>
+    <option value="related">{{ t("relation.related") }}</option>
+    <option value="part_of">{{ t("relation.part_of") }}</option>
   </select>
-  <input name="target_query" placeholder="buscar ítem por título…" required
+  <input name="target_query" placeholder="{{ t('relation.search_placeholder') }}" required
          class="p-input p-input-sm flex-1 min-w-[12rem]">
-  <input name="note" placeholder="nota (opcional)" class="p-input p-input-sm">
-  <button type="submit" class="p-btn p-btn-sm p-btn-primary">Agregar arco</button>
+  <input name="note" placeholder="{{ t('relation.note_placeholder') }}" class="p-input p-input-sm">
+  <button type="submit" class="p-btn p-btn-sm p-btn-primary">{{ t("relation.add") }}</button>
 </form>

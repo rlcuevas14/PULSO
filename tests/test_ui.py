@@ -448,7 +448,7 @@ async def test_registro_groups_by_week(client: AsyncClient):
     assert r.status_code == 200
     assert "Closed this week" in r.text
     assert "Old closed item" in r.text
-    assert "Sin fecha" in r.text
+    assert "No date" in r.text  # default EN; es="Sin fecha"
 
     r2 = await client.get("/registro", headers={"HX-Request": "true"})
     assert r2.status_code == 200
@@ -524,7 +524,7 @@ async def test_registro_summary_no_api_key(client: AsyncClient, monkeypatch):
     _uid, pid = await _login(client)
     r = await client.get("/ui/registro/summary?week=2026-W27")
     assert r.status_code == 200
-    assert "no disponible" in r.text.lower()
+    assert "unavailable" in r.text.lower()  # default EN
 
 
 @pytest.mark.asyncio
@@ -535,6 +535,65 @@ async def test_registro_in_nav_and_dashboard_homecard(client: AsyncClient):
     assert "/registro" in r.text
     r2 = await client.get("/registro")
     assert r2.status_code == 200
+
+
+# ---------- i18n ----------
+
+
+@pytest.mark.asyncio
+async def test_lang_default_english_and_switch(client: AsyncClient):
+    from app.auth.service import create_user
+
+    # Sin usuarios /auth/login redirige a /setup — crea uno para ver el login real.
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, f"lang{uuid.uuid4().hex[:6]}@t.cl", "Lang User", "password")
+        break
+
+    r = await client.get("/auth/login")
+    assert r.status_code == 200
+    assert 'lang="en"' in r.text and "Sign in" in r.text
+
+    r_es = await client.get("/ui/lang/es?next=/auth/login", follow_redirects=True)
+    assert 'lang="es"' in r_es.text and "Entrar" in r_es.text
+
+    r_fr = await client.get("/ui/lang/fr?next=/auth/login", follow_redirects=True)
+    assert 'lang="fr"' in r_fr.text and "Se connecter" in r_fr.text
+
+
+@pytest.mark.asyncio
+async def test_lang_switch_guards(client: AsyncClient):
+    assert (await client.get("/ui/lang/xx?next=/")).status_code == 404
+    r = await client.get("/ui/lang/en?next=//evil.com", follow_redirects=False)
+    assert r.headers["location"] == "/"
+
+
+@pytest.mark.asyncio
+async def test_lang_selector_in_navbar(client: AsyncClient):
+    _uid, pid = await _login(client)
+    r = await client.get("/")
+    assert r.status_code == 200
+    for code in ("en", "es", "fr"):
+        assert f"/ui/lang/{code}?next=" in r.text
+
+
+@pytest.mark.asyncio
+async def test_all_screens_render_in_all_languages(client: AsyncClient):
+    """Smoke: cada pantalla renderiza 200 en en/es/fr (errores de runtime de i18n)."""
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, title="Lang smoke item")
+    screens = ("/", "/backlog", "/backlog?view=board", "/backlog?group=status",
+               "/registro", "/prioridad", "/hilos", "/incidentes", "/ideas",
+               "/projects", f"/items/{item_id}", "/admin", "/account/members")
+    probes = {"es": ("Actividad reciente", "/"), "fr": ("Activité récente", "/")}
+    for code in ("en", "es", "fr"):
+        await client.get(f"/ui/lang/{code}?next=/")
+        for path in screens:
+            r = await client.get(path)
+            assert r.status_code == 200, f"{code} {path} -> {r.status_code}"
+        if code in probes:
+            text, path = probes[code]
+            r = await client.get(path)
+            assert text in r.text, f"{code}: {text!r} not found in {path}"
 
 
 # ---------- Audit regressions (spec 2026-07-06) ----------
@@ -689,4 +748,4 @@ async def test_backlog_closed_rows_have_no_actions(client: AsyncClient):
     assert r.status_code == 200
     assert "Ya cerrado item" in r.text
     assert "/close-modal" not in r.text
-    assert "→ mover…" not in r.text
+    assert "→ move…" not in r.text  # default EN

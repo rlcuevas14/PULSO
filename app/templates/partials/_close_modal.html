@@ -4,7 +4,7 @@
 <div id="{{ _mid }}" data-modal role="dialog" aria-modal="true" aria-labelledby="{{ _mid }}-title"
      class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
   <div class="p-card w-full max-w-md p-6">
-    <h2 id="{{ _mid }}-title" class="font-semibold text-ink mb-4">Cerrar ítem</h2>
+    <h2 id="{{ _mid }}-title" class="font-semibold text-ink mb-4">{{ t("backlog.close_item") }}</h2>
     {# Targets terminales válidos según la matriz de lifecycle: p. ej. desde
        idea/spec/blocked solo se puede descartar, no marcar done. #}
     {% set _terms = ['done', 'discarded'] | select('in', allowed_targets(item.status)) | list %}
@@ -12,32 +12,32 @@
     <form hx-post="/ui/items/{{ item.id }}/close" hx-swap="none"
           action="/ui/items/{{ item.id }}/close" method="post" class="space-y-3">
       <div class="flex gap-4 text-sm text-body">
-        {% for t in _terms %}
+        {% for term in _terms %}
         <label class="flex items-center gap-2">
-          <input type="radio" name="status" value="{{ t }}" {% if loop.first %}checked{% endif %}> {{ t | capitalize }}
+          <input type="radio" name="status" value="{{ term }}" {% if loop.first %}checked{% endif %}> {{ t("status." ~ term) | capitalize }}
         </label>
         {% endfor %}
       </div>
       <div>
-        <label class="p-label" for="{{ _mid }}-reason">Motivo</label>
-        <input id="{{ _mid }}-reason" name="reason" placeholder="Motivo (queda en el historial)" aria-label="Motivo del cierre"
+        <label class="p-label" for="{{ _mid }}-reason">{{ t("backlog.reason") }}</label>
+        <input id="{{ _mid }}-reason" name="reason" placeholder="{{ t('backlog.reason_placeholder') }}" aria-label="{{ t('backlog.reason_aria') }}"
                class="p-input">
       </div>
       <div>
-        <label class="p-label" for="{{ _mid }}-commit">Commit</label>
-        <input id="{{ _mid }}-commit" name="commit_sha" placeholder="commit/SHA (opcional)" aria-label="Commit o SHA"
+        <label class="p-label" for="{{ _mid }}-commit">{{ t("backlog.commit") }}</label>
+        <input id="{{ _mid }}-commit" name="commit_sha" placeholder="{{ t('backlog.commit_placeholder') }}" aria-label="{{ t('backlog.commit_aria') }}"
                class="p-input">
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" onclick="closeModal('{{ _mid }}')"
-                class="p-btn p-btn-ghost p-btn-sm">Cancelar</button>
-        <button type="submit" class="p-btn p-btn-primary p-btn-sm">Confirmar cierre</button>
+                class="p-btn p-btn-ghost p-btn-sm">{{ t("common.cancel") }}</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">{{ t("backlog.confirm_close") }}</button>
       </div>
     </form>
     {% else %}
-    <p class="text-sm text-muted">Este ítem ya está cerrado.</p>
+    <p class="text-sm text-muted">{{ t("backlog.already_closed") }}</p>
     <div class="flex justify-end pt-2">
-      <button type="button" onclick="closeModal('{{ _mid }}')" class="p-btn p-btn-ghost p-btn-sm">Cerrar</button>
+      <button type="button" onclick="closeModal('{{ _mid }}')" class="p-btn p-btn-ghost p-btn-sm">{{ t("common.close") }}</button>
     </div>
     {% endif %}
   </div>

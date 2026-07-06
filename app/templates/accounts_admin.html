@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Accounts — Pulso{% endblock %}
+{% block title %}{{ t("accounts.title") }}{% endblock %}
 {% block content %}
-<h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink mb-6">Accounts</h1>
+<h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink mb-6">{{ t("accounts.heading") }}</h1>
 
 {% if new_owner %}
 <div class="mb-4 bg-success/10 border border-success/30 text-success rounded-xl px-4 py-3 text-sm">
-  Account created. Owner login: <code class="font-mono">{{ new_owner }}</code> — share the temp password you set.
+  {{ t("accounts.created") }} <code class="font-mono">{{ new_owner }}</code> — {{ t("common.share_temp_password") }}
 </div>
 {% endif %}
 {% if error %}
@@ -16,11 +16,11 @@
   <table class="w-full text-sm">
     <thead>
       <tr>
-        <th class="p-label text-left pb-2">Name</th>
-        <th class="p-label text-left pb-2">Slug</th>
-        <th class="p-label text-left pb-2">Active</th>
-        <th class="p-label text-left pb-2">Created</th>
-        <th class="p-label text-left pb-2"><span class="sr-only">Actions</span></th>
+        <th class="p-label text-left pb-2">{{ t("common.name") }}</th>
+        <th class="p-label text-left pb-2">{{ t("common.slug") }}</th>
+        <th class="p-label text-left pb-2">{{ t("common.active") }}</th>
+        <th class="p-label text-left pb-2">{{ t("common.created") }}</th>
+        <th class="p-label text-left pb-2"><span class="sr-only">{{ t("common.actions") }}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -28,39 +28,39 @@
       <tr>
         <td class="py-2 border-t border-hairline text-sm text-ink font-medium">{{ a.name }}</td>
         <td class="py-2 border-t border-hairline font-mono text-xs text-body">{{ a.slug }}</td>
-        <td class="py-2 border-t border-hairline text-sm">{% if a.is_active %}<span class="p-pill bg-success/15 text-success">active</span>{% else %}<span class="p-pill bg-surface-strong text-muted">disabled</span>{% endif %}</td>
+        <td class="py-2 border-t border-hairline text-sm">{% if a.is_active %}<span class="p-pill bg-success/15 text-success">{{ t("accounts.active") }}</span>{% else %}<span class="p-pill bg-surface-strong text-muted">{{ t("accounts.disabled") }}</span>{% endif %}</td>
         <td class="py-2 border-t border-hairline text-sm text-muted">{{ a.created_at | fecha }}</td>
         <td class="py-2 border-t border-hairline text-sm text-body">
           <form method="post" action="/admin/accounts/{{ a.id }}/active" class="inline">
             <input type="hidden" name="active" value="{{ 'false' if a.is_active else 'true' }}">
-            <button class="p-btn p-btn-sm p-btn-ghost">{{ 'Disable' if a.is_active else 'Enable' }}</button>
+            <button class="p-btn p-btn-sm p-btn-ghost">{{ t("accounts.disable") if a.is_active else t("accounts.enable") }}</button>
           </form>
         </td>
       </tr>
     {% endfor %}
-    {% if not accounts %}<tr><td colspan="5" class="py-3 border-t border-hairline text-muted">No accounts yet.</td></tr>{% endif %}
+    {% if not accounts %}<tr><td colspan="5" class="py-3 border-t border-hairline text-muted">{{ t("accounts.empty") }}</td></tr>{% endif %}
     </tbody>
   </table>
 </div>
 
-<h2 class="text-lg font-semibold text-ink mb-3">Create account</h2>
+<h2 class="text-lg font-semibold text-ink mb-3">{{ t("accounts.create") }}</h2>
 <form method="post" action="/admin/accounts" class="p-card p-5 grid sm:grid-cols-2 gap-4 max-w-xl">
   <div class="sm:col-span-2">
-    <label class="p-label" for="account-name">Account name</label>
-    <input id="account-name" name="name" placeholder="Account name" required class="p-input">
+    <label class="p-label" for="account-name">{{ t("accounts.account_name") }}</label>
+    <input id="account-name" name="name" placeholder="{{ t('accounts.account_name') }}" required class="p-input">
   </div>
   <div>
-    <label class="p-label" for="owner-name">Owner name</label>
-    <input id="owner-name" name="owner_name" placeholder="Owner name" required class="p-input">
+    <label class="p-label" for="owner-name">{{ t("accounts.owner_name") }}</label>
+    <input id="owner-name" name="owner_name" placeholder="{{ t('accounts.owner_name') }}" required class="p-input">
   </div>
   <div>
-    <label class="p-label" for="owner-email">Owner email</label>
-    <input id="owner-email" name="owner_email" type="email" placeholder="Owner email" required class="p-input">
+    <label class="p-label" for="owner-email">{{ t("accounts.owner_email") }}</label>
+    <input id="owner-email" name="owner_email" type="email" placeholder="{{ t('accounts.owner_email') }}" required class="p-input">
   </div>
   <div class="sm:col-span-2">
-    <label class="p-label" for="owner-password">Temp password</label>
-    <input id="owner-password" name="password" type="password" placeholder="Temp password (min 8 chars)" required class="p-input">
+    <label class="p-label" for="owner-password">{{ t("common.temp_password") }}</label>
+    <input id="owner-password" name="password" type="password" placeholder="{{ t('common.temp_password_placeholder') }}" required class="p-input">
   </div>
-  <button class="p-btn p-btn-primary sm:col-span-2">Create account</button>
+  <button class="p-btn p-btn-primary sm:col-span-2">{{ t("accounts.create") }}</button>
 </form>
 {% endblock %}

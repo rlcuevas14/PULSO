@@ -10,6 +10,8 @@ from sqlalchemy.orm import selectinload
 from app.auth.deps import current_user_ui
 from app.auth.models import ApiToken, User
 from app.database import get_db
+from app.i18n import resolve_lang
+from app.i18n import t as _t
 from app.items import graph, service
 from app.items.lifecycle import allowed_targets, non_terminal_targets
 from app.items.models import Item, ItemEvent
@@ -22,6 +24,19 @@ from app.ui.flash import flash_success
 router = APIRouter(tags=["ui"])
 
 _OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
+
+
+@router.get("/ui/lang/{code}")
+async def ui_set_lang(code: str, request: Request, next: str = "/"):
+    """Language switch — no auth dependency so it also works on the login page."""
+    from app.i18n import SUPPORTED
+
+    if code not in SUPPORTED:
+        return Response(status_code=404)
+    request.session["lang"] = code
+    # Open-redirect guard: only same-site relative paths.
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    return RedirectResponse(target, status_code=303)
 _PRIORITY_RANK = {"p0": 0, "p1": 1, "p2": 2, "p3": 3, None: 9}
 
 
@@ -289,25 +304,29 @@ async def backlog(
         ctx["by_status"] = by_status
         ctx["board_statuses"] = _BOARD_STATUSES
 
-    # Group-by context
+    # Group-by context — labels localizados (los headers los pinta items_grouped.html tal cual)
     if group and group != "none" and view != "board":
+        lang = resolve_lang(request)
         grouped: dict[str, list] = {}
         for item in items:
             if group == "scope":
-                key = scope_map.get(item.scope_id, "(sin scope)")
+                key = scope_map.get(item.scope_id) or _t("backlog.group_no_scope", lang)
             elif group == "type":
-                key = item.type or "(sin tipo)"
+                key = _t(f"type.{item.type}", lang) if item.type else _t("backlog.group_no_scope", lang)
             elif group == "priority":
-                key = item.priority or "(sin prioridad)"
+                key = item.priority or _t("backlog.group_no_priority", lang)
             elif group == "status":
                 key = item.status
             else:
-                key = "(sin grupo)"
+                key = "—"
             grouped.setdefault(key, []).append(item)
         if group == "status":
-            # Orden de funnel, no alfabético
+            # Orden de funnel, no alfabético; label localizado al construir la lista
             _sidx = {s: n for n, s in enumerate([*_BOARD_STATUSES, "done", "discarded"])}
-            ctx["groups"] = sorted(grouped.items(), key=lambda kv: _sidx.get(kv[0], 99))
+            ctx["groups"] = [
+                (_t(f"status.{k}", lang), v)
+                for k, v in sorted(grouped.items(), key=lambda kv: _sidx.get(kv[0], 99))
+            ]
         else:
             ctx["groups"] = sorted(grouped.items())
 
@@ -482,7 +501,7 @@ async def ui_close(
     if status == "done":
         flash_success(request, title=item.title, celebrate=True)
     else:
-        flash_success(request, message="Ítem descartado")
+        flash_success(request, message=_t("flash.item_discarded", resolve_lang(request)))
     return _refresh()
 
 
@@ -627,7 +646,7 @@ async def ui_create_item(
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    flash_success(request, message="Ítem creado")
+    flash_success(request, message=_t("flash.item_created", resolve_lang(request)))
     return RedirectResponse(f"/items/{item.id}", status_code=303)
 
 
@@ -717,7 +736,7 @@ async def ui_create_hilo(
     pid = await _project_id(db, user, request)
     t = await create_thread(db, scope_name, title, summary or None, project_id=pid)
     await db.commit()
-    flash_success(request, message="Hilo creado")
+    flash_success(request, message=_t("flash.thread_created", resolve_lang(request)))
     return RedirectResponse(f"/hilos/{t.id}", status_code=303)
 
 
@@ -859,7 +878,7 @@ async def ui_promote_issue(
         priority = "p1"
     await wservice.promote_issue(db, issue, priority=priority, actor=user.email)
     await db.commit()
-    flash_success(request, message="Incidente promovido al backlog")
+    flash_success(request, message=_t("flash.incident_promoted", resolve_lang(request)))
     return _refresh()
 
 
@@ -880,12 +899,13 @@ async def ui_ignore_issue(
         return guard
     issue.status = "ignored"
     await db.commit()
-    flash_success(request, message="Incidente ignorado")
+    flash_success(request, message=_t("flash.incident_ignored", resolve_lang(request)))
     return _refresh()
 
 
 @router.post("/ui/incidentes/backfill")
 async def ui_backfill_sentry(
+    request: Request,
     org: str = Form(...),
     project: str = Form(...),
     token: str = Form(...),
@@ -895,20 +915,22 @@ async def ui_backfill_sentry(
 ):
     """Importa el histórico de errores desde la API de Sentry (solo owner)."""
     if user.account_role != "owner":
-        return HTMLResponse(
-            '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
-        )
+        msg = _t("admin.unauthorized", resolve_lang(request))
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
     from app.webhooks import service as wservice
 
     try:
         issues = await wservice.fetch_sentry_issues(token, org, project, query)
     except Exception as e:  # error de red / token / proyecto inválido
-        return HTMLResponse(f'<div class="text-sm text-red-600">Error al consultar Sentry: {e}</div>')
+        msg = _t("incidents.backfill_error", resolve_lang(request), error=e)
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
     result = await wservice.backfill_issues(db, issues, project)
     await db.commit()
+    lang = resolve_lang(request)
     return HTMLResponse(
-        f'<div class="text-sm text-green-700">Importados {result["ingested"]} de '
-        f'{result["total"]} incidentes. <a href="/incidentes" class="underline">Recargar</a></div>'
+        f'<div class="text-sm text-green-700">'
+        f'{_t("incidents.backfill_ok", lang, n=result["ingested"], total=result["total"])} '
+        f'<a href="/incidentes" class="underline">{_t("incidents.reload", lang)}</a></div>'
     )
 
 
@@ -951,20 +973,17 @@ def _iso_week_label(dt: datetime | None) -> str:
     return f"{iso[0]}-W{iso[1]:02d}"
 
 
-def _week_range_label(iso_week_key: str) -> str:
-    """'Semana del Mon DD – Sun DD, MMM YYYY' from 'YYYY-Www'."""
+def _week_range_label(iso_week_key: str, lang: str) -> str:
+    """Localized 'Week of Mon D – Sun D, MMM YYYY' from 'YYYY-Www' (month.* catalog keys)."""
     import datetime as _dt
     year, week = int(iso_week_key[:4]), int(iso_week_key[6:])
     mon = _dt.datetime.fromisocalendar(year, week, 1)
     sun = mon + _dt.timedelta(days=6)
-    months_es = ["ene", "feb", "mar", "abr", "may", "jun",
-                 "jul", "ago", "sep", "oct", "nov", "dic"]
     if mon.month == sun.month:
-        return f"Semana del {mon.day}–{sun.day} {months_es[sun.month - 1]} {sun.year}"
-    return (
-        f"Semana del {mon.day} {months_es[mon.month - 1]}"
-        f" – {sun.day} {months_es[sun.month - 1]} {sun.year}"
-    )
+        return _t("registro.week_same_month", lang, d1=mon.day, d2=sun.day,
+                  month=_t(f"month.{sun.month}", lang), year=sun.year)
+    return _t("registro.week_cross_month", lang, d1=mon.day, m1=_t(f"month.{mon.month}", lang),
+              d2=sun.day, m2=_t(f"month.{sun.month}", lang), year=sun.year)
 
 
 @router.get("/registro", response_class=HTMLResponse)
@@ -982,6 +1001,7 @@ async def registro_page(
 
     from app.items.search import search_items
 
+    lang = resolve_lang(request)
     project = await resolve_current_project(db, user, request)
     pid = project.id if project else uuid.UUID(int=0)
 
@@ -1032,7 +1052,7 @@ async def registro_page(
         ).isoformat()
 
     week_groups: list[tuple[str, str, list[Item]]] = [
-        (key, _week_range_label(key), grp) for key, grp in page
+        (key, _week_range_label(key, lang), grp) for key, grp in page
     ]
 
     # "Sin fecha" (terminales legacy sin closed_at): solo en la última página.
@@ -1041,7 +1061,7 @@ async def registro_page(
             base.where(Item.closed_at.is_(None)).order_by(Item.created_at.desc())
         )).scalars().all())
         if undated:
-            week_groups.append(("", "Sin fecha", undated))
+            week_groups.append(("", _t("registro.no_date", lang), undated))
 
     page_items = [i for _, _, grp in week_groups for i in grp]
 
@@ -1101,7 +1121,10 @@ async def ui_registro_summary(
         mon = _dt.datetime.fromisocalendar(year, wnum, 1).replace(tzinfo=timezone.utc)
         sun = mon + _dt.timedelta(days=6, hours=23, minutes=59, seconds=59)
     except (ValueError, IndexError):
-        return HTMLResponse('<p class="text-sm text-error">Semana inválida.</p>', status_code=400)
+        return HTMLResponse(
+            f'<p class="text-sm text-error">{_t("registro.invalid_week", resolve_lang(request))}</p>',
+            status_code=400,
+        )
 
     items = list((await db.execute(
         select(Item).where(
@@ -1131,7 +1154,7 @@ async def ui_registro_summary(
     ]
 
     try:
-        summary_md = await summarize_closed(items_data)
+        summary_md = await summarize_closed(items_data, lang=resolve_lang(request))
     except LLMUnavailable:
         summary_md = None
 
@@ -1150,9 +1173,8 @@ async def ui_create_token(
     user: User = Depends(current_user_ui),
 ):
     if not user.is_superadmin:
-        return HTMLResponse(
-            '<div class="text-sm text-red-600">No autorizado.</div>', status_code=403
-        )
+        msg = _t("admin.unauthorized", resolve_lang(request))
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
     from app.auth.service import create_api_token
 
     if scopes not in ("read", "write"):

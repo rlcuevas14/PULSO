@@ -8,19 +8,17 @@
 - **Backlog + dependency graph + Sentry incidents + development threads** — all accessible via 17 MCP tools.
 - **Multi-project** — one database, N projects. Each MCP token is project-scoped; the agent cannot write to the wrong project.
 - **Self-hosted OSS** — Docker + Postgres, no external dependencies except optional AI keys.
-- **Repo**: `C:\Proyectos\pulso` (local spin-off of `rlcuevas14/eduk3-pulso`).
+- **Repo**: `rlcuevas14/PULSO` (open source).
 
 ---
 
 ## Current state
 
-**OSS refactor complete** (Chunks 1–4, commit `2f1bec7`):
-- Chunk 1: cloned to `C:\Proyectos\pulso`, stripped Eduk3 references, standalone docker-compose + `.env.example`
-- Chunk 2: multi-project DB schema (`projects` table, `project_id` FK on items/scopes/threads/sentry_issues/agent_runs/api_tokens), migrations v0006–v0010
-- Chunk 3: English enum rename migration (v0011), all code/templates updated to English values
-- Chunk 4: 17 MCP tools renamed to English, project isolation failsafe in MCP dispatch, `/projects` UI, setup wizard, project selector in navbar, public README
-
-**Multi-account** (branch `feat/multi-account`): accounts/users/grants model (`accounts`, `project_members`, account columns on users/projects), `create_account` service + super-admin UI (`/admin/accounts`) + owner member matrix (`/account/members`), per-project `viewer`/`editor` access, account isolation across MCP + REST + UI (`projects/access.py` chokepoint), migration `v0012` (backfills existing data into one default account). MCP token scope ≤ minter's role.
+All merged to `main`:
+- **OSS multi-project refactor**: standalone docker-compose + `.env.example`, `projects` table + `project_id` FKs, English enums (v0011), 17 English MCP tools with project isolation failsafe, `/projects` UI, setup wizard, public README.
+- **Multi-account**: accounts/users/grants model (`accounts`, `project_members`), `create_account` service + super-admin UI (`/admin/accounts`) + owner member matrix (`/account/members`), per-project `viewer`/`editor`, account isolation across MCP + REST + UI (`projects/access.py` chokepoint). MCP token scope ≤ minter's role.
+- **Backlog redesign + Archive** (spec 2026-07-06, shipped `v2026.07.06-1`): open-only default, FTS search with relevance order, board view, quick-filter chips, close-from-row (lifecycle-aware modal), group-by, `/registro` Archive (ISO-week groups, reason+commit from events, AI weekly summary), SQL ordering.
+- **i18n**: full UI in English (default) / Spanish / French — JSON catalogs + `t()`/`tn()`, language selector in navbar/login/setup (see Conventions).
 
 ---
 
@@ -37,7 +35,8 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 | `main.py` | `create_app`, lifespan (starts worker), mounts routers + `/mcp` (`mount_mcp`) |
 | `config.py` | `Settings` (env vars) |
 | `database.py` | engine, `SessionFactory`, `Base`, `get_db` |
-| `templates_config.py` | `Jinja2Templates` + globals + `fecha` filter |
+| `templates_config.py` | `Jinja2Templates` + globals (`t`/`tn`/`current_lang`/`LANGS`, lifecycle helpers) + `fecha` filter |
+| `i18n/` | JSON catalogs (`locales/{en,es,fr}.json`), `t()`/`tn()` (fallback lang→en→key), `resolve_lang` (session, default `en`) |
 | `auth/` | `User` (now `account_id`, `account_role` owner/member, `is_superadmin`)/`ApiToken`, bcrypt + SHA-256 tokens, deps (cookie **or** Bearer; `require_owner`/`require_superadmin`/`current_project_id`), login UI, `/setup` wizard |
 | `accounts/` | `Account` model (tenant), `service.py` (`create_account` — reusable for a future public signup), `members.py` (collaborator + grant matrix), router (`/admin/accounts` super-admin, `/account/members` owner) |
 | `projects/` | `Project` model (`account_id`-scoped, slug unique per account), service, **`access.py`** (isolation chokepoint: `accessible_project_ids`, `user_role_on_project`, `require_project_access`, `resolve_project_id`/`resolve_current_project`), router (`/projects/*`, `/ui/project/switch`) |
@@ -105,10 +104,11 @@ Items returned include `area` (name) and `thread_id` when set. Graph is item↔i
 
 ## Run locally + tests
 
-**No pgvector locally** (degrades gracefully — `embedding` is migration-only column). Postgres on `localhost:5432` (`efrain`/`efrain`), database `pulso_test`:
+**pgvector not required locally** (degrades gracefully — `embedding` is migration-only column). Point `TEST_DATABASE_URL` at any local Postgres with an empty database, and set `DEBUG=true` (without it the session cookie gets the `secure` flag and every UI test 303-redirects to login):
 
 ```bash
-TEST_DATABASE_URL="postgresql+asyncpg://efrain:efrain@localhost:5432/pulso_test" \
+TEST_DATABASE_URL="postgresql+asyncpg://<user>:<password>@localhost:5432/pulso_test" \
+  DEBUG=true SECRET_KEY=any-test-secret \
   python -m pytest tests/ -q
 ruff check app/ tests/
 python -m mypy app/
@@ -134,7 +134,8 @@ Triggers `deploy.yml`: multi-platform build (amd64+arm64) → push to GHCR → S
 
 ## Conventions
 
-- **English throughout**: all enum values, error messages, MCP tool names, and UI copy are English. Thread stages are the only exception (still Spanish — out of scope).
+- **English at the API level**: all enum values, API/MCP error messages, and MCP tool names are English. Thread stage *values* are the only exception (still Spanish — out of scope; display labels ARE translated via `stage.*`).
+- **i18n (UI copy)**: NEVER hardcode user-visible strings in templates or UI routers. Templates use the request-scoped Jinja globals `t("domain.key")` / `tn("domain.key", n)`; Python uses `app.i18n.t(key, resolve_lang(request))`. Catalogs: `app/i18n/locales/{en,es,fr}.json` (flat dot-namespaced keys; English is source of truth and fallback). Enum display labels: `t("status." ~ x)` / `type.*` / `origin.*` / `stage.*`. Language selector lives in the navbar (session-based, `GET /ui/lang/{code}`); default English. `tests/test_i18n.py` enforces catalog completeness, placeholder parity, and template coverage — adding a key to one catalog without the other two fails CI. Careful: a Jinja loop variable named `t` shadows the translation global — never use it.
 - **Every feature brings tests**; CI green before tagging.
 - **UI design system**: all tokens + `.p-*` component classes live in `app/templates/partials/_head.html` (Tailwind CDN + CSS variables; `darkMode:'class'`, light=Clay-cream / dark=warm near-black, per-project `--accent` from session). Never hardcode gray/blue palette classes in templates; never use opacity modifiers on semantic tokens (`bg-canvas/50` silently breaks — allowed only on `brand-*`/`success`/`warning`/`error`). Success feedback via `flash_success` (`app/ui/flash.py`); forms hitting handlers that return `204 + HX-Refresh` MUST be `hx-post` (plain forms dead-end on 204).
 - **LLM always via `app/ai/llm.py`** (isolated and mockable); degrades without API key, never breaks the worker.

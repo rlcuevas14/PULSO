@@ -118,7 +118,7 @@ async def import_jsonl(db: AsyncSession, path: Path) -> dict[str, int]:
         scope_name = normalized.pop("scope_name")
         if scope_name not in scope_cache:
             scope_cache[scope_name] = await resolve_scope(
-                db, scope_name, create=True, source_repo="efrain"
+                db, scope_name, create=True, source_repo="import"
             )
         scope = scope_cache[scope_name]
 
