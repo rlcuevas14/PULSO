@@ -405,6 +405,56 @@ async def test_backlog_group_by(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_board_dnd_valid_move(client: AsyncClient):
+    """Drag&drop válido: aplica la transición y devuelve el tablero re-renderizado."""
+    from app.items.models import Item
+
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, title="DnD movable", status="backlog")
+    r = await client.post(f"/ui/items/{item_id}/board-move",
+                          data={"status": "in-progress"},
+                          headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "board-root" in r.text and "DnD movable" in r.text  # board partial
+    assert "HX-Trigger" not in r.headers  # move was valid → no error toast
+    async for db in client.app.dependency_overrides[get_db]():
+        it = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one()
+        assert it.status == "in-progress"
+        break
+
+
+@pytest.mark.asyncio
+async def test_board_dnd_invalid_move_snaps_back(client: AsyncClient):
+    """Movimiento inválido por lifecycle: tablero sin cambios + toast vía HX-Trigger, no 422."""
+    from app.items.models import Item
+
+    _uid, pid = await _login(client)
+    # idea → in-review no es transición válida (matriz de lifecycle)
+    item_id, _ = await _seed_item(client, pid, title="DnD stuck", status="idea")
+    r = await client.post(f"/ui/items/{item_id}/board-move",
+                          data={"status": "in-review"},
+                          headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "board-root" in r.text
+    assert "pulso:toast" in r.headers.get("HX-Trigger", "")
+    async for db in client.app.dependency_overrides[get_db]():
+        it = (await db.execute(select(Item).where(Item.id == item_id))).scalar_one()
+        assert it.status == "idea"  # sin cambios
+        break
+
+
+@pytest.mark.asyncio
+async def test_board_grip_gated_by_write(client: AsyncClient):
+    """El grip de arrastre y can_write solo aparecen para quien puede escribir."""
+    _uid, pid = await _login(client)
+    await _seed_item(client, pid, title="Grip item", status="backlog")
+    r = await client.get("/backlog?view=board")
+    assert r.status_code == 200
+    assert 'data-can-write="1"' in r.text  # admin/owner puede escribir
+    assert "data-drag-handle" in r.text
+
+
+@pytest.mark.asyncio
 async def test_close_modal_endpoint(client: AsyncClient):
     _uid, pid = await _login(client)
     item_id, _ = await _seed_item(client, pid, status="backlog")

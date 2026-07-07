@@ -1,7 +1,13 @@
-"""Búsqueda full-text única sobre items (ts_rank / plainto_tsquery 'spanish').
+"""Búsqueda full-text única sobre items (ts_rank / websearch_to_tsquery 'spanish').
 
 Una sola implementación del FTS, consumida por REST (/items/search), el MCP
-(pulso_buscar) y la resolución por texto del grafo (relationships.resolve_query).
+(pulso_search) y la resolución por texto del grafo (relationships.resolve_query).
+
+Usa `websearch_to_tsquery` (no `plainto_tsquery`): acepta la sintaxis de buscador
+web — comillas para frases exactas, `OR` entre términos, y `-término` para
+excluir. `plainto_tsquery` hacía AND estricto de todos los términos (una consulta
+de 6 palabras no encontraba nada si faltaba una). Ambas toleran texto arbitrario
+del usuario sin lanzar excepción; el cambio solo relaja el matching.
 """
 
 from typing import Any
@@ -33,9 +39,9 @@ async def search_items(
         sql = f"""
             SELECT i.id, i.title, i.summary_md, i.type, i.status, i.scope_id,
                    s.name AS scope, i.effort_ai, i.impact_ai, i.stale_risk,
-                   ts_rank(i.search_vector, plainto_tsquery('spanish', :q)) AS rank
+                   ts_rank(i.search_vector, websearch_to_tsquery('spanish', :q)) AS rank
             FROM items i JOIN scopes s ON s.id = i.scope_id
-            WHERE i.search_vector @@ plainto_tsquery('spanish', :q) {pclause_j}
+            WHERE i.search_vector @@ websearch_to_tsquery('spanish', :q) {pclause_j}
             ORDER BY rank DESC, i.id
             LIMIT :limit
         """
@@ -43,9 +49,9 @@ async def search_items(
         sql = f"""
             SELECT id, title, summary_md, type, status, scope_id,
                    effort_ai, impact_ai, stale_risk,
-                   ts_rank(search_vector, plainto_tsquery('spanish', :q)) AS rank
+                   ts_rank(search_vector, websearch_to_tsquery('spanish', :q)) AS rank
             FROM items
-            WHERE search_vector @@ plainto_tsquery('spanish', :q) {pclause}
+            WHERE search_vector @@ websearch_to_tsquery('spanish', :q) {pclause}
             ORDER BY rank DESC, id
             LIMIT :limit
         """
