@@ -20,7 +20,8 @@
   "idea":      "bg-brand-lavender/25",
 } %}
 
-<div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
+<div id="board-root" data-can-write="{{ '1' if can_write else '' }}"
+     class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
   {% for status in board_statuses %}
   {% set col_items = by_status.get(status, []) %}
   {% set sc_pair = SC.get(status, ("bg-surface-strong text-muted", "")) %}
@@ -32,11 +33,18 @@
       <span class="text-xs text-muted font-medium">{{ col_items|length }}</span>
     </div>
 
-    {# Cards #}
+    {# Drop zone: SortableJS makes each column a target; cards carry their id. #}
+    <div class="p-board-col flex flex-col gap-2 min-h-[2.5rem]" data-board-col data-status="{{ status }}">
     {% for item in col_items %}
-    <div class="p-card p-3 flex flex-col gap-2">
+    <div class="p-card p-3 flex flex-col gap-2" data-card data-item-id="{{ item.id }}">
       <div class="flex items-start justify-between gap-1">
-        <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline leading-snug">{{ item.title }}</a>
+        <div class="flex items-start gap-1.5 min-w-0">
+          {% if can_write %}
+          <span data-drag-handle title="{{ t('backlog.drag_hint') }}"
+                class="cursor-grab active:cursor-grabbing text-muted select-none leading-none pt-0.5 shrink-0">⠿</span>
+          {% endif %}
+          <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline leading-snug">{{ item.title }}</a>
+        </div>
         <div class="flex gap-1 shrink-0 text-sm leading-none pt-0.5">
           {% if blocked_ids and item.id|string in blocked_ids %}<span title="{{ t('backlog.tip_blocked') }}">⛔</span>{% endif %}
           {% if ready_ids and item.id|string in ready_ids %}<span title="{{ t('backlog.tip_agent_ready') }}">🤖</span>{% endif %}
@@ -72,6 +80,7 @@
     {% if not col_items %}
     <div class="text-xs text-muted text-center py-4 opacity-60">{{ t("backlog.board_empty") }}</div>
     {% endif %}
+    </div>
   </div>
   {% endfor %}
 </div>

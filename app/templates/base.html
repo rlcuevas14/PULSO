@@ -177,6 +177,13 @@
       document.body.addEventListener("htmx:sendError", function () {
         showToast({{ t("toast.offline") | tojson }});
       });
+
+      // Toast disparado por el backend vía HX-Trigger (p. ej. movimiento inválido
+      // en el tablero: la respuesta re-pinta el tablero Y pide mostrar el error).
+      document.body.addEventListener("pulso:toast", function (event) {
+        var d = event.detail || {};
+        showToast(d.message || "", d.kind || "error");
+      });
     })();
   </script>
 

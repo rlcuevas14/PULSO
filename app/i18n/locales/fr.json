@@ -49,6 +49,7 @@
   "backlog.commit_aria": "Commit ou SHA",
   "backlog.commit_placeholder": "commit/SHA (facultatif)",
   "backlog.confirm_close": "Confirmer la fermeture",
+  "backlog.drag_hint": "Glissez pour déplacer entre colonnes",
   "backlog.effort": "Effort",
   "backlog.filter_by_effort": "Filtrer par effort",
   "backlog.filter_by_origin": "Filtrer par origine",

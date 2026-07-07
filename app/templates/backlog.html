@@ -188,4 +188,53 @@
 
 {% include "partials/_new_item_modal.html" %}
 
+{# ── Board drag & drop (SortableJS) ──
+   Cards move between status columns; the drop posts to /board-move, which
+   validates the lifecycle transition and returns the re-rendered board
+   (counts, blocked/ready recomputed). Invalid moves snap back + toast. #}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+<script>
+  (function () {
+    var instances = [];
+
+    function boardMove(itemId, toStatus) {
+      var form = document.getElementById("filters");
+      var values = { status: toStatus };
+      if (form) new FormData(form).forEach(function (v, k) { values[k] = v; });
+      // Partial swap of the board; server is source of truth for derived state.
+      window.htmx.ajax("POST", "/ui/items/" + itemId + "/board-move", {
+        target: "#items-view", swap: "innerHTML", values: values
+      });
+    }
+
+    function initBoard() {
+      var root = document.getElementById("board-root");
+      instances.forEach(function (s) { s.destroy(); });
+      instances = [];
+      if (!root || !root.dataset.canWrite || !window.Sortable) return;
+      root.querySelectorAll("[data-board-col]").forEach(function (col) {
+        instances.push(window.Sortable.create(col, {
+          group: "pulso-board",
+          animation: 150,
+          sort: false,                 // no reordering within a column (no stored rank yet)
+          draggable: "[data-card]",
+          handle: "[data-drag-handle]",
+          ghostClass: "opacity-40",
+          onEnd: function (evt) {
+            var to = evt.to.dataset.status, from = evt.from.dataset.status;
+            if (!to || to === from) return;   // same column → nothing to persist
+            boardMove(evt.item.dataset.itemId, to);
+          }
+        }));
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", initBoard);
+    // Re-init after every board swap (filter change, view toggle, or a move).
+    document.body.addEventListener("htmx:afterSwap", function (e) {
+      if (e.target && e.target.id === "items-view") initBoard();
+    });
+  })();
+</script>
+
 {% endblock %}

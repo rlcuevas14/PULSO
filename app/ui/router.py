@@ -149,10 +149,11 @@ async def dashboard(
 _BOARD_STATUSES = ["idea", "backlog", "spec", "in-progress", "in-review", "blocked"]
 
 
-@router.get("/backlog", response_class=HTMLResponse)
-async def backlog(
+async def _backlog_context(
     request: Request,
-    # existing params
+    db: AsyncSession,
+    user: User,
+    *,
     scope: str | None = None,
     status: str | None = None,
     item_type: str | None = None,
@@ -160,19 +161,22 @@ async def backlog(
     stale: bool | None = None,
     graph_blocked: bool | None = None,
     order: str = "priority",
-    # new params
-    show: str = "open",         # "open" | "all" | "closed"
-    q: str | None = None,       # FTS search
+    show: str = "open",
+    q: str | None = None,
     priority: str | None = None,
     effort: str | None = None,
     quickwins: bool = False,
     urgent: bool = False,
     agent_ready: bool = False,
-    view: str = "list",         # "list" | "board"
+    view: str = "list",
     group: str = "",
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_user_ui),
-):
+) -> dict:
+    """Construye el contexto del backlog (items filtrados + estado derivado + board/group).
+
+    Compartido por GET /backlog y POST /ui/items/{id}/board-move, para que un
+    movimiento por drag&drop re-renderice el tablero con los MISMOS filtros activos
+    y recalcule bloqueos/ready/contadores (mover una tarjeta puede desbloquear otras).
+    """
     from sqlalchemy import case as sa_case
 
     from app.items.search import search_items as _fts
@@ -277,6 +281,10 @@ async def backlog(
     )).scalars().all())
     scope_map = {s.id: s.name for s in scopes}
 
+    # can_write: gate del drag&drop en el tablero (los viewers ven pero no mueven).
+    role = await user_role_on_project(db, user, pid)
+    can_write = role is not None and role != "viewer"
+
     ctx: dict = {
         "user": user,
         "items": items,
@@ -285,6 +293,7 @@ async def backlog(
         "blocked_ids": blocked_ids,
         "unblocker_ids": unblocker_ids,
         "ready_ids": ready_ids,
+        "can_write": can_write,
         "recent_touch": {str(i.id): _recent_touch(i) for i in items},
         "filters": {
             "scope": scope, "status": status, "type": item_type, "origen": origen,
@@ -330,6 +339,37 @@ async def backlog(
         else:
             ctx["groups"] = sorted(grouped.items())
 
+    return ctx
+
+
+@router.get("/backlog", response_class=HTMLResponse)
+async def backlog(
+    request: Request,
+    scope: str | None = None,
+    status: str | None = None,
+    item_type: str | None = None,
+    origen: str | None = None,
+    stale: bool | None = None,
+    graph_blocked: bool | None = None,
+    order: str = "priority",
+    show: str = "open",         # "open" | "all" | "closed"
+    q: str | None = None,       # FTS search
+    priority: str | None = None,
+    effort: str | None = None,
+    quickwins: bool = False,
+    urgent: bool = False,
+    agent_ready: bool = False,
+    view: str = "list",         # "list" | "board"
+    group: str = "",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    ctx = await _backlog_context(
+        request, db, user, scope=scope, status=status, item_type=item_type,
+        origen=origen, stale=stale, graph_blocked=graph_blocked, order=order,
+        show=show, q=q, priority=priority, effort=effort, quickwins=quickwins,
+        urgent=urgent, agent_ready=agent_ready, view=view, group=group,
+    )
     if request.headers.get("HX-Request"):
         if view == "board":
             return templates.TemplateResponse(request, "partials/items_board.html", ctx)
@@ -475,6 +515,65 @@ async def ui_transition(
     except service.TransitionError as e:
         return Response(content=str(e), status_code=422)
     return _refresh()
+
+
+@router.post("/ui/items/{item_id}/board-move", response_class=HTMLResponse)
+async def ui_board_move(
+    item_id: uuid.UUID,
+    request: Request,
+    status: str = Form(...),
+    # Passthrough de filtros para re-renderizar el tablero tal como estaba.
+    scope: str | None = Form(None),
+    item_type: str | None = Form(None),
+    origen: str | None = Form(None),
+    stale: bool | None = Form(None),
+    graph_blocked: bool | None = Form(None),
+    order: str = Form("priority"),
+    q: str | None = Form(None),
+    priority: str | None = Form(None),
+    effort: str | None = Form(None),
+    quickwins: bool = Form(False),
+    urgent: bool = Form(False),
+    agent_ready: bool = Form(False),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    """Drag&drop del tablero: aplica la transición y devuelve el tablero re-renderizado.
+
+    Movimiento inválido (matriz de lifecycle) → devuelve el tablero SIN cambios (la
+    tarjeta vuelve a su columna) + un toast de error vía HX-Trigger. Nunca 422: el
+    swap parcial siempre repinta un tablero coherente.
+    """
+    import json as _json
+
+    item = await service.get_item(db, item_id)
+    if item is None:
+        return Response(status_code=404)
+    guard = await _guard_row(db, user, item.project_id, write=True)
+    if guard is not None:
+        return guard
+
+    invalid: str | None = None
+    try:
+        await service.apply_transition(db, item, status, user.email)
+        await db.commit()
+    except service.TransitionError as e:
+        # apply_transition valida ANTES de mutar, así que la sesión sigue limpia
+        # (nada que revertir); un rollback aquí expiraría los objetos del re-render.
+        invalid = str(e)
+
+    ctx = await _backlog_context(
+        request, db, user, scope=scope, item_type=item_type, origen=origen,
+        stale=stale, graph_blocked=graph_blocked, order=order, q=q,
+        priority=priority, effort=effort, quickwins=quickwins, urgent=urgent,
+        agent_ready=agent_ready, view="board", show="open", group="",
+    )
+    resp = templates.TemplateResponse(request, "partials/items_board.html", ctx)
+    if invalid:
+        resp.headers["HX-Trigger"] = _json.dumps(
+            {"pulso:toast": {"message": invalid, "kind": "error"}}
+        )
+    return resp
 
 
 @router.post("/ui/items/{item_id}/close")
