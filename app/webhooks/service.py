@@ -55,43 +55,75 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
-async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
+def parse_sentry_payload(payload: dict) -> dict[str, Any]:
+    """Normaliza las tres formas de entrada (issue webhook / event_alert / plugin legacy)
+    en un dict único. ValueError si no hay id de issue (spec 2026-07-10 §4.3)."""
+    data = payload.get("data") or {}
+    issue = data.get("issue") or payload.get("issue")
+    event = data.get("event")
+    if issue:                       # Internal Integration, resource=issue
+        src, sentry_id = issue, issue.get("id")
+        proj = issue.get("project")
+        slug = proj.get("slug") if isinstance(proj, dict) else (str(proj) if proj else None)
+        web_url = issue.get("web_url") or issue.get("permalink")
+    elif event:                     # Internal Integration, resource=event_alert
+        src, sentry_id = event, event.get("issue_id")
+        slug = None                 # los payloads de alerta solo traen project id numérico
+        web_url = event.get("web_url")
+    else:                           # plugin legacy por proyecto (plano, sin firma)
+        src, sentry_id = payload, payload.get("id")
+        proj = payload.get("project")
+        slug = str(proj) if proj else None
+        web_url = payload.get("url")
+    if not sentry_id:
+        raise ValueError("Falta el id del issue de Sentry")
+    title = _sanitize(src.get("title") or src.get("culprit") or src.get("message")
+                      or "Sentry issue", 500)
+    level = src.get("level", "error")
+    if level not in ("error", "warning", "info"):
+        level = "error"
+    try:
+        count = int(str(src.get("count") or 1))
+    except (TypeError, ValueError):
+        count = 1
+    return {"sentry_id": str(sentry_id), "title": title, "level": level,
+            "slug": (slug or "")[:60] or None, "web_url": web_url, "count": count,
+            "first_seen": _parse_dt(src.get("firstSeen")),
+            "last_seen": _parse_dt(src.get("lastSeen"))}
+
+
+async def ingest_sentry(
+    db: AsyncSession,
+    payload: dict,
+    *,
+    account_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+) -> dict:
     """Upsert idempotente en sentry_issues por sentry_issue_id (UNIQUE).
 
     Política: el error aterriza en el CONTENEDOR sentry_issues (no en el backlog). La
     promoción al backlog requiere análisis: la hace el triage IA (clasifica el ruido) y/o
     el owner manualmente desde /incidentes. Dedup: el mismo issue incrementa events_count.
+    account_id/project_id (v0017) los resuelve la ruta tokenizada; la ruta legacy no los tiene.
     """
-    data = payload.get("data", {}).get("issue") or payload.get("issue") or payload
-    sentry_id = str(data.get("id") or payload.get("id") or "")
-    if not sentry_id:
-        logger.warning("ingest_sentry: payload sin id de issue, se descarta")
-        raise ValueError("Falta el id del issue de Sentry")
-
-    title = _sanitize(data.get("title") or data.get("culprit") or "Sentry issue", 500)
-    project = str(data.get("project", {}).get("slug") if isinstance(data.get("project"), dict)
-                  else data.get("project") or "desconocido")[:60]
-    level = data.get("level", "error")
-    if level not in ("error", "warning", "info"):
-        level = "error"
-    web_url = data.get("web_url") or data.get("permalink")
+    parsed = parse_sentry_payload(payload)
+    sentry_id = parsed["sentry_id"]
 
     issue = (await db.execute(
         select(SentryIssue).where(SentryIssue.sentry_issue_id == sentry_id)
     )).scalar_one_or_none()
-    try:
-        events = int(str(data.get("count") or 1))
-    except (TypeError, ValueError):
-        events = 1
     now = datetime.now(timezone.utc)
     # Fechas REALES del error en Sentry (no la hora de ingesta).
-    first_seen = _parse_dt(data.get("firstSeen")) or now
-    last_seen = _parse_dt(data.get("lastSeen")) or now
+    first_seen = parsed["first_seen"] or now
+    last_seen = parsed["last_seen"] or now
     if issue is None:
         issue = SentryIssue(
-            sentry_issue_id=sentry_id, project=project, title=title, level=level,
-            status="new", events_count=events, first_seen=first_seen, last_seen=last_seen,
-            payload={"sanitized_title": title, "web_url": web_url},
+            sentry_issue_id=sentry_id, project=parsed["slug"] or "desconocido",
+            title=parsed["title"], level=parsed["level"],
+            status="new", events_count=parsed["count"],
+            first_seen=first_seen, last_seen=last_seen,
+            account_id=account_id, project_id=project_id,
+            payload={"sanitized_title": parsed["title"], "web_url": parsed["web_url"]},
         )
         db.add(issue)
         created = True
@@ -102,6 +134,11 @@ async def ingest_sentry(db: AsyncSession, payload: dict) -> dict:
     else:
         issue.events_count += 1
         issue.last_seen = last_seen
+        # Sanar filas viejas: si ahora conocemos el ruteo, atarlas (dedup path).
+        if issue.project_id is None and project_id is not None:
+            issue.project_id = project_id
+        if issue.account_id is None and account_id is not None:
+            issue.account_id = account_id
         created = False
     await db.flush()
 
