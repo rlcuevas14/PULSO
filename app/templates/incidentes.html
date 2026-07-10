@@ -34,12 +34,6 @@
     </p>
     <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
           hx-indicator="#backfill-submit" class="space-y-3 text-sm">
-      <input name="org" required placeholder="{{ t('incidents.backfill_org_placeholder') }}" aria-label="{{ t('incidents.backfill_org_aria') }}"
-             class="p-input">
-      <input name="project" required placeholder="{{ t('incidents.backfill_project_placeholder') }}" aria-label="{{ t('incidents.backfill_project_aria') }}"
-             class="p-input">
-      <input name="token" type="password" required placeholder="{{ t('incidents.backfill_token_placeholder') }}" aria-label="{{ t('incidents.backfill_token_aria') }}"
-             class="p-input">
       <input name="query" value="is:unresolved" aria-label="{{ t('incidents.backfill_query_aria') }}"
              class="p-input"
              title="{{ t('incidents.backfill_query_title') }}">

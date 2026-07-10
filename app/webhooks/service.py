@@ -279,7 +279,10 @@ async def fetch_sentry_issues(
     return data if isinstance(data, list) else []
 
 
-async def backfill_issues(db: AsyncSession, issues: list[dict], project: str) -> dict:
+async def backfill_issues(
+    db: AsyncSession, issues: list[dict], project: str, *,
+    account_id: uuid.UUID | None = None, project_id: uuid.UUID | None = None,
+) -> dict:
     """Ingiere al contenedor cada issue traído de la API de Sentry (dedup por id)."""
     ingested = 0
     for iss in issues:
@@ -294,7 +297,7 @@ async def backfill_issues(db: AsyncSession, issues: list[dict], project: str) ->
             "lastSeen": iss.get("lastSeen"),
         }}}
         try:
-            await ingest_sentry(db, payload)
+            await ingest_sentry(db, payload, account_id=account_id, project_id=project_id)
             ingested += 1
         except ValueError:
             continue  # issue sin id → saltar

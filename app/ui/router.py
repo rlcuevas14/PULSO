@@ -1005,27 +1005,41 @@ async def ui_ignore_issue(
 @router.post("/ui/incidentes/backfill")
 async def ui_backfill_sentry(
     request: Request,
-    org: str = Form(...),
-    project: str = Form(...),
-    token: str = Form(...),
     query: str = Form("is:unresolved"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    """Importa el histórico de errores desde la API de Sentry (solo owner)."""
+    """Importa el histórico desde la API de Sentry usando la conexión de la cuenta
+    + el slug del proyecto actual (solo owner). Spec 2026-07-10 §4.5."""
     if user.account_role != "owner":
         msg = _t("admin.unauthorized", resolve_lang(request))
         return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
+    from app.projects.models import Project
+    from app.webhooks import connection as sconn
     from app.webhooks import service as wservice
 
-    try:
-        issues = await wservice.fetch_sentry_issues(token, org, project, query)
-    except Exception as e:  # error de red / token / proyecto inválido
-        msg = _t("incidents.backfill_error", resolve_lang(request), error=e)
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
-    result = await wservice.backfill_issues(db, issues, project)
-    await db.commit()
     lang = resolve_lang(request)
+    pid = await _project_id(db, user, request)
+    project = await db.get(Project, pid)
+    conn = await sconn.outbound(db, user.account_id)
+    if conn is None or not conn.org_slug:
+        msg = _t("incidents.backfill_not_configured", lang)
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+    if project is None or not project.sentry_project_slug:
+        msg = _t("incidents.backfill_no_slug", lang)
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+    try:
+        issues = await wservice.fetch_sentry_issues(
+            conn.api_token or "", conn.org_slug, project.sentry_project_slug, query,
+            base_url=sconn.effective_base_url(conn),
+        )
+    except Exception as e:  # error de red / token / proyecto inválido
+        msg = _t("incidents.backfill_error", lang, error=e)
+        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+    result = await wservice.backfill_issues(
+        db, issues, project.sentry_project_slug, account_id=user.account_id, project_id=pid,
+    )
+    await db.commit()
     return HTMLResponse(
         f'<div class="text-sm text-green-700">'
         f'{_t("incidents.backfill_ok", lang, n=result["ingested"], total=result["total"])} '
