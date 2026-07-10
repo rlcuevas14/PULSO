@@ -87,10 +87,11 @@ async def test_hx_swap_chip_active_state(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_board_move_with_empty_form_bools(client: AsyncClient):
     """El drag&drop postea el mismo form: bools vacíos no deben romper el 200-siempre."""
+    from sqlalchemy import select
+
     from app.items.models import Item
     from app.projects.models import Project
     from app.scopes.models import Scope
-    from sqlalchemy import select
 
     account_id = await _login_owner(client)
     async for db in client.app.dependency_overrides[get_db]():
