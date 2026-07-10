@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ d.name }}{% endblock %}
+{% block content %}
+{% include "partials/_management_tabs.html" %}
+
+<a href="/management/documentos" class="text-sm text-muted hover:text-ink">&larr; {{ t("management.doc.back") }}</a>
+
+<div class="flex flex-wrap items-start justify-between gap-3 mt-2 mb-5">
+  <div>
+    <h2 class="text-xl font-semibold text-ink">{{ d.name }}</h2>
+    <div class="flex items-center gap-2 mt-1 text-sm text-muted">
+      <span class="p-pill bg-surface-strong text-ink font-mono uppercase">{{ d.doc_type }}</span>
+      <span class="p-pill bg-brand-lavender/25 text-ink">{{ t("dstatus." ~ d.status) }}</span>
+      <span>{{ comp_names.get(d.compartment_id|string, "") }}</span>
+      {% if d.owner %}<span>· {{ d.owner }}</span>{% endif %}
+    </div>
+  </div>
+  <a href="/management/documentos/{{ d.id }}/download" class="p-btn p-btn-primary p-btn-sm">{{ t("management.doc.download") }}</a>
+</div>
+
+{% if d.summary_md %}<p class="text-sm text-body mb-5">{{ d.summary_md }}</p>{% endif %}
+
+{# Preview — safe by type. html is sandboxed (no scripts) against XSS; md is escaped text. #}
+<div class="mb-6">
+  <h3 class="p-label mb-2">{{ t("management.doc.preview") }}</h3>
+  {% if d.doc_type == "md" %}
+  <pre class="p-card p-4 text-sm text-body whitespace-pre-wrap overflow-x-auto">{{ text_preview }}</pre>
+  {% elif d.doc_type == "html" %}
+  <iframe sandbox title="{{ d.name }}" class="w-full p-card"
+          style="height:70vh;background:#fff" src="/management/documentos/{{ d.id }}/download?disposition=inline"></iframe>
+  {% elif d.doc_type == "pdf" %}
+  <iframe title="{{ d.name }}" class="w-full p-card"
+          style="height:75vh" src="/management/documentos/{{ d.id }}/download?disposition=inline"></iframe>
+  {% else %}
+  <div class="p-card p-6 text-center text-muted text-sm">{{ t("management.doc.no_preview") }}</div>
+  {% endif %}
+</div>
+
+{# Versions (append-only history) #}
+<h3 class="p-label mb-2">{{ t("management.doc.versions") }}</h3>
+<div class="p-card divide-y divide-hairline">
+  {% for v in versions %}
+  <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
+    <span class="font-medium text-ink w-10">v{{ v.version_no }}</span>
+    <span class="text-muted flex-1 min-w-0 truncate">
+      {{ v.created_at | fecha }} · {{ (v.size_bytes / 1024) | round(1) }} KB{% if v.note %} · {{ v.note }}{% endif %}
+    </span>
+    <a href="/management/documentos/{{ d.id }}/download?v={{ v.version_no }}" class="text-muted hover:text-ink">{{ t("management.doc.download") }}</a>
+    {% if v.version_no != d.current_version %}
+    <form action="/ui/management/documentos/{{ d.id }}/rollback" method="post" class="inline">
+      <input type="hidden" name="version_no" value="{{ v.version_no }}">
+      <button type="submit" class="text-muted hover:text-ink" style="color:var(--accent)">{{ t("management.doc.rollback") }}</button>
+    </form>
+    {% else %}
+    <span class="p-pill bg-success/15 text-ink">{{ t("management.doc.current") }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

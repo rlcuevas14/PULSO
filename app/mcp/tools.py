@@ -5,8 +5,10 @@ diverging from UI/REST behavior. Business errors propagate as ToolError → isEr
 All tools are project-scoped: the token's project_id is the isolation boundary.
 """
 
+import base64
 import logging
 import uuid
+from datetime import date
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -18,6 +20,7 @@ from app.items import graph, relationships, service
 from app.items.lifecycle import valid_transition
 from app.items.models import Item
 from app.items.search import search_items
+from app.management import service as mgmt
 from app.scopes import service as scopes_service
 from app.scopes.models import Scope
 
@@ -586,3 +589,188 @@ async def pulso_incident_resolve(db: AsyncSession, token: ApiToken, args: dict) 
         actor=await actor_for(db, token),
         commit_sha=args.get("commit_sha"),
     )
+
+
+# ---------- Management tools (documentos / pendientes / gantt) ----------
+#
+# The PMO tab as a memory bank for Claude: documents (deliverables), pendings, and the
+# Gantt plan. The Gantt is edited ONLY here (the UI renders it read-only). All project-scoped.
+
+_INLINE_LIMIT = 256 * 1024  # cap for inlining deliverable content into the agent context
+
+
+def _date_or_error(value: Any, field: str) -> date:
+    try:
+        return date.fromisoformat(str(value))
+    except (ValueError, TypeError) as e:
+        raise ToolError(f"{field} must be an ISO date (YYYY-MM-DD): '{value}'.") from e
+
+
+def _deliverable_brief(d: Any) -> dict[str, Any]:
+    return {"id": str(d.id), "name": d.name, "compartment_id": str(d.compartment_id),
+            "doc_type": d.doc_type, "status": d.status, "owner": d.owner,
+            "summary_md": d.summary_md, "current_version": d.current_version}
+
+
+def _pending_brief(p: Any) -> dict[str, Any]:
+    return {"id": str(p.id), "title": p.title, "owner": p.owner, "status": p.status,
+            "due_date": p.due_date.isoformat() if p.due_date else None,
+            "detail_md": p.detail_md,
+            "plan_task_id": str(p.plan_task_id) if p.plan_task_id else None}
+
+
+def _plan_task_brief(t: Any) -> dict[str, Any]:
+    return {"id": str(t.id), "name": t.name,
+            "parent_id": str(t.parent_id) if t.parent_id else None,
+            "start_date": t.start_date.isoformat() if t.start_date else None,
+            "end_date": t.end_date.isoformat() if t.end_date else None,
+            "progress": t.progress, "is_milestone": t.is_milestone,
+            "deps": t.deps or [], "sort_order": t.sort_order}
+
+
+# --- documentos ---
+
+async def pulso_doc_list(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
+    pid = _pid(token)
+    comp_id = _uuid_or_error(args["compartment_id"], "compartment_id") if args.get("compartment_id") else None
+    try:
+        rows = await mgmt.list_deliverables(
+            db, pid, compartment_id=comp_id,
+            status=(args.get("status") or None), q=(args.get("q") or None),
+        )
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    comps = {str(c.id): c.name for c in await mgmt.list_compartments(db, pid)}
+    return [{**_deliverable_brief(d), "compartment": comps.get(str(d.compartment_id))} for d in rows]
+
+
+async def pulso_doc_get(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    did = _uuid_or_error(args.get("deliverable_id"), "deliverable_id")
+    d = await mgmt.get_deliverable(db, pid, did)
+    if d is None:
+        raise ToolError("Deliverable not found in this project.")
+    versions = await mgmt.list_versions(db, d.id)
+    out: dict[str, Any] = {
+        **_deliverable_brief(d),
+        "versions": [{"version_no": v.version_no, "size_bytes": v.size_bytes, "note": v.note,
+                      "created_at": v.created_at.isoformat()} for v in versions],
+    }
+    if args.get("include_content"):
+        _, v = await mgmt.get_version(db, pid, d.id)
+        if v.size_bytes > _INLINE_LIMIT:
+            out["content_note"] = (
+                f"content is {v.size_bytes} bytes; too large to inline — download via the Management UI."
+            )
+        elif d.doc_type in ("md", "html"):
+            out["content_text"] = v.content.decode("utf-8", errors="replace")
+        else:
+            out["content_base64"] = base64.b64encode(v.content).decode("ascii")
+    return out
+
+
+async def pulso_doc_put(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    b64 = args.get("content_base64")
+    raw = args.get("content")
+    if b64:
+        try:
+            content = base64.b64decode(b64, validate=True)
+        except Exception as e:
+            raise ToolError("content_base64 is not valid base64.") from e
+    elif raw is not None:
+        content = str(raw).encode("utf-8")
+    else:
+        raise ToolError("provide content (text) or content_base64 (binary).")
+    try:
+        d, created = await mgmt.put_deliverable(
+            db, pid, compartment_name=args.get("compartment", ""), name=args.get("name", ""),
+            doc_type=args.get("doc_type", ""), content=content,
+            actor=await actor_for(db, token), summary_md=args.get("summary_md"),
+            status=args.get("status"), owner=args.get("owner"), note=args.get("note"),
+        )
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    return {**_deliverable_brief(d), "new_version": created}
+
+
+# --- pendientes ---
+
+async def pulso_pending_list(db: AsyncSession, token: ApiToken, args: dict) -> list[dict]:
+    pid = _pid(token)
+    ptid = _uuid_or_error(args["plan_task_id"], "plan_task_id") if args.get("plan_task_id") else None
+    rows = await mgmt.list_pendings(
+        db, pid, status=(args.get("status") or None), owner=(args.get("owner") or None),
+        overdue=bool(args.get("overdue")), plan_task_id=ptid,
+    )
+    return [_pending_brief(p) for p in rows]
+
+
+async def pulso_pending_upsert(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    pending_id = _uuid_or_error(args["pending_id"], "pending_id") if args.get("pending_id") else None
+    due = _date_or_error(args["due_date"], "due_date") if args.get("due_date") else None
+    ptid = _uuid_or_error(args["plan_task_id"], "plan_task_id") if args.get("plan_task_id") else None
+    try:
+        p = await mgmt.upsert_pending(
+            db, pid, actor=await actor_for(db, token), pending_id=pending_id,
+            title=args.get("title"), detail_md=args.get("detail_md"), owner=args.get("owner"),
+            status=args.get("status"), due_date=due, plan_task_id=ptid,
+        )
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    return _pending_brief(p)
+
+
+async def pulso_pending_complete(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    pending_id = _uuid_or_error(args.get("pending_id"), "pending_id")
+    try:
+        p = await mgmt.complete_pending(db, pid, pending_id, await actor_for(db, token))
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    return _pending_brief(p)
+
+
+# --- gantt (plan) ---
+
+async def pulso_gantt_get(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    from app.management import gantt as _gantt
+    pid = _pid(token)
+    tasks = await mgmt.list_plan_tasks(db, pid)
+    start, end = _gantt.plan_bounds(mgmt.plan_tasks_to_dicts(tasks))
+    return {
+        "tasks": [_plan_task_brief(t) for t in tasks],
+        "start": start.isoformat() if start else None,
+        "end": end.isoformat() if end else None,
+    }
+
+
+async def pulso_gantt_task_upsert(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    task_id = _uuid_or_error(args["task_id"], "task_id") if args.get("task_id") else None
+    parent_id = _uuid_or_error(args["parent_id"], "parent_id") if args.get("parent_id") else None
+    start = _date_or_error(args["start_date"], "start_date") if args.get("start_date") else None
+    end = _date_or_error(args["end_date"], "end_date") if args.get("end_date") else None
+    deps = args.get("deps")
+    if deps is not None and not isinstance(deps, list):
+        raise ToolError("deps must be a list of plan_task ids.")
+    try:
+        t = await mgmt.upsert_plan_task(
+            db, pid, actor=await actor_for(db, token), task_id=task_id, name=args.get("name"),
+            parent_id=parent_id, start_date=start, end_date=end, progress=args.get("progress"),
+            is_milestone=args.get("is_milestone"), deps=deps, sort_order=args.get("sort_order"),
+        )
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    return _plan_task_brief(t)
+
+
+async def pulso_gantt_task_remove(db: AsyncSession, token: ApiToken, args: dict) -> dict:
+    pid = _pid(token)
+    task_id = _uuid_or_error(args.get("task_id"), "task_id")
+    try:
+        await mgmt.remove_plan_task(db, pid, task_id, await actor_for(db, token))
+    except mgmt.ManagementError as e:
+        raise ToolError(str(e)) from e
+    return {"removed": str(task_id)}

@@ -19,11 +19,14 @@ from app.auth.models import ApiToken
 from app.auth.service import verify_api_token
 from app.database import get_db
 from app.enums import (
+    DELIVERABLE_STATUSES,
+    DELIVERABLE_TYPES,
     EFFORTS,
     ITEM_STATUSES,
     ITEM_TYPES,
     LIST_ORDERS,
     ORIGENES,
+    PENDING_STATUSES,
     RELATIONS,
     SENTRY_STATUSES,
     TERMINAL,
@@ -60,6 +63,16 @@ _CONSTRAINT_HELP: dict[str, str] = {
         "invalid artifact kind; use one of: investigacion, historias, spec, notas, decision"
     ),
     "scopes_name_key": "an area with that name already exists (area names are unique per project)",
+    "deliverables_doc_type_check": f"invalid doc_type; use one of: {', '.join(DELIVERABLE_TYPES)}",
+    "deliverables_status_check": (
+        f"invalid deliverable status; use one of: {', '.join(DELIVERABLE_STATUSES)}"
+    ),
+    "deliverables_compartment_name_uniq": (
+        "a deliverable with that name already exists in this compartment"
+    ),
+    "compartments_project_name_uniq": "a compartment with that name already exists in this project",
+    "pendings_status_check": f"invalid pending status; use one of: {', '.join(PENDING_STATUSES)}",
+    "plan_tasks_progress_check": "progress must be between 0 and 100",
 }
 
 
@@ -231,6 +244,93 @@ TOOLS: dict[str, Tool] = {
         _scope_obj({"id": _STR, "note": _STR, "commit_sha": _STR,
                     "resolve_in_sentry": {"type": "boolean"}}, ["id"]),
         tools.pulso_incident_resolve, write=True,
+    ),
+    # ----- Management: documentos -----
+    "pulso_doc_list": Tool(
+        "pulso_doc_list",
+        "List deliverables (documents) in the Management tab. Metadata only (no bytes). "
+        "Filter by compartment_id, status, or q (name/summary substring).",
+        _scope_obj({"compartment_id": _STR,
+                    "status": _enum(DELIVERABLE_STATUSES, "filter by status"),
+                    "q": {**_STR, "description": "search name/summary"}}, []),
+        tools.pulso_doc_list, write=False,
+    ),
+    "pulso_doc_get": Tool(
+        "pulso_doc_get",
+        "Deliverable detail: metadata + version history. include_content=true inlines the "
+        "current version (text for md/html, base64 for binary) up to 256 KB; larger → download via UI.",
+        _scope_obj({"deliverable_id": _STR, "include_content": {"type": "boolean"}},
+                   ["deliverable_id"]),
+        tools.pulso_doc_get, write=False,
+    ),
+    "pulso_doc_put": Tool(
+        "pulso_doc_put",
+        "Create a deliverable or append a new version (append-only; identical bytes are a no-op). "
+        "Auto-creates the compartment. Pass content (text) for md/html or content_base64 (binary). "
+        "doc_type ∈ docx|pdf|html|md|xlsx|pptx. Max 10 MB.",
+        _scope_obj({"compartment": _STR, "name": _STR,
+                    "doc_type": _enum(DELIVERABLE_TYPES, "deliverable type"),
+                    "content": {**_STR, "description": "raw text (md/html)"},
+                    "content_base64": {**_STR, "description": "base64 bytes (any type)"},
+                    "summary_md": {**_STR, "description": "short summary for search/preview"},
+                    "status": _enum(DELIVERABLE_STATUSES, "status (default draft)"),
+                    "owner": _STR, "note": {**_STR, "description": "what changed in this version"}},
+                   ["compartment", "name", "doc_type"]),
+        tools.pulso_doc_put, write=True,
+    ),
+    # ----- Management: pendientes -----
+    "pulso_pending_list": Tool(
+        "pulso_pending_list",
+        "List project pendings (action items) with owner + status. Filter by status, owner, "
+        "overdue (bool), or plan_task_id.",
+        _scope_obj({"status": _enum(PENDING_STATUSES, "filter by status"),
+                    "owner": _STR, "overdue": {"type": "boolean"}, "plan_task_id": _STR}, []),
+        tools.pulso_pending_list, write=False,
+    ),
+    "pulso_pending_upsert": Tool(
+        "pulso_pending_upsert",
+        "Create or update a pending. Omit pending_id to create (title required). "
+        "status ∈ open|doing|blocked|done. due_date is ISO YYYY-MM-DD. "
+        "plan_task_id links it to a Gantt task.",
+        _scope_obj({"pending_id": _STR, "title": _STR, "detail_md": _STR, "owner": _STR,
+                    "status": _enum(PENDING_STATUSES, "status"),
+                    "due_date": {**_STR, "description": "ISO date YYYY-MM-DD"},
+                    "plan_task_id": _STR}, []),
+        tools.pulso_pending_upsert, write=True,
+    ),
+    "pulso_pending_complete": Tool(
+        "pulso_pending_complete", "Mark a pending as done (sets closed_at).",
+        _scope_obj({"pending_id": _STR}, ["pending_id"]),
+        tools.pulso_pending_complete, write=True,
+    ),
+    # ----- Management: gantt (plan) -----
+    "pulso_gantt_get": Tool(
+        "pulso_gantt_get",
+        "Read the project plan (Gantt): all tasks with hierarchy (parent_id), dates, progress, "
+        "milestones, and deps, plus the plan's start/end bounds. Read this before editing.",
+        _scope_obj({}, []),
+        tools.pulso_gantt_get, write=False,
+    ),
+    "pulso_gantt_task_upsert": Tool(
+        "pulso_gantt_task_upsert",
+        "Create or update a Gantt task. Omit task_id to create (name required). parent_id nests "
+        "it (max 3 levels: phase/sub-phase/task). Dates are ISO YYYY-MM-DD; progress 0-100; "
+        "is_milestone renders a diamond at start_date; deps is a list of predecessor task ids; "
+        "sort_order orders siblings.",
+        _scope_obj({"task_id": _STR, "name": _STR, "parent_id": _STR,
+                    "start_date": {**_STR, "description": "ISO date"},
+                    "end_date": {**_STR, "description": "ISO date"},
+                    "progress": {**_INT, "description": "0-100", "minimum": 0, "maximum": 100},
+                    "is_milestone": {"type": "boolean"},
+                    "deps": {"type": "array", "items": _STR, "description": "predecessor task ids"},
+                    "sort_order": _INT}, []),
+        tools.pulso_gantt_task_upsert, write=True,
+    ),
+    "pulso_gantt_task_remove": Tool(
+        "pulso_gantt_task_remove",
+        "Delete a Gantt task (its children cascade).",
+        _scope_obj({"task_id": _STR}, ["task_id"]),
+        tools.pulso_gantt_task_remove, write=True,
     ),
 }
 

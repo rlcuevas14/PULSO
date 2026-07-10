@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.management") }} · {{ t("management.subtab.plan") }}{% endblock %}
+{% block content %}
+{% include "partials/_management_tabs.html" %}
+
+{# Phase palette (rgb triplets → rgba tints). Bars are colored by their top-level phase. #}
+{% set PHASE = ["26,58,58", "255,77,139", "184,164,237", "255,176,132", "232,185,74", "164,212,197", "255,107,90"] %}
+
+<style>
+  .gantt-wrap { display:flex; border:1px solid var(--hairline); border-radius:16px; overflow:hidden; background:var(--surface-card); }
+  .gantt-side { flex:0 0 220px; border-right:1px solid var(--hairline); }
+  .gantt-corner { height:52px; border-bottom:1px solid var(--hairline); }
+  .gantt-name { height:32px; display:flex; align-items:center; padding:0 12px; font-size:13px;
+                color:var(--ink); border-bottom:1px solid var(--hairline); white-space:nowrap;
+                overflow:hidden; text-overflow:ellipsis; }
+  .gantt-name.gl1 { font-weight:600; background:var(--surface-strong); }
+  .gantt-name.gl2 { padding-left:26px; }
+  .gantt-name.gl3 { padding-left:40px; color:var(--muted); }
+  .gantt-scroll { flex:1; overflow-x:auto; }
+  .gantt-grid { position:relative; display:grid; grid-template-rows:26px 26px; grid-auto-rows:32px; min-width:100%; }
+  .gantt-grp { grid-row:1; display:flex; align-items:center; justify-content:center; font-size:11px;
+               font-weight:600; color:var(--muted); border-bottom:1px solid var(--hairline);
+               border-left:1px solid var(--hairline); text-transform:uppercase; letter-spacing:.04em; }
+  .gantt-col { grid-row:2; display:flex; align-items:center; justify-content:center; font-size:11px;
+               color:var(--muted); border-bottom:1px solid var(--hairline); border-left:1px solid var(--hairline); }
+  .gantt-rowbg { border-bottom:1px solid var(--hairline);
+                 background-image:linear-gradient(to right, var(--hairline) 1px, transparent 1px);
+                 background-size:calc(100% / var(--cols)) 100%; }
+  .gantt-bar { position:relative; align-self:center; height:20px; margin:0 2px; border-radius:6px;
+               background:rgba(var(--pc), .22); border-left:3px solid rgba(var(--pc), .9); overflow:hidden; }
+  .gantt-bar.summary { height:8px; border-radius:4px; border-left:none; background:rgba(var(--pc), .5); }
+  .gantt-fill { position:absolute; inset:0 auto 0 0; background:rgba(var(--pc), .8); }
+  .gantt-dep { position:absolute; left:-11px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--muted); }
+  .gantt-ms { align-self:center; justify-self:center; color:rgba(var(--pc), 1); font-size:15px; line-height:1; }
+  .gantt-today { position:absolute; top:0; bottom:0; width:2px; background:var(--accent); opacity:.65; z-index:5; }
+  .gantt-today::after { content:""; position:absolute; top:0; left:-3px; border:4px solid transparent; border-top-color:var(--accent); }
+</style>
+
+<p class="text-sm text-muted mb-4 flex items-center gap-2">
+  <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+  {{ t("management.plan.readonly") }}
+</p>
+
+{% if not has_plan %}
+<div class="p-card p-8 text-center text-muted">{{ t("management.plan.empty") }}</div>
+{% else %}
+<div class="gantt-wrap">
+  <div class="gantt-side">
+    <div class="gantt-corner flex items-center px-3 text-xs font-semibold uppercase tracking-wide text-muted">{{ t("management.plan.task") }}</div>
+    {% for r in rows %}
+    <div class="gantt-name gl{{ r.level }}" title="{{ r.name }}">
+      {% if r.is_milestone %}<span class="mr-1">◆</span>{% endif %}{{ r.name }}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="gantt-scroll">
+    <div class="gantt-grid" style="--cols:{{ axis.n }}; grid-template-columns:repeat({{ axis.n }}, minmax(34px, 1fr))">
+      {% if today_frac is not none %}<div class="gantt-today" style="left:calc({{ today_frac }} * 100%)" title="{{ t('management.plan.today') }}"></div>{% endif %}
+      {% for g in axis.groups %}
+      <div class="gantt-grp" style="grid-column:span {{ g.span }}">{% if g.month %}{{ t("month." ~ g.month) }} {{ g.year }}{% else %}{{ g.year }}{% endif %}</div>
+      {% endfor %}
+      {% for c in axis.columns %}<div class="gantt-col">{{ c.label }}</div>{% endfor %}
+      {% for r in rows %}
+      {% set rownum = loop.index + 2 %}
+      <div class="gantt-rowbg" style="grid-column:1 / span {{ axis.n }}; grid-row:{{ rownum }}"></div>
+      {% if r.is_milestone %}
+        {% if r.milestone_idx is not none %}
+        <div class="gantt-ms" style="grid-column:{{ r.milestone_idx + 1 }}; grid-row:{{ rownum }}; --pc:{{ PHASE[r.root % 7] }}" title="{{ r.name }}">◆</div>
+        {% endif %}
+      {% elif r.bar %}
+        <div class="gantt-bar {% if r.level == 1 %}summary{% endif %}"
+             style="grid-column:{{ r.bar[0] + 1 }} / span {{ r.bar[1] }}; grid-row:{{ rownum }}; --pc:{{ PHASE[r.root % 7] }}"
+             title="{{ r.name }} — {{ r.progress }}%">
+          {% if r.progress and r.level != 1 %}<span class="gantt-fill" style="width:{{ r.progress }}%"></span>{% endif %}
+          {% if r.has_deps %}<span class="gantt-dep" aria-hidden="true">&#8627;</span>{% endif %}
+        </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

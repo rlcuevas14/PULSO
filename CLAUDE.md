@@ -5,7 +5,7 @@
 
 ## What it is
 
-- **Backlog + dependency graph + Sentry incidents + development threads** — all accessible via 17 MCP tools.
+- **Backlog + dependency graph + Sentry incidents + development threads + PMO Management (documents/pendings/Gantt)** — all accessible via 26 MCP tools.
 - **Multi-project** — one database, N projects. Each MCP token is project-scoped; the agent cannot write to the wrong project.
 - **Self-hosted OSS** — Docker + Postgres, no external dependencies except optional AI keys.
 - **Repo**: `rlcuevas14/PULSO` (open source).
@@ -43,10 +43,11 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 | `items/` | `Item`/`ItemComment`/`ItemEvent`/`AiEnrichment`/`ItemRelationship`; `service.py` (lifecycle-validated mutations); `lifecycle.py` (8-state machine); `graph.py` (neighborhood/blocking/Kahn); `relationships.py` (arcs); `importer.py` (JSONL) |
 | `scopes/` | `Scope` (area grouper) + router |
 | `threads/` | `Thread`/`ThreadArtifact` (stages), service, router |
+| `management/` | PMO tab (per-project): `Compartment`/`Deliverable`/`DeliverableVersion` (append-only, bytes in `bytea`), `Pending` (owner+status), `PlanTask` (Gantt 3-level hierarchy), `ManagementEvent` (audit). `gantt.py` = pure geometry (dynamic weeks→months axis, rollups); `service.py` (validated mutations + events); `router.py` (`/management/{documentos,plan,pendientes}`, upload/download). UI is a viewer; **Gantt edited only via MCP** |
 | `webhooks/` | `SentryIssue`; service (HMAC verify, ingest, backfill, fetch stack trace, resolve); router |
 | `jobs/` | `AgentRun`; `worker.py` (poll-and-lease); `handlers.py` (`enrich`, `triage-sentry`) |
 | `ai/` | `llm.py` — isolated/mockable interface to Haiku (enrich/triage/generate_stage) + Gemini (embed). Degrades without API key |
-| `mcp/` | `server.py` (JSON-RPC transport + 17 tool registry + auth/scope + project-id failsafe); `tools.py` (implementations) |
+| `mcp/` | `server.py` (JSON-RPC transport + 26 tool registry + auth/scope + project-id failsafe); `tools.py` (implementations) |
 | `ui/` | `router.py` — screens (`/` card-launcher home, `/backlog`, `/prioridad`, `/hilos`, `/incidentes`, `/ideas`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints; `flash.py` (`flash_success` — pop-once session flash → celebration overlay on completions / green toast) |
 
 ---
@@ -66,13 +67,13 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 **Other tables**: `accounts, users, api_tokens, projects, project_members, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
 `item_events(actor, action, payload)` is the **audit primitive** — every mutation must emit one.
 
-**Migrations** (head = `v0012`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006–v0010 (projects + project_id FKs) · v0011 (English enum rename) · v0012 (accounts + project_members + account columns; backfills existing data into one default account, earliest/admin user → owner+superadmin; scopes.name → unique per project).
+**Migrations** (head = `v0016`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006–v0010 (projects + project_id FKs) · v0011 (English enum rename) · v0012 (accounts + project_members + account columns; backfills existing data into one default account, earliest/admin user → owner+superadmin; scopes.name → unique per project) · v0013 (project isolation hardening) · v0014 (accounts layer) · v0015 (relax project_id back to nullable — isolation is code-enforced) · v0016 (management/PMO domain: compartments, deliverables + append-only deliverable_versions, pendings, plan_tasks, management_events).
 
 **Thread stages** (NOT renamed — Spanish still): `idea, investigacion, historias, spec, en-desarrollo, review, hecho, descartado`
 
 ---
 
-## MCP — 17 tools
+## MCP — 26 tools
 
 Connect Claude Code to a project (generate token at `/projects/{slug}/settings`):
 ```bash
@@ -85,6 +86,7 @@ Token MUST have `project_id` set (created from `/projects/{slug}/settings`, not 
 
 - **Read**: `pulso_context`, `pulso_search`, `pulso_list`, `pulso_areas`, `pulso_incidents`, `pulso_incident`, `pulso_thread_list`, `pulso_thread`
 - **Write**: `pulso_create` (accepts `thread_id`), `pulso_advance`, `pulso_complete`, `pulso_link`, `pulso_move_area`, `pulso_incident_resolve`, `pulso_thread_create`, `pulso_thread_advance`, `pulso_thread_link`
+- **Management (PMO)** — documentos: `pulso_doc_list`, `pulso_doc_get`, `pulso_doc_put` (r/w) · pendientes: `pulso_pending_list`, `pulso_pending_upsert`, `pulso_pending_complete` · gantt: `pulso_gantt_get`, `pulso_gantt_task_upsert`, `pulso_gantt_task_remove`. The Gantt is **edited only via MCP** (UI renders it read-only).
 - **Prompts**: `briefing`, `decision`. **Resources**: `pulso://area/{name}`, `pulso://graph/{item_id}`.
 
 Items returned include `area` (name) and `thread_id` when set. Graph is item↔item; thread membership is via `thread_id`, not the graph.

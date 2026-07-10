@@ -51,6 +51,24 @@ TOKEN_SCOPES: tuple[str, ...] = ("read", "write")
 ACCOUNT_ROLES: tuple[str, ...] = ("owner", "member")
 PROJECT_MEMBER_ROLES: tuple[str, ...] = ("viewer", "editor")
 
+# --- management (PMO tab: documentos / plan / pendientes) ---
+DELIVERABLE_TYPES: tuple[str, ...] = ("docx", "pdf", "html", "md", "xlsx", "pptx")
+DELIVERABLE_STATUSES: tuple[str, ...] = ("draft", "review", "final", "archived")
+PENDING_STATUSES: tuple[str, ...] = ("open", "doing", "blocked", "done")
+MANAGEMENT_ENTITY_TYPES: tuple[str, ...] = ("compartment", "deliverable", "pending", "plan_task")
+
+# Canonical MIME per deliverable type — we never trust the client's Content-Type,
+# we derive it from the (whitelisted) extension / explicit doc_type. Reliability over trust.
+DELIVERABLE_MIME: dict[str, str] = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pdf": "application/pdf",
+    "html": "text/html; charset=utf-8",
+    "md": "text/markdown; charset=utf-8",
+}
+DELIVERABLE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB — bytea ceiling; move to volume if this hurts backups.
+
 
 def sql_list(values: tuple[str, ...] | list[str]) -> str:
     return ",".join(repr(v) for v in values)
