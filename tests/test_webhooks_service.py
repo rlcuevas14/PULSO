@@ -219,9 +219,12 @@ async def test_sentry_api_calls_mocked(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
 
-    detail = await ws.fetch_issue_detail("123")
+    detail = await ws.fetch_issue_detail("123", api_token="tok")
     assert detail["title"] == "T"
-    assert await ws.resolve_in_sentry("123") is True
+    assert await ws.resolve_in_sentry("123", api_token="tok", org_slug="org") is True
+    # y el modo legacy por env sigue funcionando (sin kwargs)
+    detail_legacy = await ws.fetch_issue_detail("123")
+    assert detail_legacy["title"] == "T"
     assert isinstance(await ws.fetch_sentry_issues("tok", "org", "proj"), list)
 
 
@@ -229,3 +232,27 @@ async def test_sentry_api_calls_mocked(monkeypatch):
 async def test_resolve_in_sentry_no_token(monkeypatch):
     monkeypatch.setattr("app.config.settings.sentry_api_token", "")
     assert await ws.resolve_in_sentry("1") is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_in_sentry_429_retries(monkeypatch):
+    import httpx
+    calls = []
+
+    class _R429:
+        status_code = 429
+        headers = {"Retry-After": "0"}
+
+    class _ROK:
+        status_code = 200
+        headers = {}
+
+    async def fake_put(self, url, **kw):
+        calls.append(url)
+        return _R429() if len(calls) == 1 else _ROK()
+
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
+    assert await ws.resolve_in_sentry("9", api_token="t", org_slug="o",
+                                      base_url="https://sh.example.com") is True
+    assert len(calls) == 2
+    assert calls[0].startswith("https://sh.example.com/api/0/organizations/o/")

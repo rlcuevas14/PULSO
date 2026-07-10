@@ -1,5 +1,6 @@
 """Lógica de webhooks: verificación de firma HMAC + ingesta Sentry + progreso Git."""
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -13,6 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.webhooks.connection import DEFAULT_BASE_URL, effective_base_url, outbound
 from app.items import service
 from app.items.models import Item, ItemEvent
 from app.jobs.models import AgentRun
@@ -191,7 +193,13 @@ async def resolve_issue(
     sentry_done = False
     if in_sentry:
         try:
-            sentry_done = await resolve_in_sentry(issue.sentry_issue_id)
+            conn = await outbound(db, issue.account_id)
+            sentry_done = await resolve_in_sentry(
+                issue.sentry_issue_id,
+                api_token=conn.api_token if conn else None,
+                org_slug=conn.org_slug if conn else None,
+                base_url=effective_base_url(conn) if conn else None,
+            )
         except Exception as e:  # error de red / API de Sentry: no debe bloquear el cierre local
             logger.warning(
                 "resolve_issue: fallo al resolver %s en Sentry: %s",
@@ -256,10 +264,11 @@ async def process_github_push(db: AsyncSession, payload: dict) -> dict:
 
 
 async def fetch_sentry_issues(
-    token: str, org: str, project: str, query: str = "is:unresolved", limit: int = 100
+    token: str, org: str, project: str, query: str = "is:unresolved", limit: int = 100,
+    base_url: str = DEFAULT_BASE_URL,
 ) -> list[dict[str, Any]]:
     """Trae issues del proyecto desde la API de Sentry (para backfill del histórico)."""
-    url = f"https://sentry.io/api/0/projects/{org}/{project}/issues/"
+    url = f"{base_url}/api/0/projects/{org}/{project}/issues/"
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.get(
             url, params={"query": query, "limit": min(limit, 100)},
@@ -322,18 +331,22 @@ def _format_stacktrace(event: dict, max_frames: int = 12) -> str:
     return "\n".join(lines)[:6000] if lines else "(sin stack trace)"
 
 
-async def fetch_issue_detail(issue_id: str) -> dict[str, Any]:
-    """Trae metadata + stack trace del último evento de un issue de Sentry (para el MCP)."""
-    token = settings.sentry_api_token
+async def fetch_issue_detail(
+    issue_id: str, *, api_token: str | None = None, base_url: str | None = None
+) -> dict[str, Any]:
+    """Trae metadata + stack trace del último evento de un issue de Sentry (para el MCP).
+    Sin api_token explícito cae al modo legacy por env (deprecated)."""
+    token = api_token or settings.sentry_api_token
     if not token:
         raise RuntimeError("SENTRY_API_TOKEN no configurado")
+    base = base_url or DEFAULT_BASE_URL
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=60) as client:
-        meta_r = await client.get(f"https://sentry.io/api/0/issues/{issue_id}/", headers=headers)
+        meta_r = await client.get(f"{base}/api/0/issues/{issue_id}/", headers=headers)
         meta_r.raise_for_status()
         meta = meta_r.json()
         ev_r = await client.get(
-            f"https://sentry.io/api/0/issues/{issue_id}/events/latest/", headers=headers
+            f"{base}/api/0/issues/{issue_id}/events/latest/", headers=headers
         )
         event = ev_r.json() if ev_r.status_code == 200 else {}
     return {
@@ -348,17 +361,31 @@ async def fetch_issue_detail(issue_id: str) -> dict[str, Any]:
     }
 
 
-async def resolve_in_sentry(issue_id: str) -> bool:
-    """Marca el issue como resuelto en Sentry (requiere token con Issue&Event: Write)."""
-    token = settings.sentry_api_token
+async def resolve_in_sentry(
+    issue_id: str, *, api_token: str | None = None,
+    org_slug: str | None = None, base_url: str | None = None,
+) -> bool:
+    """Marca el issue como resuelto en Sentry (requiere token con Issue&Event: Write).
+    Endpoint org-scoped (documentado) cuando hay org_slug; sin org cae al legacy
+    /api/0/issues/{id}/. Sin api_token explícito usa el env global (deprecated).
+    Reintenta una vez en 429 honrando Retry-After (cap 5s)."""
+    token = api_token or settings.sentry_api_token
     if not token:
         return False
+    base = base_url or DEFAULT_BASE_URL
+    org = org_slug or settings.sentry_org
+    url = (f"{base}/api/0/organizations/{org}/issues/{issue_id}/" if org
+           else f"{base}/api/0/issues/{issue_id}/")
     headers = {"Authorization": f"Bearer {token}", "content-type": "application/json"}
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.put(
-            f"https://sentry.io/api/0/issues/{issue_id}/", headers=headers,
-            json={"status": "resolved"},
-        )
+        r = await client.put(url, headers=headers, json={"status": "resolved"})
+        if r.status_code == 429:
+            try:
+                delay = min(float(r.headers.get("Retry-After", "1")), 5.0)
+            except ValueError:
+                delay = 1.0
+            await asyncio.sleep(delay)
+            r = await client.put(url, headers=headers, json={"status": "resolved"})
         return r.status_code in (200, 202)
 
 
