@@ -109,24 +109,34 @@ async def project_settings_update(
     color: str = Form(""),
     repo_url: str = Form(""),
     github_webhook_secret: str = Form(""),
-    sentry_client_secret: str = Form(""),
-    sentry_api_token: str = Form(""),
-    sentry_org: str = Form(""),
+    sentry_project_slug: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_owner),
 ):
     project = await ps.get_by_slug(db, slug, user.account_id)
     if project is None:
         return Response(status_code=404, content="Project not found")
+    new_sentry_slug = sentry_project_slug.strip() or None
+    if new_sentry_slug:
+        # Único por cuenta: dos proyectos no pueden reclamar el mismo slug de Sentry.
+        from app.projects.models import Project
+        clash = await db.scalar(select(Project.id).where(
+            Project.account_id == user.account_id,
+            Project.sentry_project_slug == new_sentry_slug,
+            Project.id != project.id,
+        ))
+        if clash:
+            return Response(
+                status_code=422,
+                content=_t("projects.sentry_slug_taken", resolve_lang(request)),
+            )
     await ps.update_project(db, project, {
         "name": name.strip(),
         "description": description.strip() or None,
         "color": color.strip() or None,
         "repo_url": repo_url.strip() or None,
         "github_webhook_secret": github_webhook_secret.strip() or None,
-        "sentry_client_secret": sentry_client_secret.strip() or None,
-        "sentry_api_token": sentry_api_token.strip() or None,
-        "sentry_org": sentry_org.strip() or None,
+        "sentry_project_slug": new_sentry_slug,
     })
     await db.commit()
     if request.session.get("current_project_id") == str(project.id):

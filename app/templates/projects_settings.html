@@ -112,19 +112,10 @@
               class="w-full p-input text-xs font-mono">
           </div>
           <div>
-            <label class="p-label">{{ t("projects.sentry_client_secret") }}</label>
-            <input name="sentry_client_secret" type="text" value="{{ project.sentry_client_secret or '' }}"
-              class="w-full p-input text-xs font-mono">
-          </div>
-          <div>
-            <label class="p-label">{{ t("projects.sentry_api_token") }}</label>
-            <input name="sentry_api_token" type="text" value="{{ project.sentry_api_token or '' }}"
-              class="w-full p-input text-xs font-mono">
-          </div>
-          <div>
-            <label class="p-label">{{ t("projects.sentry_org") }}</label>
-            <input name="sentry_org" type="text" value="{{ project.sentry_org or '' }}"
-              class="w-full p-input text-xs">
+            <label class="p-label">{{ t("projects.sentry_slug") }}</label>
+            <input name="sentry_project_slug" type="text" value="{{ project.sentry_project_slug or '' }}"
+              class="w-full p-input text-xs font-mono" placeholder="my-sentry-project">
+            <p class="text-xs text-muted mt-1">{{ t("projects.sentry_slug_help") }}</p>
           </div>
         </div>
       </details>

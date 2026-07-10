@@ -261,7 +261,20 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "sentry_client_secret", "supersecret")
     suffix = uuid.uuid4().hex[:8]
     async for db in client.app.dependency_overrides[get_db]():
-        await create_user(db, f"bf{suffix}@test.cl", "Admin", "pass", "admin")
+        user = await create_user(db, f"bf{suffix}@test.cl", "Admin", "pass", "admin")
+        # conexión de cuenta (feature B) + slug del proyecto actual (spec 2026-07-10)
+        from sqlalchemy import select as _sel
+
+        from app.projects.models import Project
+        from app.webhooks import connection as sconn
+        conn = await sconn.get_or_create(db, user.account_id)
+        conn.api_token, conn.org_slug = "fake", "tid"
+        proj = (await db.execute(
+            _sel(Project).where(Project.account_id == user.account_id)
+        )).scalars().first()
+        proj.sentry_project_slug = "acme"
+        expected_pid = proj.id
+        await db.commit()
         break
     login = await client.post(
         "/auth/login", data={"email": f"bf{suffix}@test.cl", "password": "pass"},
@@ -271,7 +284,7 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
 
     sid1, sid2 = f"hist-{suffix}-1", f"hist-{suffix}-2"
 
-    async def fake_fetch(token, org, project, query="is:unresolved", limit=100):
+    async def fake_fetch(token, org, project, query="is:unresolved", limit=100, **kw):
         return [
             {"id": sid1, "title": "Error histórico A", "level": "error",
              "permalink": "https://sentry.io/a", "count": "42",
@@ -281,10 +294,7 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
         ]
 
     monkeypatch.setattr(wservice, "fetch_sentry_issues", fake_fetch)
-    r = await client.post(
-        "/ui/incidentes/backfill",
-        data={"org": "tid", "project": "acme", "token": "fake"}, cookies=cookies,
-    )
+    r = await client.post("/ui/incidentes/backfill", data={}, cookies=cookies)
     assert r.status_code == 200
     assert "Imported 2 of 2" in r.text  # default EN
     async for db in client.app.dependency_overrides[get_db]():
@@ -293,6 +303,7 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
         )).scalar_one()
         assert i1.events_count == 42  # toma el conteo real de la API
         assert i1.item_id is None  # al contenedor, no al backlog
+        assert i1.project_id == expected_pid  # queda atado al proyecto actual (v0017)
         assert i1.last_seen.year == 2026 and i1.last_seen.month == 6  # fecha REAL del error
         assert i1.first_seen.month == 5
         break

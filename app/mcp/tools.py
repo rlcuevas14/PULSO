@@ -564,7 +564,13 @@ async def pulso_incident(db: AsyncSession, token: ApiToken, args: dict) -> dict:
            "last_seen": issue.last_seen.isoformat() if issue.last_seen else None,
            "web_url": (issue.payload or {}).get("web_url") if isinstance(issue.payload, dict) else None}
     try:
-        detail = await wservice.fetch_issue_detail(issue.sentry_issue_id)
+        from app.webhooks import connection as sconn
+        conn = await sconn.outbound(db, issue.account_id)
+        detail = await wservice.fetch_issue_detail(
+            issue.sentry_issue_id,
+            api_token=conn.api_token if conn else None,
+            base_url=sconn.effective_base_url(conn) if conn else None,
+        )
         out["stacktrace"] = detail.get("stacktrace")
         out["culprit"] = detail.get("culprit")
     except Exception as e:

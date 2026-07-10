@@ -64,6 +64,55 @@ async def test_ingest_sentry_create_and_dedup(db):
         await ws.ingest_sentry(db, {"data": {"issue": {"title": "no id"}}})
 
 
+def test_parse_sentry_payload_shapes():
+    # issue webhook (primario): slug desde data.issue.project.slug
+    p1 = ws.parse_sentry_payload({"data": {"issue": {
+        "id": 42, "title": "Boom", "level": "warning",
+        "project": {"slug": "web", "id": 7}, "permalink": "https://s/x"}}})
+    assert p1["sentry_id"] == "42" and p1["slug"] == "web" and p1["level"] == "warning"
+    assert p1["web_url"] == "https://s/x"
+    # event_alert: sin slug, con web_url
+    p2 = ws.parse_sentry_payload({"data": {"event": {
+        "issue_id": "77", "title": "Alert", "level": "error",
+        "project": 7, "web_url": "https://s/y"}}})
+    assert p2["sentry_id"] == "77" and p2["slug"] is None and p2["web_url"] == "https://s/y"
+    # plugin legacy: plano
+    p3 = ws.parse_sentry_payload({"id": "9", "project": "api", "level": "info", "url": "u",
+                                  "message": "m"})
+    assert p3["sentry_id"] == "9" and p3["slug"] == "api" and p3["level"] == "info"
+    with pytest.raises(ValueError):
+        ws.parse_sentry_payload({"data": {"issue": {"title": "no id"}}})
+
+
+@pytest.mark.asyncio
+async def test_ingest_stamps_account_and_project(db):
+    from sqlalchemy import select
+
+    from app.accounts.models import Account
+    from app.projects.models import Project
+    from app.webhooks.models import SentryIssue
+    a = Account(name="x", slug=f"x-{uuid.uuid4().hex[:6]}")
+    db.add(a)
+    await db.flush()
+    p = Project(name="w", slug=f"w-{uuid.uuid4().hex[:6]}", account_id=a.id,
+                sentry_project_slug="web")
+    db.add(p)
+    await db.flush()
+    payload = {"data": {"issue": {"id": "ST1", "title": "T", "project": {"slug": "web"}}}}
+    await ws.ingest_sentry(db, payload, account_id=a.id, project_id=p.id)
+    row = (await db.execute(select(SentryIssue).where(
+        SentryIssue.sentry_issue_id == "ST1"))).scalar_one()
+    assert row.account_id == a.id and row.project_id == p.id and row.project == "web"
+    # el dedup sana una fila sin proyecto cuando el ruteo ya se conoce
+    db.add(SentryIssue(sentry_issue_id="ST2", project="web", title="t"))
+    await db.flush()
+    await ws.ingest_sentry(db, {"data": {"issue": {"id": "ST2", "title": "t",
+                            "project": {"slug": "web"}}}}, account_id=a.id, project_id=p.id)
+    row2 = (await db.execute(select(SentryIssue).where(
+        SentryIssue.sentry_issue_id == "ST2"))).scalar_one()
+    assert row2.project_id == p.id and row2.account_id == a.id
+
+
 @pytest.mark.asyncio
 async def test_promote_issue_creates_item_idempotent(db):
     await ws.ingest_sentry(db, {"data": {"issue": {"id": "S2", "title": "Crash", "project": "api"}}})
@@ -170,9 +219,12 @@ async def test_sentry_api_calls_mocked(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
 
-    detail = await ws.fetch_issue_detail("123")
+    detail = await ws.fetch_issue_detail("123", api_token="tok")
     assert detail["title"] == "T"
-    assert await ws.resolve_in_sentry("123") is True
+    assert await ws.resolve_in_sentry("123", api_token="tok", org_slug="org") is True
+    # y el modo legacy por env sigue funcionando (sin kwargs)
+    detail_legacy = await ws.fetch_issue_detail("123")
+    assert detail_legacy["title"] == "T"
     assert isinstance(await ws.fetch_sentry_issues("tok", "org", "proj"), list)
 
 
@@ -180,3 +232,27 @@ async def test_sentry_api_calls_mocked(monkeypatch):
 async def test_resolve_in_sentry_no_token(monkeypatch):
     monkeypatch.setattr("app.config.settings.sentry_api_token", "")
     assert await ws.resolve_in_sentry("1") is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_in_sentry_429_retries(monkeypatch):
+    import httpx
+    calls = []
+
+    class _R429:
+        status_code = 429
+        headers = {"Retry-After": "0"}
+
+    class _ROK:
+        status_code = 200
+        headers = {}
+
+    async def fake_put(self, url, **kw):
+        calls.append(url)
+        return _R429() if len(calls) == 1 else _ROK()
+
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
+    assert await ws.resolve_in_sentry("9", api_token="t", org_slug="o",
+                                      base_url="https://sh.example.com") is True
+    assert len(calls) == 2
+    assert calls[0].startswith("https://sh.example.com/api/0/organizations/o/")

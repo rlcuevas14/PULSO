@@ -301,7 +301,7 @@ async def test_incident_tools_flow(client: AsyncClient, monkeypatch):
     assert any(i["id"] == issue_id for i in listed)
 
     # 2) detalle con stack trace (Sentry mockeado → no gasta nada)
-    async def fake_detail(sentry_id):
+    async def fake_detail(sentry_id, **kw):
         return {"title": "KeyError", "culprit": "app.api.x",
                 "stacktrace": "KeyError: 'foo'\n  app/api/x.py:42 in handler"}
 

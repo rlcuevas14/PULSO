@@ -63,6 +63,29 @@ async def test_project_settings_and_tokens(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_project_sentry_slug_unique_per_account(client: AsyncClient):
+    _uid, _pid, slug = await _owner(client)
+    ok = await client.post(f"/projects/{slug}/settings",
+                           data={"name": "P1", "sentry_project_slug": "web"},
+                           follow_redirects=False)
+    assert ok.status_code == 303
+    # segundo proyecto de la misma cuenta no puede reclamar el mismo slug
+    r = await client.post("/projects/new", data={"name": f"Second {uuid.uuid4().hex[:6]}"},
+                          follow_redirects=False)
+    assert r.status_code == 303
+    slug2 = r.headers["location"].split("/projects/")[1].split("/")[0]
+    dup = await client.post(f"/projects/{slug2}/settings",
+                            data={"name": "P2", "sentry_project_slug": "web"},
+                            follow_redirects=False)
+    assert dup.status_code == 422
+    # slug distinto sí pasa
+    ok2 = await client.post(f"/projects/{slug2}/settings",
+                            data={"name": "P2", "sentry_project_slug": "api"},
+                            follow_redirects=False)
+    assert ok2.status_code == 303
+
+
+@pytest.mark.asyncio
 async def test_project_create_and_404(client: AsyncClient):
     await _owner(client)
     r = await client.post("/projects/new", data={"name": f"Proj {uuid.uuid4().hex[:6]}"},
