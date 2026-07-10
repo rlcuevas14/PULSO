@@ -131,6 +131,6 @@ async def reattach_unmatched(db: AsyncSession, account_id: uuid.UUID) -> int:
             .where(*_unmatched_filter(account_id), SentryIssue.project == slug)
             .values(project_id=pid, account_id=account_id)
         )
-        total += res.rowcount or 0
+        total += int(getattr(res, "rowcount", 0) or 0)  # CursorResult; stub-safe en CI
     await db.flush()
     return total
