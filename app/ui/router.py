@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from pydantic import BeforeValidator
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,6 +26,12 @@ from app.ui.flash import flash_success
 router = APIRouter(tags=["ui"])
 
 _OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
+
+# El form #filters serializa "" para los bool apagados (contrato HTML: los hidden
+# inputs y los chips usan string vacío = off). Estos tipos aceptan ese contrato:
+# "" → None/False en vez del 422 de Pydantic (bug 2026-07-10, botones BOARD/CLOSED).
+OptBool = Annotated[bool | None, BeforeValidator(lambda v: None if v == "" else v)]
+FlagBool = Annotated[bool, BeforeValidator(lambda v: False if v == "" else v)]
 
 
 @router.get("/ui/lang/{code}")
@@ -349,16 +357,16 @@ async def backlog(
     status: str | None = None,
     item_type: str | None = None,
     origen: str | None = None,
-    stale: bool | None = None,
-    graph_blocked: bool | None = None,
+    stale: OptBool = None,
+    graph_blocked: OptBool = None,
     order: str = "priority",
     show: str = "open",         # "open" | "all" | "closed"
     q: str | None = None,       # FTS search
     priority: str | None = None,
     effort: str | None = None,
-    quickwins: bool = False,
-    urgent: bool = False,
-    agent_ready: bool = False,
+    quickwins: FlagBool = False,
+    urgent: FlagBool = False,
+    agent_ready: FlagBool = False,
     view: str = "list",         # "list" | "board"
     group: str = "",
     db: AsyncSession = Depends(get_db),
@@ -526,15 +534,16 @@ async def ui_board_move(
     scope: str | None = Form(None),
     item_type: str | None = Form(None),
     origen: str | None = Form(None),
-    stale: bool | None = Form(None),
-    graph_blocked: bool | None = Form(None),
+    # Form() DENTRO del Annotated: fuera, FastAPI descarta el BeforeValidator y "" → 422.
+    stale: Annotated[OptBool, Form()] = None,
+    graph_blocked: Annotated[OptBool, Form()] = None,
     order: str = Form("priority"),
     q: str | None = Form(None),
     priority: str | None = Form(None),
     effort: str | None = Form(None),
-    quickwins: bool = Form(False),
-    urgent: bool = Form(False),
-    agent_ready: bool = Form(False),
+    quickwins: FlagBool = Form(False),
+    urgent: FlagBool = Form(False),
+    agent_ready: FlagBool = Form(False),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
