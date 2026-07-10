@@ -20,7 +20,12 @@ from app.enums import PROJECT_MEMBER_ROLES, check_in
 
 class Project(Base):
     __tablename__ = "projects"
-    __table_args__ = (UniqueConstraint("account_id", "slug", name="projects_account_slug_uniq"),)
+    __table_args__ = (
+        UniqueConstraint("account_id", "slug", name="projects_account_slug_uniq"),
+        UniqueConstraint(
+            "account_id", "sentry_project_slug", name="projects_account_sentry_slug_uniq"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     account_id: Mapped[uuid.UUID] = mapped_column(
@@ -33,9 +38,9 @@ class Project(Base):
     repo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Per-project integration secrets (override global env vars when set)
     github_webhook_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sentry_client_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sentry_api_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sentry_org: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Sentry routing: slug de este proyecto en la org Sentry de la cuenta (spec 2026-07-10).
+    # La conexión (secretos) vive a nivel cuenta en sentry_connections.
+    sentry_project_slug: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     archived_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

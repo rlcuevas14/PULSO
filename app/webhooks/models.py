@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, TIMESTAMP, CheckConstraint, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, TIMESTAMP, CheckConstraint, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,10 @@ class SentryIssue(Base):
     project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
+    # Cuenta dueña del evento (v0017): hace tenancy-safe a las filas sin proyecto.
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True
+    )
     sentry_issue_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     project: Mapped[str] = mapped_column(String(60), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -42,6 +46,29 @@ class SentryIssue(Base):
     item_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("items.id", ondelete="SET NULL"), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SentryConnection(Base):
+    """Conexión Sentry a nivel cuenta (1:1). El webhook_token enruta + autentica la
+    entrada; client_secret habilita verificación HMAC y api_token la salida (feature B).
+    Spec 2026-07-10."""
+
+    __tablename__ = "sentry_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"),
+        unique=True, nullable=False,
+    )
+    webhook_token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    client_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    api_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    org_slug: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    base_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()
