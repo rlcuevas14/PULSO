@@ -379,11 +379,9 @@ async def backlog(
         urgent=urgent, agent_ready=agent_ready, view=view, group=group,
     )
     if request.headers.get("HX-Request"):
-        if view == "board":
-            return templates.TemplateResponse(request, "partials/items_board.html", ctx)
-        if group and group != "none":
-            return templates.TemplateResponse(request, "partials/items_grouped.html", ctx)
-        return templates.TemplateResponse(request, "partials/items_table.html", ctx)
+        # Controles + items viajan juntos: los hidden carriers y el estilo de los
+        # chips deben reflejar el estado nuevo (bug 2026-07-10, desync del form).
+        return templates.TemplateResponse(request, "partials/backlog_root.html", ctx)
     return templates.TemplateResponse(request, "backlog.html", ctx)
 
 

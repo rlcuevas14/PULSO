@@ -56,6 +56,35 @@ async def test_chip_on_sends_true_others_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_hx_swap_rerenders_filter_state(client: AsyncClient):
+    """Bug #2 (2026-07-10): el form #filters vivía fuera del swap → estado viejo.
+
+    La respuesta HTMX debe incluir los controles re-renderizados: hidden input
+    view=board y el form #filters presente en el fragmento."""
+    await _login_owner(client)
+    r = await client.get(f"/backlog?view=board&show=open&{_EMPTY_BOOLS}",
+                         headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert 'name="view"          value="board"' in r.text.replace("  ", "  ") or \
+           'name="view" value="board"' in " ".join(r.text.split())
+    assert 'id="filters"' in r.text  # los controles viajan en el swap
+    assert 'board-root' in r.text   # y los items también
+
+
+@pytest.mark.asyncio
+async def test_hx_swap_chip_active_state(client: AsyncClient):
+    """El chip activo debe venir pintado (estilo servidor) en el fragmento."""
+    await _login_owner(client)
+    q = _EMPTY_BOOLS.replace("quickwins=", "quickwins=true")
+    r = await client.get(f"/backlog?view=list&show=open&{q}",
+                         headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    txt = " ".join(r.text.split())
+    assert 'name="quickwins" value="true"' in txt  # hidden carrier actualizado
+    assert "bg-success/15" in txt                  # chip quickwins pintado activo
+
+
+@pytest.mark.asyncio
 async def test_board_move_with_empty_form_bools(client: AsyncClient):
     """El drag&drop postea el mismo form: bools vacíos no deben romper el 200-siempre."""
     from app.items.models import Item

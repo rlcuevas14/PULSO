@@ -1,0 +1,14 @@
+{# Wrapper del swap HTMX del backlog: controles + items viajan JUNTOS para que los
+   hidden state carriers y el estilo de los chips reflejen siempre el estado real
+   (bug 2026-07-10: el form fuera del swap quedaba desincronizado). #}
+{% include "partials/backlog_controls.html" %}
+
+<div id="items-view" {% if (filters.view or 'list') != 'board' %}class="p-card overflow-hidden"{% endif %}>
+  {% if (filters.view or 'list') == 'board' %}
+    {% include "partials/items_board.html" %}
+  {% elif filters.group and filters.group != 'none' %}
+    {% include "partials/items_grouped.html" %}
+  {% else %}
+    {% include "partials/items_table.html" %}
+  {% endif %}
+</div>
