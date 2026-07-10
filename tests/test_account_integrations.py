@@ -67,8 +67,8 @@ async def test_integrations_reattach_unmatched(client: AsyncClient):
     from sqlalchemy import select
 
     from app.projects.models import Project
-    from app.webhooks.models import SentryIssue
     from app.projects.service import create_project
+    from app.webhooks.models import SentryIssue
     acc_id = await _owner_login(client)
     sid = f"UM{uuid.uuid4().hex[:8]}"
     async for db in client.app.dependency_overrides[get_db]():

@@ -14,11 +14,11 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.webhooks.connection import DEFAULT_BASE_URL, effective_base_url, outbound
 from app.items import service
 from app.items.models import Item, ItemEvent
 from app.jobs.models import AgentRun
 from app.scopes.service import resolve_scope
+from app.webhooks.connection import DEFAULT_BASE_URL, effective_base_url, outbound
 from app.webhooks.models import SentryIssue
 
 logger = logging.getLogger("pulso.webhooks")
