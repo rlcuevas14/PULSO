@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ t("sentry.title") }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink mb-2">{{ t("sentry.title") }}</h1>
+<p class="text-sm text-muted mb-6">{{ t("sentry.intro") }}</p>
+
+{% if reattached is not none %}
+<div class="mb-4 bg-success/10 border border-success/30 text-success rounded-xl px-4 py-3 text-sm">
+  {{ t("sentry.reattached", n=reattached) }}
+</div>
+{% endif %}
+
+{% if unmatched > 0 %}
+<div class="mb-4 bg-warning/10 border border-warning/30 text-warning rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
+  <span>{{ tn("sentry.unmatched", unmatched) }}</span>
+  <form method="post" action="/account/integrations/reattach">
+    <button type="submit" class="p-btn p-btn-ghost p-btn-sm">{{ t("sentry.reattach") }}</button>
+  </form>
+</div>
+{% endif %}
+
+<form method="post" action="/account/integrations" class="space-y-6 max-w-2xl">
+  {# ---- A: entrada ---- #}
+  <div class="p-card p-5 space-y-4">
+    <h2 class="text-lg font-semibold text-ink">{{ t("sentry.inbound_title") }}</h2>
+    <div>
+      <label class="p-label">{{ t("sentry.webhook_url") }}</label>
+      <div class="flex gap-2">
+        <input id="sentry-webhook-url" type="text" readonly value="{{ webhook_url }}"
+               class="w-full p-input text-xs font-mono">
+        <button type="button" class="p-btn p-btn-ghost p-btn-sm shrink-0"
+                data-copy="{{ t('common.copy') }}" data-copied="{{ t('common.copied') }}"
+                onclick="var b=this;navigator.clipboard.writeText(document.getElementById('sentry-webhook-url').value).then(function(){b.textContent=b.dataset.copied;setTimeout(function(){b.textContent=b.dataset.copy;},1500);})">{{ t("common.copy") }}</button>
+      </div>
+    </div>
+    <div>
+      <label class="p-label">{{ t("sentry.client_secret") }}</label>
+      <input name="client_secret" type="text" value="{{ conn.client_secret or '' }}"
+             class="w-full p-input text-xs font-mono">
+    </div>
+    <details class="border-t border-hairline pt-3">
+      <summary class="text-sm text-muted cursor-pointer hover:text-ink">{{ t("sentry.guide_a_title") }}</summary>
+      <ol class="list-decimal list-inside text-sm text-muted mt-3 space-y-2">
+        <li>{{ t("sentry.guide_a_step1") }}</li>
+        <li>{{ t("sentry.guide_a_step2") }}</li>
+        <li>{{ t("sentry.guide_a_step3") }}</li>
+        <li>{{ t("sentry.guide_a_step4") }}</li>
+        <li>{{ t("sentry.guide_a_step5") }}</li>
+      </ol>
+    </details>
+  </div>
+
+  {# ---- B: salida (opcional, requiere A) ---- #}
+  <div class="p-card p-5 space-y-4">
+    <h2 class="text-lg font-semibold text-ink">{{ t("sentry.outbound_title") }}</h2>
+    <div class="grid sm:grid-cols-2 gap-3">
+      <div>
+        <label class="p-label">{{ t("sentry.api_token") }}</label>
+        <input name="api_token" type="text" value="{{ conn.api_token or '' }}"
+               class="w-full p-input text-xs font-mono">
+      </div>
+      <div>
+        <label class="p-label">{{ t("sentry.org_slug") }}</label>
+        <input name="org_slug" type="text" value="{{ conn.org_slug or '' }}"
+               class="w-full p-input text-xs font-mono" placeholder="my-org">
+      </div>
+      <div class="sm:col-span-2">
+        <label class="p-label">{{ t("sentry.base_url") }}</label>
+        <input name="base_url" type="text" value="{{ conn.base_url or '' }}"
+               class="w-full p-input text-xs font-mono" placeholder="https://sentry.io">
+      </div>
+    </div>
+    <details class="border-t border-hairline pt-3">
+      <summary class="text-sm text-muted cursor-pointer hover:text-ink">{{ t("sentry.guide_b_title") }}</summary>
+      <ol class="list-decimal list-inside text-sm text-muted mt-3 space-y-2">
+        <li>{{ t("sentry.guide_b_step1") }}</li>
+        <li>{{ t("sentry.guide_b_step2") }}</li>
+        <li>{{ t("sentry.guide_b_step3") }}</li>
+      </ol>
+    </details>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="p-btn p-btn-primary">{{ t("common.save") }}</button>
+  </div>
+</form>
+
+<form method="post" action="/account/integrations/regenerate" class="max-w-2xl mt-3"
+      onsubmit="return confirm('{{ t("sentry.regenerate_confirm") }}')">
+  <button type="submit" class="p-btn p-btn-ghost p-btn-sm">{{ t("sentry.regenerate") }}</button>
+</form>
+{% endblock %}

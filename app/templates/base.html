@@ -66,7 +66,8 @@
               <p class="text-sm font-medium text-ink truncate">{{ user.name }}</p>
               <p class="text-xs text-muted truncate">{{ user.email }}</p>
             </div>
-            {% if user.account_role == 'owner' %}<a href="/account/members" class="p-menu-item">{{ t("nav.members") }}</a>{% endif %}
+            {% if user.account_role == 'owner' %}<a href="/account/members" class="p-menu-item">{{ t("nav.members") }}</a>
+            <a href="/account/integrations" class="p-menu-item">{{ t("nav.integrations") }}</a>{% endif %}
             {% if user.is_superadmin %}
             <a href="/admin/accounts" class="p-menu-item">{{ t("nav.accounts") }}</a>
             <a href="/admin" class="p-menu-item">{{ t("nav.admin") }}</a>
