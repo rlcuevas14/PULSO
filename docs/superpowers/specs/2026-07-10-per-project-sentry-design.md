@@ -185,7 +185,7 @@ Backward-compat: legacy `POST /webhooks/sentry` route + global `settings.sentry_
 - **XSS:** untrusted Sentry titles/culprit already sanitized via `_sanitize` (strip tags, length-cap) — keep for both payload shapes.
 - **Fast-ack + idempotent:** minimal synchronous work (upsert + enqueue), dedupe by `sentry_issue_id` UNIQUE (already), 200 within 1s to avoid disable-on-failure.
 - **`base_url` validation (SSRF hygiene):** owner-entered; accept only `http(s)://host[:port]` with no path/query/fragment (mirrors Sentry's own `system.url-prefix` rule). Low risk (owner-only field) but cheap to enforce at the form/service boundary.
-- Secrets never logged; connection page masks stored secrets (show last-4 / "set").
+- Secrets never logged. The owner-only connection page displays stored secrets plaintext in the form (same pattern as `projects_settings.html`'s github secret; owner over HTTPS pasting their own secrets).
 
 ---
 
