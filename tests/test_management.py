@@ -218,6 +218,31 @@ async def test_size_limit_enforced(db):
 
 
 @pytest.mark.asyncio
+async def test_management_error_paths(client: AsyncClient):
+    raw, _pid = await _setup(client)
+    # documents
+    assert (await _call(client, raw, "pulso_doc_put",
+                        {"compartment": "C", "name": "", "doc_type": "md", "content": "x"}))["isError"]
+    assert (await _call(client, raw, "pulso_doc_put",
+                        {"compartment": "C", "name": "n", "doc_type": "md"}))["isError"]
+    assert (await _call(client, raw, "pulso_doc_get", {"deliverable_id": "not-a-uuid"}))["isError"]
+    # doc_list with a status filter exercises the filtered query branch
+    assert _data(await _call(client, raw, "pulso_doc_list", {"status": "final"})) == []
+    # pendings
+    assert (await _call(client, raw, "pulso_pending_upsert",
+                        {"title": "x", "plan_task_id": str(uuid.uuid4())}))["isError"]
+    assert (await _call(client, raw, "pulso_pending_upsert", {}))["isError"]
+    # gantt
+    assert (await _call(client, raw, "pulso_gantt_task_upsert", {"name": "x", "progress": 150}))["isError"]
+    assert (await _call(client, raw, "pulso_gantt_task_remove", {"task_id": str(uuid.uuid4())}))["isError"]
+    assert (await _call(client, raw, "pulso_gantt_task_upsert",
+                        {"name": "x", "parent_id": str(uuid.uuid4())}))["isError"]
+    assert (await _call(client, raw, "pulso_gantt_task_upsert",
+                        {"task_id": str(uuid.uuid4()), "name": "y"}))["isError"]
+    assert (await _call(client, raw, "pulso_gantt_task_upsert", {"deps": "not-a-list"}))["isError"]
+
+
+@pytest.mark.asyncio
 async def test_rollback_creates_new_version(db):
     from app.management import service as mgmt
 
