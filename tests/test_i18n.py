@@ -31,6 +31,11 @@ DYNAMIC_PREFIXES = {
     "relation.": ["blocks", "requires", "conflicts", "related", "part_of"],
     "relation.in.": ["blocks", "requires", "conflicts", "related", "part_of"],
     "role.": ["owner", "member", "viewer", "editor"],
+    "management.subtab.": ["documentos", "plan", "pendientes"],
+    "management.pending.bucket.": ["overdue", "today", "upcoming", "none"],
+    "management.pending.groupby.": ["status", "owner", "due", "none"],
+    "pstatus.": ["open", "doing", "blocked", "done"],
+    "dstatus.": ["draft", "review", "final", "archived"],
 }
 
 _T_CALL = re.compile(r"""\bt(?:n)?\(\s*['"]([a-z0-9_.\-]+)['"]""")

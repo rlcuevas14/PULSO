@@ -5,7 +5,7 @@
   {% include "partials/_head.html" %}
 </head>
 <body class="bg-canvas text-body font-sans min-h-screen flex flex-col">
-  {% set NAV = [("/backlog", t("nav.backlog")), ("/prioridad", t("nav.priority")), ("/hilos", t("nav.threads")), ("/incidentes", t("nav.incidents")), ("/ideas", t("nav.ideas")), ("/registro", t("nav.archive"))] %}
+  {% set NAV = [("/backlog", t("nav.backlog")), ("/prioridad", t("nav.priority")), ("/hilos", t("nav.threads")), ("/management", t("nav.management")), ("/incidentes", t("nav.incidents")), ("/ideas", t("nav.ideas")), ("/registro", t("nav.archive"))] %}
   {% set lang_next = request.url.path ~ ("?" ~ request.url.query if request.url.query else "") %}
   <header class="sticky top-0 z-50 bg-surface-soft backdrop-blur border-b border-hairline">
     <nav class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">

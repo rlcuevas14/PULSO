@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.management") }} · {{ t("management.subtab.documentos") }}{% endblock %}
+{% block content %}
+{% include "partials/_management_tabs.html" %}
+
+<div class="flex flex-wrap items-center gap-2 mb-4">
+  <form method="get" action="/management/documentos" class="flex-1 min-w-[12rem]">
+    {% if selected_compartment %}<input type="hidden" name="compartment" value="{{ selected_compartment }}">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ t('management.doc.search') }}"
+           aria-label="{{ t('management.doc.search') }}" class="p-input">
+  </form>
+  <button onclick="openModal('new-compartment-modal')" class="p-btn p-btn-ghost p-btn-sm">{{ t("management.doc.new_compartment") }}</button>
+  <button onclick="openModal('upload-modal')" class="p-btn p-btn-primary p-btn-sm">{{ t("management.doc.upload") }}</button>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-5">
+  {# Compartments sidebar (flat list) #}
+  <aside class="space-y-1">
+    <a href="/management/documentos" class="p-menu-item {% if not selected_compartment %}bg-surface-strong text-ink font-semibold{% endif %}">{{ t("management.doc.all") }}</a>
+    {% for c in compartments %}
+    <a href="/management/documentos?compartment={{ c.id }}"
+       class="p-menu-item {% if selected_compartment == c.id|string %}bg-surface-strong text-ink font-semibold{% endif %}">{{ c.name }}</a>
+    {% else %}
+    <p class="text-xs text-muted px-3 py-2">{{ t("management.doc.no_compartments") }}</p>
+    {% endfor %}
+  </aside>
+
+  {# Deliverables grid #}
+  <section>
+    {% if deliverables %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for d in deliverables %}
+      <a href="/management/documentos/{{ d.id }}" class="p-card p-4 hover:bg-surface-strong flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-2">
+          <span class="p-pill bg-surface-strong text-ink font-mono uppercase">{{ d.doc_type }}</span>
+          <span class="p-pill bg-brand-lavender/25 text-ink">{{ t("dstatus." ~ d.status) }}</span>
+        </div>
+        <div class="text-sm font-medium text-ink line-clamp-2">{{ d.name }}</div>
+        <div class="text-xs text-muted mt-auto flex items-center justify-between">
+          <span>{{ d.owner or "—" }}</span>
+          <span>v{{ d.current_version }} · {{ comp_names.get(d.compartment_id|string, "") }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-card p-8 text-center text-muted">{{ t("management.doc.empty") }}</div>
+    {% endif %}
+  </section>
+</div>
+
+{# Upload modal (multipart plain form → 303 redirect) #}
+<div id="upload-modal" data-modal role="dialog" aria-modal="true"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
+  <div class="p-card w-full max-w-md p-6">
+    <h2 class="text-lg font-semibold text-ink mb-4">{{ t("management.doc.upload") }}</h2>
+    <form action="/ui/management/documentos/upload" method="post" enctype="multipart/form-data" class="space-y-3">
+      <div>
+        <label class="p-label" for="up-file">{{ t("management.doc.file") }}</label>
+        <input id="up-file" type="file" name="file" required
+               accept=".docx,.pdf,.html,.md,.xlsx,.pptx" class="p-input" style="height:auto;padding:9px 14px">
+      </div>
+      <div>
+        <label class="p-label" for="up-comp">{{ t("management.doc.compartment") }}</label>
+        <input id="up-comp" name="compartment" list="comp-list" required
+               placeholder="{{ t('management.doc.compartment_placeholder') }}" class="p-input">
+        <datalist id="comp-list">{% for c in compartments %}<option value="{{ c.name }}">{% endfor %}</datalist>
+      </div>
+      <div>
+        <label class="p-label" for="up-name">{{ t("management.doc.name_optional") }}</label>
+        <input id="up-name" name="name" class="p-input">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="p-label" for="up-status">{{ t("management.doc.status") }}</label>
+          <select id="up-status" name="status" class="p-input">
+            {% for s in doc_statuses %}<option value="{{ s }}">{{ t("dstatus." ~ s) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="p-label" for="up-owner">{{ t("management.doc.owner") }}</label>
+          <input id="up-owner" name="owner" class="p-input">
+        </div>
+      </div>
+      <div>
+        <label class="p-label" for="up-summary">{{ t("management.doc.summary") }}</label>
+        <textarea id="up-summary" name="summary_md" rows="2" class="p-input"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="closeModal('upload-modal')" class="p-btn p-btn-ghost p-btn-sm">{{ t("common.cancel") }}</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">{{ t("management.doc.save") }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# New compartment modal #}
+<div id="new-compartment-modal" data-modal role="dialog" aria-modal="true"
+     class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
+  <div class="p-card w-full max-w-sm p-6">
+    <h2 class="text-lg font-semibold text-ink mb-4">{{ t("management.doc.new_compartment") }}</h2>
+    <form action="/ui/management/compartments" method="post" class="space-y-3">
+      <div>
+        <label class="p-label" for="nc-name">{{ t("management.doc.compartment_name") }}</label>
+        <input id="nc-name" name="name" required class="p-input">
+      </div>
+      <div>
+        <label class="p-label" for="nc-desc">{{ t("management.doc.description") }}</label>
+        <textarea id="nc-desc" name="description" rows="2" class="p-input"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="closeModal('new-compartment-modal')" class="p-btn p-btn-ghost p-btn-sm">{{ t("common.cancel") }}</button>
+        <button type="submit" class="p-btn p-btn-primary p-btn-sm">{{ t("management.doc.create") }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
