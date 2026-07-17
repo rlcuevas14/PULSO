@@ -126,10 +126,30 @@ async def project_settings_update(
             Project.id != project.id,
         ))
         if clash:
-            return Response(
-                status_code=422,
-                content=_t("projects.sentry_slug_taken", resolve_lang(request)),
+            # Re-render the full settings page with the error — a plain-text 422 on a
+            # regular form is a dead end that loses everything the user typed.
+            tokens = list((await db.execute(
+                select(ApiToken).where(
+                    ApiToken.project_id == project.id,
+                    ApiToken.revoked_at.is_(None),
+                ).order_by(ApiToken.created_at.desc())
+            )).scalars().all())
+            snippet = (
+                f"claude mcp add --transport http {project.slug} {settings.base_url}/mcp \\\n"
+                f'  --header "Authorization: Bearer <TOKEN>"'
             )
+            # Display-only echo of the submitted values; nothing below flushes, so the
+            # in-memory mutation is discarded when the session closes without commit.
+            project.name = name.strip() or project.name
+            project.description = description.strip() or None
+            project.repo_url = repo_url.strip() or None
+            project.github_webhook_secret = github_webhook_secret.strip() or None
+            project.sentry_project_slug = new_sentry_slug
+            return templates.TemplateResponse(request, "projects_settings.html", {
+                "user": user, "project": project, "tokens": tokens, "can_write": True,
+                "snippet": snippet, "new_token": None,
+                "error": _t("projects.sentry_slug_taken", resolve_lang(request)),
+            }, status_code=422)
     await ps.update_project(db, project, {
         "name": name.strip(),
         "description": description.strip() or None,

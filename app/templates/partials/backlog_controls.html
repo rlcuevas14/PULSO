@@ -19,7 +19,7 @@
         <button type="button"
           hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters" hx-push-url="true"
           hx-vals='{"view":"{{ val }}"}'
-          class="px-3 py-1 text-xs font-medium transition-colors {% if (filters.view or 'list') == val %}bg-[color:var(--accent)] text-[color:var(--accent-fg)]{% else %}text-body hover:bg-surface-strong{% endif %}">
+          class="px-3 py-1.5 text-xs font-medium transition-colors {% if (filters.view or 'list') == val %}bg-[color:var(--accent)] text-[color:var(--accent-fg)]{% else %}text-body hover:bg-surface-strong{% endif %}">
           {{ label }}
         </button>
         {% endfor %}
@@ -31,18 +31,19 @@
         <button type="button"
           hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters" hx-push-url="true"
           hx-vals='{"show":"{{ val }}"}'
-          class="px-3 py-1 text-xs font-medium transition-colors {% if (filters.show or 'open') == val %}bg-[color:var(--accent)] text-[color:var(--accent-fg)]{% else %}text-body hover:bg-surface-strong{% endif %}">
+          class="px-3 py-1.5 text-xs font-medium transition-colors {% if (filters.show or 'open') == val %}bg-[color:var(--accent)] text-[color:var(--accent-fg)]{% else %}text-body hover:bg-surface-strong{% endif %}">
           {{ label }}
         </button>
         {% endfor %}
       </div>
 
-      {# Search input #}
+      {# Search input — hx-preserve: the swap must not clobber what the user keeps
+         typing; no hx-push-url here (one history entry per pause buries Back). #}
       <input type="text" id="backlog-q" name="q" value="{{ filters.q or '' }}" placeholder="{{ t('common.search') }}"
-             aria-label="{{ t('backlog.search_items') }}"
+             aria-label="{{ t('backlog.search_items') }}" hx-preserve="true"
              class="p-input p-input-sm flex-1 min-w-[140px]"
-             hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters" hx-push-url="true"
-             hx-trigger="keyup changed delay:300ms, search">
+             hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters"
+             hx-trigger="keyup changed delay:500ms, search">
 
       {# Clear button #}
       <a href="/backlog" class="p-btn p-btn-ghost p-btn-sm shrink-0">{{ t("backlog.clear") }}</a>
@@ -141,13 +142,13 @@
         <button type="button"
           hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters" hx-push-url="true"
           hx-vals='{"graph_blocked":"{{ "" if filters.graph_blocked else "true" }}"}'
-          class="{{ chip }}{% if filters.graph_blocked %}bg-warning/15 border-warning/40 text-warning{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
+          class="{{ chip }}{% if filters.graph_blocked %}bg-warning/15 border-warning/40 text-warning-strong{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
           {{ t("backlog.chip_blocked") }}
         </button>
         <button type="button"
           hx-get="/backlog" hx-target="#backlog-root" hx-include="#filters" hx-push-url="true"
           hx-vals='{"stale":"{{ "" if filters.stale else "true" }}"}'
-          class="{{ chip }}{% if filters.stale %}bg-warning/15 border-warning/40 text-warning{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
+          class="{{ chip }}{% if filters.stale %}bg-warning/15 border-warning/40 text-warning-strong{% else %}border-hairline text-muted hover:bg-surface-strong{% endif %}">
           {{ t("backlog.chip_stale") }}
         </button>
       </div>

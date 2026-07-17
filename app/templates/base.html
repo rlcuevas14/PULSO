@@ -72,6 +72,7 @@
             <a href="/admin/accounts" class="p-menu-item">{{ t("nav.accounts") }}</a>
             <a href="/admin" class="p-menu-item">{{ t("nav.admin") }}</a>
             {% endif %}
+            <a href="/auth/password" class="p-menu-item">{{ t("nav.change_password") }}</a>
             <form method="post" action="/auth/logout"><button class="p-menu-item text-error">{{ t("nav.logout") }}</button></form>
           </div>
         </details>
@@ -197,14 +198,17 @@
         document.body.style.overflow = lock ? "hidden" : "";
       }
 
+      var lastModalTrigger = null;
+
       window.openModal = function (id) {
         var el = document.getElementById(id);
         if (!el) return;
+        lastModalTrigger = document.activeElement;
         el.classList.remove("hidden");
         bodyScrollLock(true);
         var first = el.querySelector("input, select, textarea, button");
         if (first) {
-          try { first.focus(); } catch (e) { /* sin foco si no es enfocable */ }
+          try { first.focus(); } catch (e) { /* skip focus if not focusable */ }
         }
       };
 
@@ -213,6 +217,11 @@
         if (!el) return;
         el.classList.add("hidden");
         bodyScrollLock(false);
+        // a11y: return focus to whatever opened the modal
+        if (lastModalTrigger) {
+          try { lastModalTrigger.focus(); } catch (e) { /* trigger may be gone */ }
+          lastModalTrigger = null;
+        }
       };
 
       function anyModalOpen() {

@@ -36,8 +36,11 @@
     <option value="related">{{ t("relation.related") }}</option>
     <option value="part_of">{{ t("relation.part_of") }}</option>
   </select>
-  <input name="target_query" placeholder="{{ t('relation.search_placeholder') }}" required
+  <input name="target_query" list="open-item-titles" placeholder="{{ t('relation.search_placeholder') }}" required
          class="p-input p-input-sm flex-1 min-w-[12rem]">
+  <datalist id="open-item-titles">
+    {% for title in open_titles or [] %}<option value="{{ title }}">{% endfor %}
+  </datalist>
   <input name="note" placeholder="{{ t('relation.note_placeholder') }}" class="p-input p-input-sm">
   <button type="submit" class="p-btn p-btn-sm p-btn-primary">{{ t("relation.add") }}</button>
 </form>

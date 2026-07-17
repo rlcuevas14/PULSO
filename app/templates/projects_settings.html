@@ -83,6 +83,9 @@
   {% if user.account_role == 'owner' %}
   <div class="p-card p-5">
     <h2 class="font-semibold text-ink mb-4">{{ t("nav.project_settings") }}</h2>
+    {% if error %}
+    <div class="bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-sm mb-4">{{ error }}</div>
+    {% endif %}
     <form method="post" action="/projects/{{ project.slug }}/settings" class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div class="col-span-2">
@@ -112,7 +115,8 @@
         <div class="grid grid-cols-2 gap-3 mt-3">
           <div>
             <label class="p-label">{{ t("projects.github_webhook_secret") }}</label>
-            <input name="github_webhook_secret" type="text" value="{{ project.github_webhook_secret or '' }}"
+            <input name="github_webhook_secret" type="password" autocomplete="off"
+              value="{{ project.github_webhook_secret or '' }}"
               class="w-full p-input text-xs font-mono">
           </div>
           <div>

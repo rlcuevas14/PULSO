@@ -88,7 +88,7 @@
         <span class="p-pill bg-surface-strong text-muted ml-1">{{ a.kind }}</span>
         <span class="text-xs text-muted ml-1">{{ a.created_at | fecha }}</span>
       </summary>
-      <div class="px-4 pb-4 text-sm text-body whitespace-pre-wrap">{{ a.content_md }}</div>
+      <div class="px-4 pb-4 text-sm text-body p-md">{{ a.content_md | md }}</div>
     </details>
     {% else %}
     <p class="text-sm text-muted">{{ t("threads.artifacts_empty") }}</p>

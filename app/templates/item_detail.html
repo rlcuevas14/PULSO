@@ -9,20 +9,42 @@
 <div class="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-6 items-start">
 
   {# ---- columna principal ---- #}
-  <div class="space-y-6 min-w-0 order-2 lg:order-1">
+  <div class="space-y-6 min-w-0">
 
     <div class="flex flex-wrap items-start justify-between gap-3">
       <h1 class="text-2xl font-semibold tracking-tight text-ink">{{ item.title }}</h1>
       <div class="flex items-center gap-2 shrink-0">
         {% if item.stale_risk %}
-        <span class="p-pill bg-warning/20 text-warning">{{ t("item.stale_check") }}</span>
+        <span class="p-pill bg-warning/20 text-warning-strong">{{ t("item.stale_check") }}</span>
         {% endif %}
         {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}
       </div>
     </div>
 
+    <details class="text-sm">
+      <summary class="cursor-pointer text-muted hover:text-ink w-fit">✎ {{ t("item.edit") }}</summary>
+      <div class="p-card p-4 mt-2 space-y-3">
+        <form hx-post="/ui/items/{{ item.id }}/field" class="space-y-1">
+          <input type="hidden" name="field" value="title">
+          <label class="p-label" for="edit-title">{{ t("new_item.field_title") }}</label>
+          <div class="flex gap-2">
+            <input id="edit-title" name="value" required value="{{ item.title }}" class="p-input text-sm">
+            <button class="p-btn p-btn-primary p-btn-sm shrink-0">{{ t("common.save") }}</button>
+          </div>
+        </form>
+        <form hx-post="/ui/items/{{ item.id }}/field" class="space-y-1">
+          <input type="hidden" name="field" value="summary_md">
+          <label class="p-label" for="edit-summary">{{ t("new_item.field_summary") }}</label>
+          <div class="flex gap-2 items-start">
+            <textarea id="edit-summary" name="value" rows="3" class="p-input text-sm">{{ item.summary_md or "" }}</textarea>
+            <button class="p-btn p-btn-primary p-btn-sm shrink-0">{{ t("common.save") }}</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
     {% if item.summary_md %}
-    <div class="p-card p-5 prose-sm max-w-none text-body whitespace-pre-wrap">{{ item.summary_md }}</div>
+    <div class="p-card p-5 text-sm text-body p-md">{{ item.summary_md | md }}</div>
     {% endif %}
 
     {% if item.impact_rationale %}
@@ -40,7 +62,7 @@
     {% endif %}
 
     {% if blockers %}
-    <div class="bg-warning/10 border border-warning/30 text-warning rounded-xl px-4 py-3 text-sm">
+    <div class="bg-warning/10 border border-warning/30 text-warning-strong rounded-xl px-4 py-3 text-sm">
       ⛔ <strong>{{ t("item.blocked_by") }}</strong>
       {% for b in blockers %}<a href="/items/{{ b.id }}" class="underline">{{ b.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
       {{ t("item.blocked_by_hint") }}
@@ -62,7 +84,7 @@
             <span class="text-xs text-muted">{{ c.created_at | fecha }}</span>
             {% if c.kind == 'decision' %}<span class="p-pill bg-brand-lavender/25 text-ink">{{ t("kind." ~ c.kind) }}</span>{% endif %}
           </div>
-          <div class="text-sm text-body whitespace-pre-wrap">{{ c.body_md }}</div>
+          <div class="text-sm text-body p-md">{{ c.body_md | md }}</div>
         </div>
         {% endfor %}
       </div>
@@ -78,12 +100,21 @@
       <h2 class="font-semibold text-ink mb-4">{{ t("item.history") }}</h2>
       <div class="space-y-2">
         {% for e in item.events|reverse %}
+        {% set ev_label = t("event." ~ e.action) %}
         <div class="flex items-center gap-3 text-xs text-muted">
           <span class="w-36 shrink-0">{{ e.created_at | fecha }}</span>
           <span class="text-body">{{ e.actor }}</span>
           <span>·</span>
-          <span class="text-body">{{ e.action }}</span>
-          {% if e.payload %}<span>{{ e.payload }}</span>{% endif %}
+          {# unknown actions fall back to the raw value instead of a bare i18n key #}
+          <span class="text-body">{{ e.action if ev_label == "event." ~ e.action else ev_label }}</span>
+          {% if e.payload %}
+            {% if e.payload.get('from') and e.payload.get('to') %}
+            <span>{{ e.payload['from'] }} → {{ e.payload['to'] }}</span>
+            {% elif e.payload.get('reason') %}<span class="truncate">{{ e.payload['reason'] }}</span>
+            {% elif e.payload.get('field') %}<span>{{ e.payload['field'] }}</span>
+            {% elif e.payload.get('priority') %}<span>{{ e.payload['priority'] }}</span>
+            {% endif %}
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -93,7 +124,7 @@
   </div>
 
   {# ---- sidebar: controles de edición + acciones ---- #}
-  <aside class="lg:sticky lg:top-24 space-y-4 order-1 lg:order-2">
+  <aside class="lg:sticky lg:top-24 space-y-4">
 
     <div class="p-card p-4 space-y-3">
       <div>

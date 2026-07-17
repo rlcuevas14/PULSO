@@ -11,7 +11,7 @@
 {% endif %}
 
 {% if unmatched > 0 %}
-<div class="mb-4 bg-warning/10 border border-warning/30 text-warning rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
+<div class="mb-4 bg-warning/10 border border-warning/30 text-warning-strong rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
   <span>{{ tn("sentry.unmatched", unmatched) }}</span>
   <form method="post" action="/account/integrations/reattach">
     <button type="submit" class="p-btn p-btn-ghost p-btn-sm">{{ t("sentry.reattach") }}</button>
@@ -35,7 +35,7 @@
     </div>
     <div>
       <label class="p-label">{{ t("sentry.client_secret") }}</label>
-      <input name="client_secret" type="text" value="{{ conn.client_secret or '' }}"
+      <input name="client_secret" type="password" autocomplete="off" value="{{ conn.client_secret or '' }}"
              class="w-full p-input text-xs font-mono">
     </div>
     <details class="border-t border-hairline pt-3">
@@ -56,7 +56,7 @@
     <div class="grid sm:grid-cols-2 gap-3">
       <div>
         <label class="p-label">{{ t("sentry.api_token") }}</label>
-        <input name="api_token" type="text" value="{{ conn.api_token or '' }}"
+        <input name="api_token" type="password" autocomplete="off" value="{{ conn.api_token or '' }}"
                class="w-full p-input text-xs font-mono">
       </div>
       <div>

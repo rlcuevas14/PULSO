@@ -62,8 +62,9 @@
         <label class="p-label">{{ t("setup.project_color") }}</label>
         <div class="flex items-center gap-2 flex-wrap">
           {% for c in BRAND_PRESETS %}
-          <button type="button" class="w-7 h-7 rounded-full border border-hairline hover:scale-110 transition-transform"
-                  style="background:{{ c }}" onclick="document.getElementById('setup-color').value='{{ c }}'"
+          <button type="button" class="setup-swatch w-7 h-7 rounded-full border border-hairline hover:scale-110 transition-transform"
+                  style="background:{{ c }}"
+                  onclick="document.getElementById('setup-color').value='{{ c }}';document.querySelectorAll('.setup-swatch').forEach(function(b){b.style.outline=''});this.style.outline='2px solid var(--ink)';this.style.outlineOffset='2px'"
                   aria-label="{{ t('common.pick_color', color=c) }}"></button>
           {% endfor %}
           <input type="color" name="color" id="setup-color" value="#6366f1"

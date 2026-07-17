@@ -54,12 +54,16 @@
   {% if not issues %}
   <div class="px-4 py-12 text-center text-sm text-muted">
     {{ t("incidents.empty") }}
+    {% if user.account_role == 'owner' %}
+    <a href="/account/integrations" class="block mt-2 underline underline-offset-2"
+       style="color:var(--accent)">{{ t("incidents.empty_cta") }}</a>
+    {% endif %}
   </div>
   {% endif %}
   {% for it in issues %}
   <div class="flex flex-wrap md:flex-nowrap items-center gap-3 px-4 py-3 {% if it.status == 'ignored' %}opacity-50{% endif %}">
     <span class="p-pill shrink-0
-      {% if it.level == 'error' %}bg-error/15 text-error{% elif it.level == 'warning' %}bg-warning/15 text-warning{% else %}bg-surface-strong text-muted{% endif %}">{{ it.level }}</span>
+      {% if it.level == 'error' %}bg-error/15 text-error{% elif it.level == 'warning' %}bg-warning/15 text-warning-strong{% else %}bg-surface-strong text-muted{% endif %}">{{ it.level }}</span>
     <div class="flex-1 min-w-0">
       <div class="text-sm font-medium text-ink truncate">{{ it.title }}</div>
       <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -72,7 +76,7 @@
         {% if it.payload and it.payload.get('web_url') %}<a href="{{ it.payload.web_url }}" target="_blank" class="underline underline-offset-2" style="color:var(--accent)">{{ t("incidents.view_in_sentry") }}</a>{% endif %}
       </div>
     </div>
-    <div class="flex items-center gap-2 shrink-0 ml-auto">
+    <div class="flex flex-wrap items-center justify-end gap-2 shrink-0 ml-auto">
       {% if it.status == 'linked' %}
       <a href="/backlog?origen=sentry" class="text-xs text-success">{{ t("incidents.in_backlog") }}</a>
       {% elif it.status != 'ignored' %}
@@ -87,6 +91,9 @@
       </form>
       <button hx-post="/ui/incidents/{{ it.id }}/ignore" hx-swap="none"
               class="p-btn p-btn-sm p-btn-ghost">{{ t("incidents.ignore") }}</button>
+      {% elif it.status == 'ignored' %}
+      <button hx-post="/ui/incidents/{{ it.id }}/unignore" hx-swap="none"
+              class="p-btn p-btn-sm p-btn-ghost">{{ t("incidents.restore") }}</button>
       {% endif %}
     </div>
   </div>

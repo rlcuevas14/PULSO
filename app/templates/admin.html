@@ -52,11 +52,12 @@
       <th class="p-label text-left pb-2">{{ t("common.name") }}</th><th class="p-label text-left pb-2">{{ t("common.scope") }}</th><th class="p-label text-left pb-2">{{ t("admin.last_used") }}</th>
     </tr></thead>
     <tbody>
-    {% for t in tokens %}
+    {# `tok`, not `t`: a loop var named `t` shadows the translation global #}
+    {% for tok in tokens %}
     <tr>
-      <td class="py-2 border-t border-hairline text-sm text-body">{{ t.name }}</td>
-      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill bg-surface-strong text-body">{{ t.scopes }}</span></td>
-      <td class="py-2 border-t border-hairline text-sm text-muted">{{ t.last_used_at | fecha }}</td>
+      <td class="py-2 border-t border-hairline text-sm text-body">{{ tok.name }}</td>
+      <td class="py-2 border-t border-hairline text-sm"><span class="p-pill bg-surface-strong text-body">{{ tok.scopes }}</span></td>
+      <td class="py-2 border-t border-hairline text-sm text-muted">{{ tok.last_used_at | fecha }}</td>
     </tr>
     {% endfor %}
     </tbody>

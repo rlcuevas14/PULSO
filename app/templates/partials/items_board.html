@@ -6,7 +6,7 @@
   "spec":        ("bg-brand-mint/30 text-ink",      "📐"),
   "in-progress": ("bg-brand-ochre/30 text-ink",     "⚙"),
   "in-review":   ("bg-brand-peach/30 text-ink",     "👁"),
-  "blocked":     ("bg-warning/20 text-warning",     "⛔"),
+  "blocked":     ("bg-warning/20 text-warning-strong",     "⛔"),
 } %}
 {% set T = {
   "bug":       "bg-brand-coral/20",
@@ -20,8 +20,9 @@
   "idea":      "bg-brand-lavender/25",
 } %}
 
+{# snap-x without `mandatory`: forced snapping fights vertical drag on touch #}
 <div id="board-root" data-can-write="{{ '1' if can_write else '' }}"
-     class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
+     class="flex gap-3 overflow-x-auto snap-x pb-2">
   {% for status in board_statuses %}
   {% set col_items = by_status.get(status, []) %}
   {% set sc_pair = SC.get(status, ("bg-surface-strong text-muted", "")) %}
@@ -41,14 +42,14 @@
         <div class="flex items-start gap-1.5 min-w-0">
           {% if can_write %}
           <span data-drag-handle title="{{ t('backlog.drag_hint') }}"
-                class="cursor-grab active:cursor-grabbing text-muted select-none leading-none pt-0.5 shrink-0">⠿</span>
+                class="cursor-grab active:cursor-grabbing text-muted select-none leading-none shrink-0 text-base p-1.5 -m-1">⠿</span>
           {% endif %}
           <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline leading-snug">{{ item.title }}</a>
         </div>
         <div class="flex gap-1 shrink-0 text-sm leading-none pt-0.5">
           {% if blocked_ids and item.id|string in blocked_ids %}<span title="{{ t('backlog.tip_blocked') }}">⛔</span>{% endif %}
           {% if ready_ids and item.id|string in ready_ids %}<span title="{{ t('backlog.tip_agent_ready') }}">🤖</span>{% endif %}
-          {% if item.stale_risk %}<span title="{{ t('backlog.tip_stale') }}" class="text-warning">⚠</span>{% endif %}
+          {% if item.stale_risk %}<span title="{{ t('backlog.tip_stale') }}" class="text-warning-strong">⚠</span>{% endif %}
         </div>
       </div>
 

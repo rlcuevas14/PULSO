@@ -32,7 +32,7 @@
         {% if unblocker_ids and item.id|string in unblocker_ids %}<span title="{{ t('backlog.tip_unblocker') }}">🔓</span>{% endif %}
         <a href="/items/{{ item.id }}" class="text-sm font-medium text-ink hover:underline truncate">{{ item.title }}</a>
         {% if recent_touch and recent_touch.get(item.id|string) %}<span title="{{ t('backlog.tip_recent') }}" class="text-success">●</span>{% endif %}
-        {% if item.stale_risk %}<span class="text-xs text-warning shrink-0">⚠</span>{% endif %}
+        {% if item.stale_risk %}<span class="text-xs text-warning-strong shrink-0">⚠</span>{% endif %}
       </div>
       <div class="flex items-center gap-2 text-xs text-muted">
         {% with status = item.status %}{% include "partials/_status_badge.html" %}{% endwith %}

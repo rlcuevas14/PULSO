@@ -26,6 +26,8 @@ from app.ui.flash import flash_success
 router = APIRouter(tags=["ui"])
 
 _OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
+# ponytail: fetch cap keeps the page bounded; the counter shows "{n}+" when hit.
+_BACKLOG_FETCH_CAP = 300
 
 # The #filters form serializes "" for booleans that are off (HTML contract: the hidden
 # inputs and the chips use the empty string = off). These types accept that contract:
@@ -259,8 +261,9 @@ async def _backlog_context(
     elif order in ("recent", "reciente"):
         q_base = q_base.order_by(Item.created_at.desc())
 
-    q_base = q_base.limit(300)
+    q_base = q_base.limit(_BACKLOG_FETCH_CAP)
     items = list((await db.execute(q_base)).scalars().all())
+    capped = len(items) >= _BACKLOG_FETCH_CAP
 
     # With an active search and the default ordering, the order is relevance (FTS rank).
     if fts_rank is not None and order in ("priority", "prioridad"):
@@ -301,6 +304,7 @@ async def _backlog_context(
         "unblocker_ids": unblocker_ids,
         "ready_ids": ready_ids,
         "can_write": can_write,
+        "capped": capped,
         "recent_touch": {str(i.id): _recent_touch(i) for i in items},
         "filters": {
             "scope": scope, "status": status, "type": item_type, "origen": origen,
@@ -449,6 +453,7 @@ async def item_detail(
             "all_targets": allowed_targets(item.status),
             "blockers": blockers,
             "subgraph": sub,
+            "open_titles": await _open_item_titles(db, item.project_id),
         },
     )
 
@@ -687,16 +692,36 @@ async def ui_set_field(
         item.impact_ai = int(value) if value else None
     elif field == "effort_ai":
         item.effort_ai = value or None
+    elif field == "title":
+        new_title = value.strip()
+        if not new_title:
+            return Response(content="Title cannot be empty", status_code=422)
+        item.title = new_title
+        db.add(ItemEvent(item_id=item.id, actor=user.email, action="edited", payload={"field": "title"}))
+    elif field == "summary_md":
+        item.summary_md = value.strip() or None
+        db.add(ItemEvent(item_id=item.id, actor=user.email, action="edited",
+                         payload={"field": "summary_md"}))
     else:
         return Response(content="Field not editable", status_code=422)
     await db.commit()
     return Response(status_code=204, headers={"HX-Refresh": "true"})
 
 
+async def _open_item_titles(db: AsyncSession, project_id: uuid.UUID | None) -> list[str]:
+    """Datalist source for the relationship form — open items of the project."""
+    rows = await db.execute(
+        select(Item.title).where(Item.project_id == project_id, Item.status.in_(_OPEN))
+        .order_by(Item.created_at.desc()).limit(200)
+    )
+    return list(rows.scalars().all())
+
+
 async def _render_relations(request: Request, db: AsyncSession, item: Item) -> Response:
     sub = await graph.subgraph(db, item.id)
     return templates.TemplateResponse(
-        request, "partials/relationship_list.html", {"item": item, "subgraph": sub}
+        request, "partials/relationship_list.html",
+        {"item": item, "subgraph": sub, "open_titles": await _open_item_titles(db, item.project_id)},
     )
 
 
@@ -937,7 +962,7 @@ async def ui_elaborate_hilo(
         draft = await elaborate_next_stage(db, t)
     except ThreadError as e:
         return HTMLResponse(
-            f'<div class="text-sm text-red-600">{e}</div>', status_code=200
+            f'<div class="text-sm text-error">{e}</div>', status_code=200
         )
     return templates.TemplateResponse(
         request, "partials/elaborate_draft.html", {"thread": t, "draft": draft}
@@ -1029,6 +1054,27 @@ async def ui_ignore_issue(
     return _refresh()
 
 
+@router.post("/ui/incidents/{issue_id}/unignore")
+async def ui_unignore_issue(
+    issue_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    from app.webhooks.models import SentryIssue
+
+    issue = await db.get(SentryIssue, issue_id)
+    if issue is None or issue.status != "ignored":
+        return Response(status_code=404)
+    guard = await _guard_row(db, user, issue.project_id, write=True)
+    if guard is not None:
+        return guard
+    issue.status = "new"
+    await db.commit()
+    flash_success(request, message=_t("flash.incident_restored", resolve_lang(request)))
+    return _refresh()
+
+
 @router.post("/ui/incidents/backfill")
 async def ui_backfill_sentry(
     request: Request,
@@ -1040,7 +1086,7 @@ async def ui_backfill_sentry(
     + the current project's slug (owner only). Spec 2026-07-10 §4.5."""
     if user.account_role != "owner":
         msg = _t("admin.unauthorized", resolve_lang(request))
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
+        return HTMLResponse(f'<div class="text-sm text-error">{msg}</div>', status_code=403)
     from app.projects.models import Project
     from app.webhooks import connection as sconn
     from app.webhooks import service as wservice
@@ -1051,10 +1097,10 @@ async def ui_backfill_sentry(
     conn = await sconn.outbound(db, user.account_id)
     if conn is None or not conn.org_slug:
         msg = _t("incidents.backfill_not_configured", lang)
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+        return HTMLResponse(f'<div class="text-sm text-error">{msg}</div>')
     if project is None or not project.sentry_project_slug:
         msg = _t("incidents.backfill_no_slug", lang)
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+        return HTMLResponse(f'<div class="text-sm text-error">{msg}</div>')
     try:
         issues = await wservice.fetch_sentry_issues(
             conn.api_token or "", conn.org_slug, project.sentry_project_slug, query,
@@ -1062,13 +1108,13 @@ async def ui_backfill_sentry(
         )
     except Exception as e:  # network error / bad token / invalid project
         msg = _t("incidents.backfill_error", lang, error=e)
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
+        return HTMLResponse(f'<div class="text-sm text-error">{msg}</div>')
     result = await wservice.backfill_issues(
         db, issues, project.sentry_project_slug, account_id=user.account_id, project_id=pid,
     )
     await db.commit()
     return HTMLResponse(
-        f'<div class="text-sm text-green-700">'
+        f'<div class="text-sm text-success">'
         f'{_t("incidents.backfill_ok", lang, n=result["ingested"], total=result["total"])} '
         f'<a href="/incidents" class="underline">{_t("incidents.reload", lang)}</a></div>'
     )
@@ -1293,7 +1339,7 @@ async def ui_create_token(
 ):
     if not user.is_superadmin:
         msg = _t("admin.unauthorized", resolve_lang(request))
-        return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
+        return HTMLResponse(f'<div class="text-sm text-error">{msg}</div>', status_code=403)
     from app.auth.service import create_api_token
 
     if scopes not in ("read", "write"):

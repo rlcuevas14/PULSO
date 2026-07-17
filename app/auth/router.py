@@ -6,12 +6,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import current_user_ui
 from app.auth.models import ApiToken, User
-from app.auth.service import authenticate
+from app.auth.service import authenticate, hash_password, verify_password
 from app.database import get_db
 from app.i18n import resolve_lang
 from app.i18n import t as _t
 from app.templates_config import templates
+from app.ui.flash import flash_success
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 setup_router = APIRouter(tags=["setup"])
@@ -47,6 +49,47 @@ async def login_submit(
             status_code=401,
         )
     request.session["user_id"] = str(user.id)
+    # Seed the active project so the header pill and accent match the data shown
+    # from the very first screen (instead of "Select project" over real data).
+    from app.projects.access import resolve_current_project
+    project = await resolve_current_project(db, user, request)
+    if project is not None:
+        request.session["current_project_id"] = str(project.id)
+        request.session["current_project_name"] = project.name
+        request.session["current_project_slug"] = project.slug
+        request.session["current_project_color"] = project.color or "#6366f1"
+    return RedirectResponse("/", status_code=303)
+
+
+@router.get("/password", response_class=HTMLResponse)
+async def password_page(request: Request, user: User = Depends(current_user_ui)):
+    return templates.TemplateResponse(request, "account_password.html", {"user": user, "error": None})
+
+
+@router.post("/password")
+async def password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    lang = resolve_lang(request)
+    error = None
+    if not verify_password(current_password, user.password_hash):
+        error = _t("account.password_wrong_current", lang)
+    elif len(new_password) < 8:
+        error = _t("setup.error_password_length", lang)
+    elif new_password != confirm_password:
+        error = _t("account.password_mismatch", lang)
+    if error:
+        return templates.TemplateResponse(
+            request, "account_password.html", {"user": user, "error": error}, status_code=422
+        )
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+    flash_success(request, message=_t("flash.password_changed", lang))
     return RedirectResponse("/", status_code=303)
 
 

@@ -674,6 +674,149 @@ async def test_new_project_seeds_default_scope(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_markdown_rendered_and_sanitized(client: AsyncClient):
+    """M1: summary/comments render markdown; raw HTML is escaped (XSS-safe)."""
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, title="MD item")
+    await client.post(f"/ui/items/{item_id}/field", data={
+        "field": "summary_md", "value": "**bold move** <script>alert(1)</script>",
+    })
+    detail = await client.get(f"/items/{item_id}")
+    assert "<strong>bold move</strong>" in detail.text
+    assert "<script>alert(1)</script>" not in detail.text
+
+
+# ---------- UX audit cluster 1: behavior endpoints (2026-07-16) ----------
+
+@pytest.mark.asyncio
+async def test_login_seeds_active_project_in_session(client: AsyncClient):
+    """A3: right after login the header shows the resolved project, not 'Select project'."""
+    await _login(client)
+    r = await client.get("/")
+    assert r.status_code == 200
+    assert "Select project" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_item_title_and_summary_editable_from_ui(client: AsyncClient):
+    """A4: title and summary_md are editable through /ui/items/{id}/field."""
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, title="Old title")
+    r = await client.post(f"/ui/items/{item_id}/field", data={"field": "title", "value": "New title"})
+    assert r.status_code == 204
+    r2 = await client.post(
+        f"/ui/items/{item_id}/field", data={"field": "summary_md", "value": "Fresh summary"}
+    )
+    assert r2.status_code == 204
+    detail = await client.get(f"/items/{item_id}")
+    assert "New title" in detail.text and "Fresh summary" in detail.text
+    bad = await client.post(f"/ui/items/{item_id}/field", data={"field": "title", "value": "   "})
+    assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_incident_unignore_restores_to_new(client: AsyncClient):
+    """A5: an ignored incident can be restored from the UI (ignore is no longer one-way)."""
+    _uid, pid = await _login(client)
+    from app.webhooks.models import SentryIssue
+
+    async for db in client.app.dependency_overrides[get_db]():
+        iss = SentryIssue(sentry_issue_id=f"u{uuid.uuid4().hex[:8]}", project="x", title="Restorable",
+                          level="error", status="ignored", events_count=1, payload={}, project_id=pid)
+        db.add(iss)
+        await db.commit()
+        await db.refresh(iss)
+        iid = str(iss.id)
+        break
+    r = await client.post(f"/ui/incidents/{iid}/unignore")
+    assert r.status_code == 204
+    page = await client.get("/incidents")  # default view hides ignored — restored must show up
+    assert "Restorable" in page.text
+
+
+@pytest.mark.asyncio
+async def test_settings_sentry_slug_conflict_rerenders_form(client: AsyncClient):
+    """A7: a 422 on project settings re-renders the page with the error, not a plain-text dead end."""
+    await _login(client)
+    second = await client.post("/projects/new", data={"name": "Second"}, follow_redirects=False)
+    assert second.status_code == 303
+    ok = await client.post("/projects/default/settings", data={
+        "name": "Default", "description": "", "color": "", "repo_url": "",
+        "github_webhook_secret": "", "sentry_project_slug": "dup-slug",
+    }, follow_redirects=False)
+    assert ok.status_code == 303
+    clash = await client.post("/projects/second/settings", data={
+        "name": "Second", "description": "", "color": "", "repo_url": "",
+        "github_webhook_secret": "", "sentry_project_slug": "dup-slug",
+    })
+    assert clash.status_code == 422
+    assert "API Tokens" in clash.text  # the full settings page, form intact
+
+
+@pytest.mark.asyncio
+async def test_change_password_flow(client: AsyncClient):
+    """A8: users can change their own password; wrong current or short new are rejected."""
+    from app.auth.service import create_user
+
+    suffix = uuid.uuid4().hex[:8]
+    email = f"pw{suffix}@t.cl"
+    async for db in client.app.dependency_overrides[get_db]():
+        await create_user(db, email, "PW User", "password", "admin")
+        break
+    await client.post("/auth/login", data={"email": email, "password": "password"})
+    page = await client.get("/auth/password")
+    assert page.status_code == 200
+    bad = await client.post("/auth/password", data={
+        "current_password": "wrong", "new_password": "newpassword1", "confirm_password": "newpassword1",
+    })
+    assert bad.status_code == 422
+    short = await client.post("/auth/password", data={
+        "current_password": "password", "new_password": "short", "confirm_password": "short",
+    })
+    assert short.status_code == 422
+    ok = await client.post("/auth/password", data={
+        "current_password": "password", "new_password": "newpassword1", "confirm_password": "newpassword1",
+    }, follow_redirects=False)
+    assert ok.status_code == 303
+    await client.post("/auth/logout")
+    relog = await client.post(
+        "/auth/login", data={"email": email, "password": "newpassword1"}, follow_redirects=False
+    )
+    assert relog.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_admin_token_result_warns_about_mcp(client: AsyncClient):
+    """A2: /admin tokens have no project — the result must not offer the MCP connect snippet."""
+    await _login(client)
+    r = await client.post("/ui/admin/tokens", data={"name": "svc", "scopes": "write"})
+    assert r.status_code == 200
+    assert "claude mcp add" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_backlog_counter_shows_cap(client: AsyncClient):
+    """B8: when the 300-item fetch cap is hit, the counter says 300+ instead of lying."""
+    _uid, pid = await _login(client)
+    from app.items.models import Item
+    from app.scopes.models import Scope
+
+    async for db in client.app.dependency_overrides[get_db]():
+        scope = Scope(name=f"cap-{uuid.uuid4().hex[:6]}", project_id=pid)
+        db.add(scope)
+        await db.flush()
+        db.add_all([
+            Item(scope_id=scope.id, project_id=pid, title=f"cap item {n}", type="feature",
+                 status="backlog", origen="human")
+            for n in range(305)
+        ])
+        await db.commit()
+        break
+    r = await client.get("/backlog")
+    assert "300+" in r.text
+
+
+@pytest.mark.asyncio
 async def test_ui_add_comment_form_encoded(client: AsyncClient):
     """The item-detail comment form posts form-urlencoded; the UI endpoint must
     accept it (the REST endpoint only takes JSON — audit finding C1)."""

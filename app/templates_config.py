@@ -4,6 +4,8 @@ from typing import Any
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 from jinja2.runtime import Context
+from markdown_it import MarkdownIt
+from markupsafe import Markup
 
 from app import i18n
 from app.config import settings
@@ -58,6 +60,20 @@ def _fecha(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 
 # Filtro Jinja `fecha`: {{ item.created_at | fecha }} → '2026-06-15 14:30'.
 templates.env.filters["fecha"] = _fecha
+
+
+# html=False is the XSS boundary: raw HTML in user/agent markdown is escaped, never
+# emitted. breaks=True keeps the single-newline behavior people expect from the old
+# whitespace-pre-wrap rendering.
+_md = MarkdownIt("commonmark", {"html": False, "breaks": True})
+
+
+def _render_md(text: str | None) -> Markup:
+    return Markup(_md.render(text or ""))
+
+
+# Jinja filter `md`: {{ item.summary_md | md }} → sanitized HTML (pair with .p-md styles).
+templates.env.filters["md"] = _render_md
 
 
 # Paleta de presets para el color de proyecto (indigo default + paleta de marca).

@@ -44,7 +44,7 @@
   {% for p in items %}
   <div class="flex items-center gap-3 px-4 py-2.5">
     <button hx-post="/ui/management/pendientes/{{ p.id }}/complete" hx-swap="none"
-            class="shrink-0 w-5 h-5 rounded-full border border-hairline flex items-center justify-center text-xs
+            class="shrink-0 w-7 h-7 rounded-full border border-hairline flex items-center justify-center text-xs
                    {% if p.status == 'done' %}bg-success text-white{% else %}text-muted hover:border-accent{% endif %}"
             aria-label="{{ t('management.pending.complete') }}">✓</button>
     <div class="flex-1 min-w-0">
@@ -57,12 +57,12 @@
       </div>
     </div>
     <span class="p-pill {{ PSTATUS_TINT.get(p.status, 'bg-surface-strong') }} text-ink">{{ t("pstatus." ~ p.status) }}</span>
-    <button type="button" class="text-muted hover:text-ink text-xs"
+    <button type="button" class="text-muted hover:text-ink text-xs px-2 py-1.5"
             onclick='editPending({{ {"id": p.id|string, "title": p.title, "detail": p.detail_md or "", "owner": p.owner or "", "status": p.status, "due": (p.due_date|string if p.due_date else ""), "task": (p.plan_task_id|string if p.plan_task_id else "")} | tojson }})'>{{ t("management.pending.edit") }}</button>
     <form action="/ui/management/pendientes/{{ p.id }}/delete" method="post" class="inline"
           hx-post="/ui/management/pendientes/{{ p.id }}/delete" hx-swap="none"
           hx-confirm="{{ t('management.pending.delete_confirm') }}">
-      <button type="submit" class="text-muted hover:text-error text-xs">{{ t("management.pending.delete") }}</button>
+      <button type="submit" class="text-muted hover:text-error text-xs px-2 py-1.5">{{ t("management.pending.delete") }}</button>
     </form>
   </div>
   {% endfor %}
@@ -75,7 +75,9 @@
 <div id="pending-modal" data-modal role="dialog" aria-modal="true"
      class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
   <div class="p-card w-full max-w-md p-6">
-    <h2 class="text-lg font-semibold text-ink mb-4">{{ t("management.pending.new") }}</h2>
+    <h2 id="pending-modal-title" class="text-lg font-semibold text-ink mb-4"
+        data-new="{{ t('management.pending.new') }}"
+        data-edit="{{ t('management.pending.edit') }}">{{ t("management.pending.new") }}</h2>
     <form action="/ui/management/pendientes" method="post" class="space-y-3">
       <input type="hidden" name="pending_id" id="pm-id" value="">
       <div>
@@ -119,6 +121,8 @@
 
 <script>
   function editPending(p) {
+    var title = document.getElementById("pending-modal-title");
+    title.textContent = p ? title.dataset.edit : title.dataset.new;
     document.getElementById("pm-id").value    = p ? p.id : "";
     document.getElementById("pm-title").value  = p ? p.title : "";
     document.getElementById("pm-detail").value = p ? p.detail : "";

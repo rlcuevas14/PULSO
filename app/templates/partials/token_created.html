@@ -1,6 +1,7 @@
 <div class="bg-success/10 border border-success/30 rounded-xl p-4 mt-3 text-sm">
   <div class="text-success font-medium mb-2">{{ t("admin.token_created", name=name, scopes=scopes) }}</div>
   <code class="block font-mono text-sm select-all text-ink break-all mb-3">{{ raw }}</code>
-  <div class="text-muted mb-1">{{ t("admin.connect_claude") }}</div>
-  <pre class="bg-canvas border border-hairline rounded-xl p-3 text-xs overflow-x-auto">claude mcp add --transport http pulso {{ base_url }}/mcp --header "Authorization: Bearer {{ raw }}"</pre>
+  {# Admin tokens carry no project_id — the MCP endpoint rejects them, so never
+     offer the connect snippet here (audit A2). #}
+  <div class="text-xs text-warning-strong">{{ t("admin.token_no_mcp") }}</div>
 </div>

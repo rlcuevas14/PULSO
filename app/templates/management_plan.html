@@ -34,6 +34,15 @@
   .gantt-ms { align-self:center; justify-self:center; color:rgba(var(--pc), 1); font-size:15px; line-height:1; }
   .gantt-today { position:absolute; top:0; bottom:0; width:2px; background:var(--accent); opacity:.65; z-index:5; }
   .gantt-today::after { content:""; position:absolute; top:0; left:-3px; border:4px solid transparent; border-top-color:var(--accent); }
+  .gantt-pct { position:absolute; right:6px; top:50%; transform:translateY(-50%);
+               font-size:10px; color:var(--ink); opacity:.75; }
+  /* Mobile: the 220px name column would leave ~150px of chart on a 375px screen. */
+  @media (max-width: 640px) {
+    .gantt-side { flex: 0 0 140px; }
+    .gantt-name { font-size:12px; padding:0 8px; }
+    .gantt-name.gl2 { padding-left:18px; }
+    .gantt-name.gl3 { padding-left:28px; }
+  }
 </style>
 
 <p class="text-sm text-muted mb-4 flex items-center gap-2">
@@ -71,7 +80,8 @@
         <div class="gantt-bar {% if r.level == 1 %}summary{% endif %}"
              style="grid-column:{{ r.bar[0] + 1 }} / span {{ r.bar[1] }}; grid-row:{{ rownum }}; --pc:{{ PHASE[r.root % 7] }}"
              title="{{ r.name }} — {{ r.progress }}%">
-          {% if r.progress and r.level != 1 %}<span class="gantt-fill" style="width:{{ r.progress }}%"></span>{% endif %}
+          {% if r.progress and r.level != 1 %}<span class="gantt-fill" style="width:{{ r.progress }}%"></span>
+          <span class="gantt-pct">{{ r.progress }}%</span>{% endif %}
           {% if r.has_deps %}<span class="gantt-dep" aria-hidden="true">&#8627;</span>{% endif %}
         </div>
       {% endif %}

@@ -4,7 +4,7 @@
     {{ t("archive.ai_summary_week", week=week) }}
   </summary>
   {% if summary_md %}
-  <div class="prose-sm max-w-none text-body whitespace-pre-wrap text-sm">{{ summary_md }}</div>
+  <div class="text-body text-sm p-md">{{ summary_md | md }}</div>
   {% else %}
   <p class="text-sm text-muted">{{ t("archive.ai_summary_unavailable") }}</p>
   {% endif %}

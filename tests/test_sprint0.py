@@ -139,14 +139,16 @@ async def test_prioridad_page_renders(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_admin_generate_mcp_token(client: AsyncClient):
-    cookies, _ = await _setup(client)  # _setup crea un admin y loguea
+async def test_admin_generate_service_token(client: AsyncClient):
+    """Admin tokens carry no project_id, so the result must NOT offer the MCP
+    connect snippet (2026-07-16 audit, A2) — MCP tokens come from project settings."""
+    cookies, _ = await _setup(client)  # _setup creates an admin and logs in
     r = await client.post(
         "/ui/admin/tokens", data={"name": "claude-code", "scopes": "write"}, cookies=cookies,
     )
     assert r.status_code == 200
-    assert "claude mcp add" in r.text
-    assert "Bearer" in r.text
+    assert "claude mcp add" not in r.text
+    assert "claude-code" in r.text  # the created token row is rendered
 
 
 @pytest.mark.asyncio

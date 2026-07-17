@@ -36,6 +36,8 @@ DYNAMIC_PREFIXES = {
     "management.pending.groupby.": ["status", "owner", "due", "none"],
     "pstatus.": ["open", "doing", "blocked", "done"],
     "dstatus.": ["draft", "review", "final", "archived"],
+    "event.": ["created", "status_changed", "closed", "reopened",
+               "priority_changed", "unblocked_by", "edited"],
 }
 
 _T_CALL = re.compile(r"""\bt(?:n)?\(\s*['"]([a-z0-9_.\-]+)['"]""")
