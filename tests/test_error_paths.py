@@ -404,8 +404,8 @@ async def test_rest_create_item_read_token_403(client: AsyncClient):
 def test_format_stacktrace_evento_vacio():
     from app.webhooks.service import _format_stacktrace
 
-    assert _format_stacktrace({}) == "(sin evento)"
-    assert _format_stacktrace(None) == "(sin evento)"  # type: ignore[arg-type]
+    assert _format_stacktrace({}) == "(no event)"
+    assert _format_stacktrace(None) == "(no event)"  # type: ignore[arg-type]
 
 
 def test_format_stacktrace_sin_entry_de_exception():

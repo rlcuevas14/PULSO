@@ -133,7 +133,7 @@ async def test_ui_create_item(client: AsyncClient):
 async def test_prioridad_page_renders(client: AsyncClient):
     cookies, scope_id = await _setup(client)
     await _make(client, cookies, scope_id, impact_ai=5)
-    r = await client.get("/prioridad", cookies=cookies)
+    r = await client.get("/priority", cookies=cookies)
     assert r.status_code == 200
     assert "Priority" in r.text  # default EN
 

@@ -1,8 +1,8 @@
-"""Gestión de arcos del grafo: creación con resolución por texto + guards, y borrado.
+"""Graph arc management: creation with text-based resolution + guards, plus deletion.
 
-Compartido por la API REST, la UI y el MCP. Resuelve queries de texto a ítems por
-full-text (vía app.items.search); aborta ante ambigüedad (empate de rank) en vez de
-adivinar, y marca baja confianza cuando el margen entre el top-1 y el top-2 es estrecho.
+Shared by the REST API, the UI and the MCP. Resolves text queries to items via
+full-text search (through app.items.search); aborts on ambiguity (rank tie) instead of
+guessing, and flags low confidence when the margin between top-1 and top-2 is narrow.
 """
 
 import uuid
@@ -14,26 +14,26 @@ from app.items.models import ItemRelationship
 from app.items.search import search_items
 
 _SYMMETRIC = ("conflicts", "related")
-# Margen relativo mínimo entre top-1 y top-2 para considerar la resolución "confiable".
-# Si (rank0 - rank1) / rank0 < este umbral, la coincidencia es de baja confianza.
+# Minimum relative margin between top-1 and top-2 to consider the resolution "reliable".
+# If (rank0 - rank1) / rank0 < this threshold, the match is low-confidence.
 _LOW_CONFIDENCE_MARGIN = 0.15
 
 
 class RelationshipError(ValueError):
-    """Error de negocio al crear/borrar un arco (no encontrado, ambiguo, self-loop, duplicado)."""
+    """Business error when creating/deleting an arc (not found, ambiguous, self-loop, duplicate)."""
 
 
 async def resolve_query_verbose(db: AsyncSession, query: str) -> dict:
-    """Resuelve un texto a un ítem por full-text, con metadatos de confianza.
+    """Resolve a text query to an item via full-text search, with confidence metadata.
 
-    Devuelve {"id": uuid, "title": str, "low_confidence": bool, "margin": float}.
-    Aborta (RelationshipError) si no hay resultados o si el top-2 empata exactamente.
-    `low_confidence=True` cuando el margen relativo entre el top-1 y el top-2 es estrecho
-    (la coincidencia es plausible pero no clara) — el caller puede advertirlo al usuario.
+    Returns {"id": uuid, "title": str, "low_confidence": bool, "margin": float}.
+    Aborts (RelationshipError) if there are no results or if the top-2 ties exactly.
+    `low_confidence=True` when the relative margin between top-1 and top-2 is narrow
+    (the match is plausible but not clear-cut) — the caller may warn the user.
     """
     rows = await search_items(db, query, limit=2)
     if not rows:
-        raise RelationshipError(f"No se encontró ningún ítem para «{query}».")
+        raise RelationshipError(f"No item found for «{query}».")
 
     rank0 = rows[0]["rank"]
     low_confidence = False
@@ -42,7 +42,7 @@ async def resolve_query_verbose(db: AsyncSession, query: str) -> dict:
         rank1 = rows[1]["rank"]
         if rank0 == rank1:
             raise RelationshipError(
-                f"«{query}» es ambiguo (varios ítems con el mismo rank). Especifica el ítem exacto."
+                f"«{query}» is ambiguous (multiple items with the same rank). Name the exact item."
             )
         margin = (rank0 - rank1) / rank0 if rank0 else 0.0
         low_confidence = margin < _LOW_CONFIDENCE_MARGIN
@@ -56,10 +56,10 @@ async def resolve_query_verbose(db: AsyncSession, query: str) -> dict:
 
 
 async def resolve_query(db: AsyncSession, query: str) -> uuid.UUID:
-    """Resuelve un texto a un item_id por full-text. Aborta si hay empate de rank en el top-2.
+    """Resolve a text query to an item_id via full-text search. Aborts on a rank tie in the top-2.
 
-    Compatibilidad: devuelve solo el id (como antes). Para advertir baja confianza,
-    usa `resolve_query_verbose`.
+    Compatibility: returns only the id (as before). To warn about low confidence,
+    use `resolve_query_verbose`.
     """
     return (await resolve_query_verbose(db, query))["id"]
 
@@ -76,14 +76,14 @@ async def create_relationship(
             f"Invalid relation '{relation}'. Use one of: {', '.join(RELATIONS)}."
         )
     if source_id == target_id:
-        raise RelationshipError("Un ítem no puede relacionarse consigo mismo.")
+        raise RelationshipError("An item cannot relate to itself.")
 
-    # Para arcos simétricos, normalizar el orden para no duplicar (A,B) y (B,A).
+    # For symmetric arcs, normalize the order so (A,B) and (B,A) don't get duplicated.
     s, t = source_id, target_id
     if relation in _SYMMETRIC and str(source_id) > str(target_id):
         s, t = target_id, source_id
 
-    # Idempotencia: si ya existe, devolver el existente (no 500 por PK duplicada).
+    # Idempotency: if it already exists, return the existing one (no 500 from a duplicate PK).
     existing = await db.get(ItemRelationship, {"source_id": s, "target_id": t, "relation": relation})
     if existing is not None:
         return existing
@@ -101,7 +101,7 @@ async def delete_relationship(
         ItemRelationship, {"source_id": source_id, "target_id": target_id, "relation": relation}
     )
     if rel is None:
-        # Para simétricos, probar el orden invertido.
+        # For symmetric relations, try the reversed order.
         if relation in _SYMMETRIC:
             rel = await db.get(
                 ItemRelationship,

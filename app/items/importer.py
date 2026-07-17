@@ -1,4 +1,4 @@
-"""Importador idempotente de items desde archivos JSONL del digest."""
+"""Idempotent importer of items from the digest's JSONL files."""
 
 import hashlib
 import json
@@ -35,7 +35,7 @@ def _coerce_str(val: Any) -> str | None:
 
 
 def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
-    """Convierte un item del JSONL al schema de BD. Retorna None si inválido."""
+    """Convert a JSONL item to the DB schema. Returns None if invalid."""
     title = (obj.get("title") or "").strip()
     scope_name = (obj.get("scope") or "").strip().lower()
     item_type = (obj.get("type") or "").strip()
@@ -82,7 +82,7 @@ def _normalize(obj: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def import_jsonl(db: AsyncSession, path: Path) -> dict[str, int]:
-    """Importa un archivo JSONL. Retorna {imported, skipped_duplicate, skipped_invalid}."""
+    """Import a JSONL file. Returns {imported, skipped_duplicate, skipped_invalid}."""
     existing_hashes: set[str] = set()
     result = await db.execute(select(Item.source_refs).where(Item.origen == "digest"))
     for (source_refs,) in result:
@@ -140,7 +140,7 @@ async def import_jsonl(db: AsyncSession, path: Path) -> dict[str, int]:
 
 
 async def import_directory(db: AsyncSession, directory: Path) -> dict[str, int]:
-    """Importa todos los *.jsonl de un directorio."""
+    """Import every *.jsonl file in a directory."""
     totals = {"imported": 0, "skipped_duplicate": 0, "skipped_invalid": 0}
     for f in sorted(directory.glob("*.jsonl")):
         result = await import_jsonl(db, f)

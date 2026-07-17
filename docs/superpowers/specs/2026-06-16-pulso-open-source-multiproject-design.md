@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-16  
 **Status:** Approved  
-**Scope:** Transform `eduk3-pulso` into an independent, self-hostable, open-source backlog tool
+**Scope:** Transform the original single-tenant Pulso into an independent, self-hostable, open-source backlog tool
 for solo-preneurs managing multiple unrelated projects.
 
 ---
@@ -10,11 +10,11 @@ for solo-preneurs managing multiple unrelated projects.
 ## Context
 
 Pulso is a **agent-native backlog manager** built with FastAPI + HTMX + Postgres. It was
-originally built as the internal backlog tool for Eduk3. This spec defines how it becomes an
+originally built as the internal backlog tool at the author's previous company. This spec defines how it becomes an
 independent product anyone can self-host and connect to Claude Code via MCP.
 
 **Target user:** solo-preneur / indie developer managing 2–10 unrelated projects
-(e.g., Eduk3, Varajo, DomoProps, Metropol) from a single tool instance.
+(e.g., several unrelated client projects) from a single tool instance.
 
 **Scope constraints:**
 - Mono-user (single admin account per instance)
@@ -26,7 +26,7 @@ independent product anyone can self-host and connect to Claude Code via MCP.
 
 ## Current State
 
-6 sprints shipped, 93 tests, fully deployed at `pulso.eduk3.cl`. Features:
+6 sprints shipped, 93 tests, fully deployed at `the original private instance`. Features:
 
 - 8-state item lifecycle, 9 types, priority matrix (impact × effort)
 - Relationship graph (blocks / requires / conflicts / related / part-of)
@@ -67,7 +67,7 @@ RLS multi-tenant isolation.
 ```sql
 CREATE TABLE projects (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug                  TEXT UNIQUE NOT NULL,   -- "eduk3", "varajo", "domoprops"
+    slug                  TEXT UNIQUE NOT NULL,   -- "acme", "initech", "globex"
     name                  TEXT NOT NULL,
     description           TEXT,
     color                 TEXT,                   -- hex, for visual selector
@@ -127,9 +127,9 @@ a token, **all tool calls are implicitly scoped to that token's project**. The a
 read or write items from a different project regardless of arguments passed.
 
 ```
-Claude Code (efrain session)       Claude Code (varajo session)
+Claude Code (project-a session)       Claude Code (project-b session)
        │                                    │
-   Bearer TOKEN_EDUK3                   Bearer TOKEN_VARAJO
+   Bearer TOKEN_A                   Bearer TOKEN_B
        │                                    │
        └──────────────┬─────────────────────┘
                       ▼
@@ -184,7 +184,7 @@ In project settings (`/projects/{slug}/settings`), a **"Connect" tab** shows:
 
 **Adding a second project** follows the same flow: create project → settings → generate token →
 copy snippet → `claude mcp add`. Claude Code supports multiple MCP servers simultaneously,
-so `efrain` and `varajo` can both be connected in the same session.
+so `project-a` and `project-b` can both be connected in the same session.
 
 ---
 
@@ -200,7 +200,7 @@ project. No URL change required (session-based, sufficient for mono-user tool).
 
 Navbar structure:
 ```
-[Pulso logo]  [▼ Eduk3 ●]   Backlog  Priority  Threads  Incidents  [Admin]
+[Pulso logo]  [▼ Acme ●]   Backlog  Priority  Threads  Incidents  [Admin]
 ```
 
 ### Project management pages
@@ -327,7 +327,7 @@ step needed on updates.
 
 ---
 
-## 6. Migration Plan (existing `eduk3-pulso` instance)
+## 6. Migration Plan (existing the original single-tenant Pulso instance)
 
 Migration `v0006` (single Alembic revision, reversible):
 
@@ -340,8 +340,8 @@ v0006: multiproject + english enums
   - Alter table sentry_issues: add project_id
   - Alter table threads: add project_id
   - Alter table agent_runs: add project_id
-  - INSERT INTO projects (slug, name) VALUES ('eduk3', 'Eduk3')
-  - UPDATE all tables SET project_id = (SELECT id FROM projects WHERE slug = 'eduk3')
+  - INSERT INTO projects (slug, name) VALUES ('acme', 'Acme')
+  - UPDATE all tables SET project_id = (SELECT id FROM projects WHERE slug = 'acme')
   - ALTER COLUMN ... USING ... (enum renames)
   - Add NOT NULL constraints after backfill
   - Add FK constraints
@@ -349,8 +349,8 @@ v0006: multiproject + english enums
 
 **Downgrade:** drop `project_id` columns, revert enum values, drop `projects` table.
 
-This migration runs in production on the next deploy tag. The existing Eduk3 data becomes
-"Project: Eduk3" — no data loss, no manual steps.
+This migration runs in production on the next deploy tag. The existing single-tenant data becomes
+"Project: Acme" — no data loss, no manual steps.
 
 ---
 

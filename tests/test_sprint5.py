@@ -115,7 +115,7 @@ async def test_manual_promote_creates_backlog_item(client: AsyncClient, monkeypa
         follow_redirects=False,
     )
     cookies = dict(login.cookies)
-    r = await client.post(f"/ui/incidentes/{issue_id}/promote", data={"priority": "p0"}, cookies=cookies)
+    r = await client.post(f"/ui/incidents/{issue_id}/promote", data={"priority": "p0"}, cookies=cookies)
     assert r.status_code == 204
     async for db in client.app.dependency_overrides[get_db]():
         issue = await db.get(SentryIssue, uuid.UUID(issue_id))
@@ -294,7 +294,7 @@ async def test_backfill_from_sentry_api(client: AsyncClient, monkeypatch):
         ]
 
     monkeypatch.setattr(wservice, "fetch_sentry_issues", fake_fetch)
-    r = await client.post("/ui/incidentes/backfill", data={}, cookies=cookies)
+    r = await client.post("/ui/incidents/backfill", data={}, cookies=cookies)
     assert r.status_code == 200
     assert "Imported 2 of 2" in r.text  # default EN
     async for db in client.app.dependency_overrides[get_db]():

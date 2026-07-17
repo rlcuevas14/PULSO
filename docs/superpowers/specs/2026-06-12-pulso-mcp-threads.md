@@ -336,7 +336,7 @@ Cada tool corre sus queries **secuencialmente sobre la misma `AsyncSession`** (u
 
 **Forma recomendada** (escribe en `~/.claude.json`, cumple "solo un token, sin instalar nada"):
 ```bash
-claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp \
+claude mcp add --transport http pulso https://pulso.example.com/mcp \
   --header "Authorization: Bearer <API_TOKEN>"
 ```
 
@@ -346,7 +346,7 @@ claude mcp add --transport http pulso https://pulso.eduk3.cl/mcp \
   "mcpServers": {
     "pulso": {
       "type": "http",
-      "url": "https://pulso.eduk3.cl/mcp",
+      "url": "https://pulso.example.com/mcp",
       "headers": { "Authorization": "Bearer ${PULSO_TOKEN}" }
     }
   }

@@ -76,7 +76,7 @@ async def test_session_user_cannot_read_other_account(client: AsyncClient):
     assert (await client.get(f"/api/v1/items/{b['item_id']}", cookies=cookies)).status_code == 404
     assert (await client.get(f"/api/v1/threads/{b['thread_id']}", cookies=cookies)).status_code == 404
     assert (await client.get(f"/items/{b['item_id']}", cookies=cookies)).status_code == 404
-    assert (await client.get(f"/hilos/{b['thread_id']}", cookies=cookies)).status_code == 404
+    assert (await client.get(f"/threads/{b['thread_id']}", cookies=cookies)).status_code == 404
 
 
 @pytest.mark.asyncio

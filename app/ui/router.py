@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BeforeValidator
 from sqlalchemy import func, select, text
@@ -16,7 +16,7 @@ from app.i18n import resolve_lang
 from app.i18n import t as _t
 from app.items import graph, service
 from app.items.lifecycle import allowed_targets, non_terminal_targets
-from app.items.models import Item, ItemEvent
+from app.items.models import Item, ItemComment, ItemEvent
 from app.jobs.models import AgentRun
 from app.projects.access import resolve_current_project, user_role_on_project
 from app.scopes.models import Scope
@@ -27,9 +27,9 @@ router = APIRouter(tags=["ui"])
 
 _OPEN = ["idea", "backlog", "spec", "in-progress", "blocked", "in-review"]
 
-# El form #filters serializa "" para los bool apagados (contrato HTML: los hidden
-# inputs y los chips usan string vacío = off). Estos tipos aceptan ese contrato:
-# "" → None/False en vez del 422 de Pydantic (bug 2026-07-10, botones BOARD/CLOSED).
+# The #filters form serializes "" for booleans that are off (HTML contract: the hidden
+# inputs and the chips use the empty string = off). These types accept that contract:
+# "" → None/False instead of Pydantic's 422 (bug 2026-07-10, BOARD/CLOSED buttons).
 OptBool = Annotated[bool | None, BeforeValidator(lambda v: None if v == "" else v)]
 FlagBool = Annotated[bool, BeforeValidator(lambda v: False if v == "" else v)]
 
@@ -73,7 +73,7 @@ async def _guard_row(
     return None
 
 
-# ---------- Tablero ----------
+# ---------- Dashboard ----------
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(
@@ -100,7 +100,7 @@ async def dashboard(
     ) or 0)
     threads_active = int(await db.scalar(
         select(func.count()).select_from(Thread).where(
-            Thread.project_id == pid, Thread.stage.not_in(["hecho", "descartado"]),
+            Thread.project_id == pid, Thread.stage.not_in(["done", "discarded"]),
         )
     ) or 0)
     incidents_new = int(await db.scalar(
@@ -139,7 +139,6 @@ async def dashboard(
         "quick_wins": quick_wins_n,
         "threads_active": threads_active,
         "incidents_new": incidents_new,
-        "ideas": counts.get("idea", 0),
         "closed_this_week": closed_this_week,
     }
     return templates.TemplateResponse(
@@ -179,11 +178,11 @@ async def _backlog_context(
     view: str = "list",
     group: str = "",
 ) -> dict:
-    """Construye el contexto del backlog (items filtrados + estado derivado + board/group).
+    """Build the backlog context (filtered items + derived state + board/group).
 
-    Compartido por GET /backlog y POST /ui/items/{id}/board-move, para que un
-    movimiento por drag&drop re-renderice el tablero con los MISMOS filtros activos
-    y recalcule bloqueos/ready/contadores (mover una tarjeta puede desbloquear otras).
+    Shared by GET /backlog and POST /ui/items/{id}/board-move, so that a drag&drop
+    move re-renders the board with the SAME active filters and recomputes
+    blocks/ready/counters (moving one card can unblock others).
     """
     from sqlalchemy import case as sa_case
 
@@ -192,7 +191,7 @@ async def _backlog_context(
     pid = await _project_id(db, user, request)
     q_base = select(Item).where(Item.project_id == pid)
 
-    # El tablero nunca muestra terminales: un filtro de estado terminal se ignora (spec §1.5).
+    # The board never shows terminal states: a terminal status filter is ignored (spec §1.5).
     if view == "board" and status in ("done", "discarded"):
         status = None
 
@@ -233,7 +232,7 @@ async def _backlog_context(
     if agent_ready:
         q_base = q_base.where(Item.agent_ready.is_(True))
 
-    # FTS: filtra en SQL (antes del LIMIT) para no perder matches fuera del top-300.
+    # FTS: filter in SQL (before the LIMIT) so matches outside the top-300 are not lost.
     fts_rank: dict[str, int] | None = None
     if q:
         fts_rows = await _fts(db, q, project_id=pid, limit=300)
@@ -243,7 +242,7 @@ async def _backlog_context(
         else:
             q_base = q_base.where(Item.id == uuid.UUID(int=0))
 
-    # SQL ordering — topological stays in Python (alias españoles: URLs viejas)
+    # SQL ordering — topological stays in Python (Spanish aliases: legacy URLs)
     if order in ("priority", "prioridad"):
         q_base = q_base.order_by(
             sa_case(
@@ -263,7 +262,7 @@ async def _backlog_context(
     q_base = q_base.limit(300)
     items = list((await db.execute(q_base)).scalars().all())
 
-    # Con búsqueda activa y orden default, el orden es relevance (rank del FTS).
+    # With an active search and the default ordering, the order is relevance (FTS rank).
     if fts_rank is not None and order in ("priority", "prioridad"):
         items.sort(key=lambda i: fts_rank.get(str(i.id), 1_000_000))
 
@@ -289,7 +288,7 @@ async def _backlog_context(
     )).scalars().all())
     scope_map = {s.id: s.name for s in scopes}
 
-    # can_write: gate del drag&drop en el tablero (los viewers ven pero no mueven).
+    # can_write: gates board drag&drop (viewers can look but not move).
     role = await user_role_on_project(db, user, pid)
     can_write = role is not None and role != "viewer"
 
@@ -321,7 +320,7 @@ async def _backlog_context(
         ctx["by_status"] = by_status
         ctx["board_statuses"] = _BOARD_STATUSES
 
-    # Group-by context — labels localizados (los headers los pinta items_grouped.html tal cual)
+    # Group-by context — localized labels (items_grouped.html renders the headers as-is)
     if group and group != "none" and view != "board":
         lang = resolve_lang(request)
         grouped: dict[str, list] = {}
@@ -338,7 +337,7 @@ async def _backlog_context(
                 key = "—"
             grouped.setdefault(key, []).append(item)
         if group == "status":
-            # Orden de funnel, no alfabético; label localizado al construir la lista
+            # Funnel order, not alphabetical; label localized while building the list
             _sidx = {s: n for n, s in enumerate([*_BOARD_STATUSES, "done", "discarded"])}
             ctx["groups"] = [
                 (_t(f"status.{k}", lang), v)
@@ -379,8 +378,8 @@ async def backlog(
         urgent=urgent, agent_ready=agent_ready, view=view, group=group,
     )
     if request.headers.get("HX-Request"):
-        # Controles + items viajan juntos: los hidden carriers y el estilo de los
-        # chips deben reflejar el estado nuevo (bug 2026-07-10, desync del form).
+        # Controls + items travel together: the hidden carriers and the chip styling
+        # must reflect the new state (bug 2026-07-10, form desync).
         return templates.TemplateResponse(request, "partials/backlog_root.html", ctx)
     return templates.TemplateResponse(request, "backlog.html", ctx)
 
@@ -412,7 +411,7 @@ async def _topo_order_ids(db: AsyncSession, items: list[Item]) -> dict[str, int]
     return {item_id: rank for rank, item_id in enumerate(result["order"])}
 
 
-# ---------- Detalle de ítem ----------
+# ---------- Item detail ----------
 
 @router.get("/items/{item_id}", response_class=HTMLResponse)
 async def item_detail(
@@ -428,7 +427,7 @@ async def item_detail(
     )
     item = result.scalar_one_or_none()
     if item is None:
-        return Response(status_code=404, content="Item no encontrado")
+        return Response(status_code=404, content="Item not found")
     guard = await _guard_row(db, user, item.project_id)
     if guard is not None:
         return guard
@@ -454,9 +453,9 @@ async def item_detail(
     )
 
 
-# ---------- Prioridad (matriz impacto × esfuerzo) ----------
+# ---------- Priority (impact × effort matrix) ----------
 
-@router.get("/prioridad", response_class=HTMLResponse)
+@router.get("/priority", response_class=HTMLResponse)
 async def prioridad_page(
     request: Request,
     scope: str | None = None,
@@ -471,7 +470,7 @@ async def prioridad_page(
             q = q.where(Item.scope_id == scope_row.id)
     items = list((await db.execute(q.limit(500))).scalars().all())
 
-    # Celdas de la matriz: impacto (5..1) × esfuerzo (XS..XL).
+    # Matrix cells: impact (5..1) × effort (XS..XL).
     efforts = ["XS", "S", "M", "L", "XL"]
     matrix: dict[tuple[int, str], list[Item]] = {}
     unestimated: list[Item] = []
@@ -492,14 +491,35 @@ async def prioridad_page(
         "scopes": scopes, "filters": {"scope": scope},
     }
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request, "partials/prioridad_body.html", ctx)
-    return templates.TemplateResponse(request, "prioridad.html", ctx)
+        return templates.TemplateResponse(request, "partials/priority_body.html", ctx)
+    return templates.TemplateResponse(request, "priority.html", ctx)
 
 
-# ---------- Acciones de UI (HTMX, form-encoded) ----------
+# ---------- UI actions (HTMX, form-encoded) ----------
 
 def _refresh() -> Response:
     return Response(status_code=204, headers={"HX-Refresh": "true"})
+
+
+@router.post("/ui/items/{item_id}/comments")
+async def ui_add_comment(
+    item_id: uuid.UUID,
+    request: Request,
+    body_md: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_user_ui),
+):
+    # The detail-page form posts form-urlencoded; the REST endpoint only takes JSON.
+    pid = await _project_id(db, user, request)
+    item = await db.get(Item, item_id)
+    if item is None or item.project_id != pid:
+        raise HTTPException(status_code=404, detail="Item not found")
+    body = body_md.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Comment cannot be empty")
+    db.add(ItemComment(item_id=item_id, author=user.email, body_md=body, kind="comment"))
+    await db.commit()
+    return _refresh()
 
 
 @router.post("/ui/items/{item_id}/transition")
@@ -528,11 +548,11 @@ async def ui_board_move(
     item_id: uuid.UUID,
     request: Request,
     status: str = Form(...),
-    # Passthrough de filtros para re-renderizar el tablero tal como estaba.
+    # Filter passthrough so the board re-renders exactly as it was.
     scope: str | None = Form(None),
     item_type: str | None = Form(None),
     origen: str | None = Form(None),
-    # Form() DENTRO del Annotated: fuera, FastAPI descarta el BeforeValidator y "" → 422.
+    # Form() INSIDE the Annotated: outside it, FastAPI drops the BeforeValidator and "" → 422.
     stale: Annotated[OptBool, Form()] = None,
     graph_blocked: Annotated[OptBool, Form()] = None,
     order: str = Form("priority"),
@@ -545,11 +565,11 @@ async def ui_board_move(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    """Drag&drop del tablero: aplica la transición y devuelve el tablero re-renderizado.
+    """Board drag&drop: apply the transition and return the re-rendered board.
 
-    Movimiento inválido (matriz de lifecycle) → devuelve el tablero SIN cambios (la
-    tarjeta vuelve a su columna) + un toast de error vía HX-Trigger. Nunca 422: el
-    swap parcial siempre repinta un tablero coherente.
+    Invalid move (lifecycle matrix) → returns the board UNCHANGED (the card snaps
+    back to its column) + an error toast via HX-Trigger. Never a 422: the partial
+    swap always repaints a coherent board.
     """
     import json as _json
 
@@ -565,8 +585,8 @@ async def ui_board_move(
         await service.apply_transition(db, item, status, user.email)
         await db.commit()
     except service.TransitionError as e:
-        # apply_transition valida ANTES de mutar, así que la sesión sigue limpia
-        # (nada que revertir); un rollback aquí expiraría los objetos del re-render.
+        # apply_transition validates BEFORE mutating, so the session is still clean
+        # (nothing to revert); a rollback here would expire the objects needed for the re-render.
         invalid = str(e)
 
     ctx = await _backlog_context(
@@ -668,7 +688,7 @@ async def ui_set_field(
     elif field == "effort_ai":
         item.effort_ai = value or None
     else:
-        return Response(content="Campo no editable", status_code=422)
+        return Response(content="Field not editable", status_code=422)
     await db.commit()
     return Response(status_code=204, headers={"HX-Refresh": "true"})
 
@@ -756,9 +776,9 @@ async def ui_create_item(
     return RedirectResponse(f"/items/{item.id}", status_code=303)
 
 
-# ---------- Hilos ----------
+# ---------- Threads ----------
 
-@router.get("/hilos", response_class=HTMLResponse)
+@router.get("/threads", response_class=HTMLResponse)
 async def hilos_page(
     request: Request,
     scope: str | None = None,
@@ -773,7 +793,7 @@ async def hilos_page(
     by_stage: dict[str, list] = {s: [] for s in THREAD_STAGES}
     for t in threads:
         by_stage.setdefault(t.stage, []).append(t)
-    # contar artefactos e ítems por hilo (dos queries agrupadas, sin N+1)
+    # count artifacts and items per thread (two grouped queries, no N+1)
     art_rows = (await db.execute(text(
         "SELECT thread_id, count(*) AS n FROM thread_artifacts GROUP BY thread_id"
     ))).mappings().all()
@@ -789,15 +809,15 @@ async def hilos_page(
     scopes = list((await db.execute(
         select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
     )).scalars().all())
-    stages = [s for s in THREAD_STAGES if s != "descartado"]
+    stages = [s for s in THREAD_STAGES if s != "discarded"]
     return templates.TemplateResponse(
-        request, "hilos.html",
+        request, "threads.html",
         {"user": user, "by_stage": by_stage, "stages": stages, "counts": counts,
          "scopes": scopes, "filters": {"scope": scope}},
     )
 
 
-@router.get("/hilos/{thread_id}", response_class=HTMLResponse)
+@router.get("/threads/{thread_id}", response_class=HTMLResponse)
 async def hilo_detail(
     thread_id: uuid.UUID,
     request: Request,
@@ -809,7 +829,7 @@ async def hilo_detail(
 
     thread = await get_thread(db, thread_id)
     if thread is None:
-        return Response(status_code=404, content="Hilo no encontrado")
+        return Response(status_code=404, content="Thread not found")
     guard = await _guard_row(db, user, thread.project_id)
     if guard is not None:
         return guard
@@ -822,13 +842,13 @@ async def hilo_detail(
     )).scalars().all())
     scope = await db.scalar(select(Scope).where(Scope.id == thread.scope_id))
     return templates.TemplateResponse(
-        request, "hilo_detail.html",
+        request, "thread_detail.html",
         {"user": user, "thread": thread, "artifacts": arts, "linked": linked, "scope": scope,
          "next_stage": next_stage(thread.stage), "prev_stage": prev_stage(thread.stage)},
     )
 
 
-@router.post("/ui/hilos/create")
+@router.post("/ui/threads/create")
 async def ui_create_hilo(
     request: Request,
     title: str = Form(...),
@@ -843,10 +863,10 @@ async def ui_create_hilo(
     t = await create_thread(db, scope_name, title, summary or None, project_id=pid)
     await db.commit()
     flash_success(request, message=_t("flash.thread_created", resolve_lang(request)))
-    return RedirectResponse(f"/hilos/{t.id}", status_code=303)
+    return RedirectResponse(f"/threads/{t.id}", status_code=303)
 
 
-@router.post("/ui/hilos/{thread_id}/advance")
+@router.post("/ui/threads/{thread_id}/advance")
 async def ui_advance_hilo(
     thread_id: uuid.UUID,
     request: Request,
@@ -867,12 +887,12 @@ async def ui_advance_hilo(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
-    if t.stage == "hecho":
+    if t.stage == "done":
         flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
-@router.post("/ui/hilos/{thread_id}/stage")
+@router.post("/ui/threads/{thread_id}/stage")
 async def ui_set_hilo_stage(
     thread_id: uuid.UUID,
     request: Request,
@@ -893,12 +913,12 @@ async def ui_set_hilo_stage(
         await db.commit()
     except ThreadError as e:
         return Response(content=str(e), status_code=422)
-    if t.stage == "hecho":
+    if t.stage == "done":
         flash_success(request, title=t.title, celebrate=True)
     return _refresh()
 
 
-@router.post("/ui/hilos/{thread_id}/elaborate", response_class=HTMLResponse)
+@router.post("/ui/threads/{thread_id}/elaborate", response_class=HTMLResponse)
 async def ui_elaborate_hilo(
     thread_id: uuid.UUID,
     request: Request,
@@ -924,12 +944,12 @@ async def ui_elaborate_hilo(
     )
 
 
-# ---------- Incidentes (contenedor de errores de Sentry) ----------
+# ---------- Incidents (Sentry error container) ----------
 
-@router.get("/incidentes", response_class=HTMLResponse)
+@router.get("/incidents", response_class=HTMLResponse)
 async def incidentes_page(
     request: Request,
-    incluir_ignorados: bool = False,
+    include_ignored: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
@@ -941,7 +961,7 @@ async def incidentes_page(
         .where(SentryIssue.project_id == pid)
         .order_by(SentryIssue.last_seen.desc().nulls_last())
     )
-    if not incluir_ignorados:
+    if not include_ignored:
         q = q.where(SentryIssue.status != "ignored")
     issues = list((await db.execute(q.limit(200))).scalars().all())
 
@@ -958,12 +978,12 @@ async def incidentes_page(
         "ignored": await _count("ignored"),
     }
     return templates.TemplateResponse(
-        request, "incidentes.html",
-        {"user": user, "issues": issues, "counts": counts, "incluir_ignorados": incluir_ignorados},
+        request, "incidents.html",
+        {"user": user, "issues": issues, "counts": counts, "include_ignored": include_ignored},
     )
 
 
-@router.post("/ui/incidentes/{issue_id}/promote")
+@router.post("/ui/incidents/{issue_id}/promote")
 async def ui_promote_issue(
     issue_id: uuid.UUID,
     request: Request,
@@ -988,7 +1008,7 @@ async def ui_promote_issue(
     return _refresh()
 
 
-@router.post("/ui/incidentes/{issue_id}/ignore")
+@router.post("/ui/incidents/{issue_id}/ignore")
 async def ui_ignore_issue(
     issue_id: uuid.UUID,
     request: Request,
@@ -1009,15 +1029,15 @@ async def ui_ignore_issue(
     return _refresh()
 
 
-@router.post("/ui/incidentes/backfill")
+@router.post("/ui/incidents/backfill")
 async def ui_backfill_sentry(
     request: Request,
     query: str = Form("is:unresolved"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_user_ui),
 ):
-    """Importa el histórico desde la API de Sentry usando la conexión de la cuenta
-    + el slug del proyecto actual (solo owner). Spec 2026-07-10 §4.5."""
+    """Import the history from the Sentry API using the account's connection
+    + the current project's slug (owner only). Spec 2026-07-10 §4.5."""
     if user.account_role != "owner":
         msg = _t("admin.unauthorized", resolve_lang(request))
         return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>', status_code=403)
@@ -1040,7 +1060,7 @@ async def ui_backfill_sentry(
             conn.api_token or "", conn.org_slug, project.sentry_project_slug, query,
             base_url=sconn.effective_base_url(conn),
         )
-    except Exception as e:  # error de red / token / proyecto inválido
+    except Exception as e:  # network error / bad token / invalid project
         msg = _t("incidents.backfill_error", lang, error=e)
         return HTMLResponse(f'<div class="text-sm text-red-600">{msg}</div>')
     result = await wservice.backfill_issues(
@@ -1050,43 +1070,22 @@ async def ui_backfill_sentry(
     return HTMLResponse(
         f'<div class="text-sm text-green-700">'
         f'{_t("incidents.backfill_ok", lang, n=result["ingested"], total=result["total"])} '
-        f'<a href="/incidentes" class="underline">{_t("incidents.reload", lang)}</a></div>'
-    )
-
-
-# ---------- Ideas / Admin (sin cambios sustantivos) ----------
-
-@router.get("/ideas", response_class=HTMLResponse)
-async def ideas_page(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_user_ui),
-):
-    pid = await _project_id(db, user, request)
-    ideas = list((await db.execute(
-        select(Item).where(Item.status == "idea", Item.project_id == pid)
-        .order_by(Item.created_at.desc()).limit(50)
-    )).scalars().all())
-    scopes = list((await db.execute(
-        select(Scope).where(Scope.archived.is_(False), Scope.project_id == pid).order_by(Scope.name)
-    )).scalars().all())
-    return templates.TemplateResponse(
-        request, "ideas.html", {"user": user, "ideas": ideas, "scopes": scopes}
+        f'<a href="/incidents" class="underline">{_t("incidents.reload", lang)}</a></div>'
     )
 
 
 # ---------- Archive (Registro) ----------
 
-# Ventana por página: 12 semanas con contenido (spec §2.1). El corte es en límite de
-# semana para que "Cargar más" nunca duplique headers de semana.
+# Page window: 12 weeks with content (spec §2.1). The cut happens at a week boundary
+# so "Load more" never duplicates week headers.
 _WEEKS_PER_PAGE = 12
-# ponytail: cap de fetch por página; >500 cerrados en 12 semanas es irreal para esta
-# herramienta — si llega a doler, paginar dentro de la semana.
+# ponytail: per-page fetch cap; >500 closed items in 12 weeks is unrealistic for this
+# tool — if it ever hurts, paginate within the week.
 _FETCH_CAP = 500
 
 
 def _iso_week_label(dt: datetime | None) -> str:
-    """Return 'YYYY-Www' key for grouping; '' for None (→ 'Sin fecha')."""
+    """Return 'YYYY-Www' key for grouping; '' for None (→ the 'No date' group)."""
     if dt is None:
         return ""
     iso = dt.isocalendar()
@@ -1100,13 +1099,13 @@ def _week_range_label(iso_week_key: str, lang: str) -> str:
     mon = _dt.datetime.fromisocalendar(year, week, 1)
     sun = mon + _dt.timedelta(days=6)
     if mon.month == sun.month:
-        return _t("registro.week_same_month", lang, d1=mon.day, d2=sun.day,
+        return _t("archive.week_same_month", lang, d1=mon.day, d2=sun.day,
                   month=_t(f"month.{sun.month}", lang), year=sun.year)
-    return _t("registro.week_cross_month", lang, d1=mon.day, m1=_t(f"month.{mon.month}", lang),
+    return _t("archive.week_cross_month", lang, d1=mon.day, m1=_t(f"month.{mon.month}", lang),
               d2=sun.day, m2=_t(f"month.{sun.month}", lang), year=sun.year)
 
 
-@router.get("/registro", response_class=HTMLResponse)
+@router.get("/archive", response_class=HTMLResponse)
 async def registro_page(
     request: Request,
     q: str | None = None,
@@ -1154,7 +1153,7 @@ async def registro_page(
     dated = dated.order_by(Item.closed_at.desc()).limit(_FETCH_CAP)
     items = list((await db.execute(dated)).scalars().all())
 
-    # Agrupar por semana ISO y cortar la página en límite de semana (12 semanas).
+    # Group by ISO week and cut the page at a week boundary (12 weeks).
     groups_all = [
         (key, list(grp)) for key, grp in groupby(items, key=lambda i: _iso_week_label(i.closed_at))
     ]
@@ -1163,8 +1162,8 @@ async def registro_page(
 
     next_before: str | None = None
     if has_more_dated and page:
-        # Lunes 00:00 UTC de la semana más vieja incluida: todo lo estrictamente
-        # anterior pertenece a semanas previas → sin headers duplicados.
+        # Monday 00:00 UTC of the oldest included week: everything strictly
+        # earlier belongs to previous weeks → no duplicated headers.
         last_key = page[-1][0]
         y, w = int(last_key[:4]), int(last_key[6:])
         next_before = _dt.datetime.fromisocalendar(y, w, 1).replace(
@@ -1175,13 +1174,13 @@ async def registro_page(
         (key, _week_range_label(key, lang), grp) for key, grp in page
     ]
 
-    # "Sin fecha" (terminales legacy sin closed_at): solo en la última página.
+    # "No date" (legacy terminal items without closed_at): only on the last page.
     if not has_more_dated:
         undated = list((await db.execute(
             base.where(Item.closed_at.is_(None)).order_by(Item.created_at.desc())
         )).scalars().all())
         if undated:
-            week_groups.append(("", _t("registro.no_date", lang), undated))
+            week_groups.append(("", _t("archive.no_date", lang), undated))
 
     page_items = [i for _, _, grp in week_groups for i in grp]
 
@@ -1219,11 +1218,11 @@ async def registro_page(
         "is_load_more": before_dt is not None,
     }
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request, "partials/registro_rows.html", ctx)
-    return templates.TemplateResponse(request, "registro.html", ctx)
+        return templates.TemplateResponse(request, "partials/archive_rows.html", ctx)
+    return templates.TemplateResponse(request, "archive.html", ctx)
 
 
-@router.get("/ui/registro/summary", response_class=HTMLResponse)
+@router.get("/ui/archive/summary", response_class=HTMLResponse)
 async def ui_registro_summary(
     request: Request,
     week: str,
@@ -1242,7 +1241,7 @@ async def ui_registro_summary(
         sun = mon + _dt.timedelta(days=6, hours=23, minutes=59, seconds=59)
     except (ValueError, IndexError):
         return HTMLResponse(
-            f'<p class="text-sm text-error">{_t("registro.invalid_week", resolve_lang(request))}</p>',
+            f'<p class="text-sm text-error">{_t("archive.invalid_week", resolve_lang(request))}</p>',
             status_code=400,
         )
 
@@ -1279,7 +1278,7 @@ async def ui_registro_summary(
         summary_md = None
 
     return templates.TemplateResponse(
-        request, "partials/registro_summary.html",
+        request, "partials/archive_summary.html",
         {"summary_md": summary_md, "week": week},
     )
 
@@ -1330,3 +1329,31 @@ async def admin_page(
         "admin.html",
         {"user": user, "users": users, "tokens": tokens, "scopes": scopes, "runs": runs},
     )
+
+
+# ---------- Legacy Spanish slugs (pre-2026-07-16) — 301 to the English routes ----------
+
+_LEGACY_SLUGS = {
+    "/prioridad": "/priority",
+    "/hilos": "/threads",
+    "/incidentes": "/incidents",
+    "/registro": "/archive",
+}
+
+
+def _make_legacy_redirect(new_path: str):
+    async def _redirect(request: Request) -> RedirectResponse:
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"{new_path}{query}", status_code=301)
+    return _redirect
+
+
+for _old_path, _new_path in _LEGACY_SLUGS.items():
+    router.add_api_route(
+        _old_path, _make_legacy_redirect(_new_path), methods=["GET"], include_in_schema=False
+    )
+
+
+@router.get("/hilos/{thread_id}", include_in_schema=False)
+async def _legacy_thread_detail(thread_id: uuid.UUID) -> RedirectResponse:
+    return RedirectResponse(f"/threads/{thread_id}", status_code=301)

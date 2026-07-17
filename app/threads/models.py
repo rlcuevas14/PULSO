@@ -1,7 +1,7 @@
-"""Hilos de desarrollo: contenedores de stage para features pesadas (Sprint 4).
+"""Development threads: stage containers for heavy features (Sprint 4).
 
-threads.stage NO es items.status — son vocabularios distintos que no se cruzan.
-Valores de enum sin tilde (coherente con item_comments.kind='decision' del repo).
+threads.stage is NOT items.status — they are distinct vocabularies that never mix.
+Enum values carry no accents (consistent with the repo's item_comments.kind='decision').
 """
 
 import uuid
@@ -15,12 +15,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.enums import THREAD_ARTIFACT_KINDS, THREAD_STAGES, check_in
 
-# Re-exportados desde app.enums (única fuente de verdad). Se mantienen aquí por los
-# imports existentes (`from app.threads.models import THREAD_STAGES`).
+# Re-exported from app.enums (single source of truth). Kept here for the existing
+# imports (`from app.threads.models import THREAD_STAGES`).
 __all__ = ["THREAD_STAGES", "THREAD_ARTIFACT_KINDS", "Thread", "ThreadArtifact", "next_stage", "prev_stage"]
 
-# Orden lineal del funnel (para "siguiente"/"anterior" stage).
-_FUNNEL = ("idea", "investigacion", "historias", "spec", "en-desarrollo", "review", "hecho")
+# Linear funnel order (for the "next"/"previous" stage).
+_FUNNEL = ("idea", "research", "stories", "spec", "in-development", "review", "done")
 
 
 def next_stage(stage: str) -> str | None:
@@ -54,7 +54,7 @@ class Thread(Base):
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     summary_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # DB es TEXT (v0005); el ORM debe coincidir (DM-09).
+    # The DB column is TEXT (v0005); the ORM must match (DM-09).
     stage: Mapped[str] = mapped_column(Text, nullable=False, default="idea")
     assignee_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -76,7 +76,7 @@ class ThreadArtifact(Base):
             check_in("kind", THREAD_ARTIFACT_KINDS),
             name="thread_artifacts_kind_check",
         ),
-        # DM-05: stage carecía de CHECK; se alinea con threads.stage.
+        # DM-05: stage had no CHECK; aligned with threads.stage.
         CheckConstraint(check_in("stage", THREAD_STAGES), name="thread_artifacts_stage_check"),
     )
 
@@ -84,7 +84,7 @@ class ThreadArtifact(Base):
     thread_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False
     )
-    # DB es TEXT (v0005); el ORM debe coincidir (DM-09).
+    # The DB column is TEXT (v0005); the ORM must match (DM-09).
     stage: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False)

@@ -9,7 +9,7 @@
 - Gantt = **`PlanTask` liviano** renderizado como **HTML/CSS**; **toda edición vía MCP** (UI de Gantt es solo-lectura). Sin critical-path ni resource-leveling.
 - **Responsable = texto libre** (no FK a `users`): un consultor nombra clientes/externos que no son usuarios de Pulso.
 - **Compartimientos = lista plana** por proyecto (sin carpetas anidadas v1).
-- El Gantt sigue el template `Gantt Generator VARAJO.md` (jerarquía 3 niveles, resolución dinámica semanas→meses, barras sólidas, hitos ◆, dependencias ↳, clases agnósticas para estilizar). Colores/tipografía se alinean a los tokens de Pulso.
+- El Gantt sigue el template `the original Gantt generator template` (jerarquía 3 niveles, resolución dinámica semanas→meses, barras sólidas, hitos ◆, dependencias ↳, clases agnósticas para estilizar). Colores/tipografía se alinean a los tokens de Pulso.
 
 ---
 
@@ -212,7 +212,7 @@ Mini-directorio navegable de documentación. UI **editable** (subir/organizar; C
 
 ## Subtab 3 — Plan (Gantt HTML, solo-lectura; edición 100% por MCP)
 
-Render server-side HTML/CSS del árbol `plan_tasks`, siguiendo el template `Gantt Generator VARAJO.md`. **Sin JS de Gantt.** Cualquier ajuste → el usuario le pide a Claude, que edita por `pulso_plan_task_upsert`.
+Render server-side HTML/CSS del árbol `plan_tasks`, siguiendo el template `the original Gantt generator template`. **Sin JS de Gantt.** Cualquier ajuste → el usuario le pide a Claude, que edita por `pulso_plan_task_upsert`.
 
 **Estructura de filas (3 niveles)** — indentación + jerarquía tipográfica por clases agnósticas alineadas a tokens Pulso:
 - Nivel 1 (Fase): fila destacada, barra **resumen** (rollup) que abarca de `min(start)` de sus descendientes a `max(end)`. Clase `phase-level-1`.

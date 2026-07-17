@@ -44,7 +44,7 @@ def _thread_out(t) -> dict:
 def _require_thread(t: "Thread | None", pid: uuid.UUID) -> Thread:
     """404 unless the thread exists and belongs to the request's project (isolation)."""
     if t is None or t.project_id != pid:
-        raise HTTPException(status_code=404, detail="Hilo no encontrado")
+        raise HTTPException(status_code=404, detail="Thread not found")
     return t
 
 

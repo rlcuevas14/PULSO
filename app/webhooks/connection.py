@@ -1,7 +1,7 @@
-"""Conexión Sentry a nivel cuenta: ruteo por token, config, re-attach de no-matcheados.
+"""Account-level Sentry connection: token routing, config, re-attach of unmatched rows.
 
-Chokepoint de tenancy para webhooks (spec 2026-07-10 §4.2): todo lookup aquí va acotado
-por account_id, así un token de webhook solo puede escribir dentro de su cuenta.
+Tenancy chokepoint for webhooks (spec 2026-07-10 §4.2): every lookup here is scoped
+by account_id, so a webhook token can only write within its own account.
 """
 
 import re
@@ -15,7 +15,7 @@ from app.projects.models import Project
 from app.webhooks.models import SentryConnection, SentryIssue
 
 DEFAULT_BASE_URL = "https://sentry.io"
-# Solo scheme://host[:port] — sin path/query (espeja la regla system.url-prefix de Sentry).
+# Only scheme://host[:port] — no path/query (mirrors Sentry's system.url-prefix rule).
 _BASE_URL_RE = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d+)?$")
 
 
@@ -76,7 +76,7 @@ def effective_base_url(conn: SentryConnection | None) -> str:
 
 
 async def outbound(db: AsyncSession, account_id: uuid.UUID | None) -> SentryConnection | None:
-    """Conexión usable para llamadas salientes a la API de Sentry (feature B), o None."""
+    """Connection usable for outbound calls to the Sentry API (feature B), or None."""
     if account_id is None:
         return None
     conn = await get_for_account(db, account_id)
@@ -86,8 +86,8 @@ async def outbound(db: AsyncSession, account_id: uuid.UUID | None) -> SentryConn
 async def route_project(
     db: AsyncSession, account_id: uuid.UUID, slug: str | None
 ) -> Project | None:
-    """slug → proyecto, acotado a la cuenta. slug=None solo enruta cuando la cuenta
-    tiene exactamente un proyecto mapeado (los payloads event_alert no traen slug)."""
+    """slug → project, scoped to the account. slug=None only routes when the account
+    has exactly one mapped project (event_alert payloads carry no slug)."""
     if slug:
         return (await db.execute(
             select(Project).where(
@@ -116,9 +116,9 @@ async def count_unmatched(db: AsyncSession, account_id: uuid.UUID) -> int:
 
 
 async def reattach_unmatched(db: AsyncSession, account_id: uuid.UUID) -> int:
-    """Ata filas sin proyecto a los proyectos de esta cuenta por su slug de texto.
-    Las filas sin cuenta (era single-account, pre-v0017) son reclamables; las de otras
-    cuentas jamás."""
+    """Attach project-less rows to this account's projects by their text slug.
+    Rows without an account (single-account era, pre-v0017) are claimable; rows from
+    other accounts never are."""
     mapped = (await db.execute(
         select(Project.id, Project.sentry_project_slug).where(
             Project.account_id == account_id, Project.sentry_project_slug.is_not(None)
@@ -131,6 +131,6 @@ async def reattach_unmatched(db: AsyncSession, account_id: uuid.UUID) -> int:
             .where(*_unmatched_filter(account_id), SentryIssue.project == slug)
             .values(project_id=pid, account_id=account_id)
         )
-        total += int(getattr(res, "rowcount", 0) or 0)  # CursorResult; stub-safe en CI
+        total += int(getattr(res, "rowcount", 0) or 0)  # CursorResult; stub-safe in CI
     await db.flush()
     return total

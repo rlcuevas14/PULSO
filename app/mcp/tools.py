@@ -189,7 +189,7 @@ async def pulso_context(db: AsyncSession, token: ApiToken, args: dict) -> dict:
 
     try:
         threads = (await db.execute(text(
-            "SELECT id, title FROM threads WHERE stage = 'en-desarrollo' AND project_id = :pid LIMIT 5"
+            "SELECT id, title FROM threads WHERE stage = 'in-development' AND project_id = :pid LIMIT 5"
         ), {"pid": pid})).mappings().all()
         active_threads = [{"id": str(r["id"]), "title": r["title"]} for r in threads]
     except Exception:

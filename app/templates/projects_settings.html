@@ -35,10 +35,14 @@
   <div class="p-card p-5 mb-6">
     <h2 class="font-semibold text-ink mb-3">{{ t("projects.api_tokens") }}</h2>
 
-    <form method="post" action="/projects/{{ project.slug }}/tokens" class="flex items-center gap-2 mb-4">
-      <input name="token_name" type="text" required placeholder="{{ t('projects.token_name_placeholder') }}"
-        class="p-input flex-1 text-sm">
-      <select name="scopes" class="p-input text-sm">
+    <form method="post" action="/projects/{{ project.slug }}/tokens" class="flex flex-wrap items-end gap-2 mb-4">
+      <div class="flex-1 min-w-[12rem]">
+        <label class="p-label" for="token-name">{{ t("projects.token_name_label") }}</label>
+        <input id="token-name" name="token_name" type="text" required
+          placeholder="{{ t('projects.token_name_placeholder') }}" class="p-input text-sm">
+      </div>
+      <select name="scopes" aria-label="{{ t('admin.token_scope_label') }}"
+        class="p-input text-sm" style="width:auto">
         <option value="write">write</option>
         <option value="read">read</option>
       </select>

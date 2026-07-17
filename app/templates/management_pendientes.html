@@ -60,7 +60,8 @@
     <button type="button" class="text-muted hover:text-ink text-xs"
             onclick='editPending({{ {"id": p.id|string, "title": p.title, "detail": p.detail_md or "", "owner": p.owner or "", "status": p.status, "due": (p.due_date|string if p.due_date else ""), "task": (p.plan_task_id|string if p.plan_task_id else "")} | tojson }})'>{{ t("management.pending.edit") }}</button>
     <form action="/ui/management/pendientes/{{ p.id }}/delete" method="post" class="inline"
-          hx-post="/ui/management/pendientes/{{ p.id }}/delete" hx-swap="none">
+          hx-post="/ui/management/pendientes/{{ p.id }}/delete" hx-swap="none"
+          hx-confirm="{{ t('management.pending.delete_confirm') }}">
       <button type="submit" class="text-muted hover:text-error text-xs">{{ t("management.pending.delete") }}</button>
     </form>
   </div>

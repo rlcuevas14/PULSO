@@ -2,6 +2,9 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_SECRET = "dev-secret-change-in-production"
+# Every placeholder we have ever shipped in .env.example or docs — all must fail fast.
+_PLACEHOLDER_SECRETS = {_INSECURE_SECRET, "change-me"}
+_MIN_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -31,10 +34,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _fail_fast_on_insecure_secret(self) -> "Settings":
-        if not self.debug and self.secret_key == _INSECURE_SECRET:
+        if not self.debug and (
+            self.secret_key in _PLACEHOLDER_SECRETS or len(self.secret_key) < _MIN_SECRET_LENGTH
+        ):
             raise ValueError(
-                "SECRET_KEY is set to the insecure default in production (DEBUG=false). "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\" "
+                "SECRET_KEY is a placeholder or shorter than 32 characters — refusing to start "
+                "in production (DEBUG=false). Generate one with: "
+                "python -c \"import secrets; print(secrets.token_hex(32))\" "
                 "and set it in the SECRET_KEY environment variable."
             )
         return self

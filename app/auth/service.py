@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import ApiToken, User
 
-# ARCH-1/PERF-05: solo refrescamos last_used_at si pasó este intervalo desde el último
-# uso (throttle). Evita un UPDATE por cada request — el dato es "actividad reciente",
-# no un audit log preciso.
+# ARCH-1/PERF-05: we only refresh last_used_at when this interval has passed since the
+# last use (throttle). Avoids one UPDATE per request — the value means "recent activity",
+# not a precise audit log.
 _LAST_USED_THROTTLE = timedelta(minutes=5)
 
 
@@ -117,19 +117,19 @@ async def create_api_token(
 
 
 async def verify_api_token(db: AsyncSession, raw: str) -> ApiToken | None:
-    """Resuelve un Bearer token vivo a su fila ApiToken (o None).
+    """Resolve a live Bearer token to its ApiToken row (or None).
 
-    SEC-03: descarta tokens revocados (revoked_at IS NOT NULL) y expirados
-    (expires_at <= now()). Un token sin expires_at no caduca.
+    SEC-03: discards revoked tokens (revoked_at IS NOT NULL) and expired ones
+    (expires_at <= now()). A token without expires_at never expires.
 
-    ARCH-1/PERF-05: refresca last_used_at de forma THROTTLED (máx. una vez cada
-    5 min) y SIN commit propio. Antes hacía UPDATE + commit() en medio del request,
-    lo que (a) rompía la atomicidad de la transacción del caller — un commit aquí
-    persiste a medias cualquier escritura en curso del request — y (b) generaba un
-    write en cada lectura. Ahora solo mutamos el atributo ORM in-memory; el commit
-    del propio request (los routers de escritura y el endpoint MCP ya commitean)
-    lo persiste. En requests de solo lectura el refresco puede no persistirse: es
-    aceptable, last_used_at es best-effort por diseño.
+    ARCH-1/PERF-05: refreshes last_used_at THROTTLED (at most once every
+    5 min) and WITHOUT a commit of its own. It used to do UPDATE + commit() in the
+    middle of the request, which (a) broke the atomicity of the caller's transaction
+    — a commit here half-persists any in-flight writes of the request — and (b)
+    produced a write on every read. Now we only mutate the ORM attribute in memory;
+    the request's own commit (the write routers and the MCP endpoint already commit)
+    persists it. On read-only requests the refresh may not be persisted: that is
+    acceptable, last_used_at is best-effort by design.
     """
     now = datetime.now(timezone.utc)
     hashed = _hash_token(raw)
@@ -142,7 +142,7 @@ async def verify_api_token(db: AsyncSession, raw: str) -> ApiToken | None:
     )
     token = result.scalar_one_or_none()
     if token is not None and (token.last_used_at is None or token.last_used_at < now - _LAST_USED_THROTTLE):
-        # Mutación in-memory, sin commit: la persiste el commit del request (best-effort).
+        # In-memory mutation, no commit: the request's commit persists it (best-effort).
         token.last_used_at = now
     return token
 

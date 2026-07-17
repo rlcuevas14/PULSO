@@ -5,14 +5,14 @@
 
 {# Mapa etapa→tinte (canónico — Task 14 lo copia, no lo importa). #}
 {% set STAGE_TINT = {
-  "idea":          "bg-brand-lavender/25",
-  "investigacion": "bg-brand-mint/30",
-  "historias":     "bg-brand-peach/30",
-  "spec":          "bg-brand-ochre/30",
-  "en-desarrollo": "bg-brand-teal/15",
-  "review":        "bg-brand-pink/20",
-  "hecho":         "bg-success/15",
-  "descartado":    "bg-surface-strong",
+  "idea":           "bg-brand-lavender/25",
+  "research":       "bg-brand-mint/30",
+  "stories":        "bg-brand-peach/30",
+  "spec":           "bg-brand-ochre/30",
+  "in-development": "bg-brand-teal/15",
+  "review":         "bg-brand-pink/20",
+  "done":           "bg-success/15",
+  "discarded":      "bg-surface-strong",
 } %}
 
 <div class="flex items-center justify-between mb-4">
@@ -20,7 +20,7 @@
   <button onclick="openModal('new-hilo-modal')" class="p-btn p-btn-primary">{{ t("threads.new_thread") }}</button>
 </div>
 
-{{ hint('hilos', t("threads.hint") | safe) }}
+{{ hint('threads', t("threads.hint") | safe) }}
 
 <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
   {% for stage in stages %}
@@ -30,7 +30,7 @@
       <span class="text-xs text-muted">{{ by_stage.get(stage, [])|length }}</span>
     </div>
     {% for th in by_stage.get(stage, []) %}
-    <a href="/hilos/{{ th.id }}" class="block p-card p-3 mb-2 hover:bg-surface-strong border-l-2"
+    <a href="/threads/{{ th.id }}" class="block p-card p-3 mb-2 hover:bg-surface-strong border-l-2"
        style="border-left-color:var(--accent)">
       <div class="text-sm font-medium text-ink mb-1">{{ th.title }}</div>
       <div class="text-xs text-muted">
@@ -48,7 +48,7 @@
      class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[95] p-4">
   <div class="p-card w-full max-w-md p-6">
     <h2 id="new-hilo-title" class="text-lg font-semibold text-ink mb-4">{{ t("threads.new_thread_title") }}</h2>
-    <form action="/ui/hilos/create" method="post" class="space-y-4">
+    <form action="/ui/threads/create" method="post" class="space-y-4">
       <div>
         <label class="p-label" for="nh-title">{{ t("threads.title_label") }}</label>
         <input id="nh-title" name="title" required placeholder="{{ t('threads.title_placeholder') }}" aria-label="{{ t('threads.title_placeholder') }}"

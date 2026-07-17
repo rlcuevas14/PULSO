@@ -10,11 +10,11 @@ from app.scopes.models import Scope
 from app.threads.models import THREAD_STAGES, Thread, ThreadArtifact, next_stage, prev_stage
 
 _STAGE_KIND = {
-    "investigacion": "investigacion",
-    "historias": "historias",
+    "research": "research",
+    "stories": "stories",
     "spec": "spec",
-    "en-desarrollo": "notas",
-    "review": "notas",
+    "in-development": "notes",
+    "review": "notes",
 }
 
 
@@ -79,10 +79,10 @@ async def advance_stage(
     nxt = next_stage(thread.stage)
     if nxt is None:
         raise ThreadError(f"Stage '{thread.stage}' has no next stage.")
-    if nxt == "hecho" and await _open_linked_items(db, thread) > 0:
+    if nxt == "done" and await _open_linked_items(db, thread) > 0:
         raise ThreadError("There are still open linked items — close them before marking the thread done.")
     if artifact_content:
-        kind = _STAGE_KIND.get(thread.stage, "notas")
+        kind = _STAGE_KIND.get(thread.stage, "notes")
         await add_artifact(db, thread, kind, artifact_content, user_id)
     thread.stage = nxt
     await db.flush()
@@ -125,7 +125,7 @@ async def elaborate_next_stage(db: AsyncSession, thread: Thread) -> dict:
     from app.ai import llm
 
     nxt = next_stage(thread.stage)
-    if nxt is None or nxt == "hecho":
+    if nxt is None or nxt == "done":
         raise ThreadError("No next stage to elaborate.")
     arts = (await db.execute(
         select(ThreadArtifact).where(ThreadArtifact.thread_id == thread.id)

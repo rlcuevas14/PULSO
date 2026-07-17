@@ -1026,4 +1026,4 @@ Expected: 0 ruff errors, mypy clean, all tests pass, coverage ≥90%.
 - [ ] Push `feat/sentry-per-project`; open PR to `main` (gh CLI), body summarizes spec.
 - [ ] Watch CI to green (fix anything that CI's pgvector/pg16 surfaces).
 - [ ] Merge PR; pull main; tag `v2026.07.10-2` and push tag (triggers deploy.yml → GHCR → SSH → alembic upgrade head).
-- [ ] Post-deploy sanity: `curl -s -o /dev/null -w "%{http_code}" https://pulso.tidanalytics.com/` → 303; unknown-token probe `POST /webhooks/sentry/xyz` → 404.
+- [ ] Post-deploy sanity: `curl -s -o /dev/null -w "%{http_code}" https://<prod-host>/` → 303; unknown-token probe `POST /webhooks/sentry/xyz` → 404.

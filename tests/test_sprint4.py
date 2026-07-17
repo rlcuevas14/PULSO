@@ -40,13 +40,13 @@ async def test_thread_lifecycle(client: AsyncClient):
     tid = r.json()["id"]
     assert r.json()["stage"] == "idea"
 
-    # avanzar guardando un artefacto del stage idea -> investigacion
+    # advance saving an artifact of the current stage: idea -> research (v0018 English values)
     a = await client.post(
         f"/api/v1/threads/{tid}/advance",
-        json={"artifact_content": "Notas de investigación."}, cookies=cookies,
+        json={"artifact_content": "Research notes."}, cookies=cookies,
     )
     assert a.status_code == 200
-    assert a.json()["stage"] == "investigacion"
+    assert a.json()["stage"] == "research"
 
     detail = await client.get(f"/api/v1/threads/{tid}", cookies=cookies)
     assert len(detail.json()["artifacts"]) == 1
@@ -64,7 +64,7 @@ async def test_advance_to_hecho_blocked_by_open_items(client: AsyncClient):
     )
     tid = r.json()["id"]
     # llevar el hilo hasta review
-    for _ in range(5):  # idea->inv->hist->spec->en-desarrollo->review
+    for _ in range(5):  # idea->research->stories->spec->in-development->review
         await client.post(f"/api/v1/threads/{tid}/advance", json={}, cookies=cookies)
     # linkear un ítem abierto
     async for db in client.app.dependency_overrides[get_db]():
@@ -100,10 +100,10 @@ async def test_hilos_pages_render(client: AsyncClient):
         "/api/v1/threads", json={"scope_name": scope_name, "title": "Render hilo"}, cookies=cookies,
     )
     tid = r.json()["id"]
-    page = await client.get("/hilos", cookies=cookies)
+    page = await client.get("/threads", cookies=cookies)
     assert page.status_code == 200
     assert "Threads" in page.text  # default EN
-    detail = await client.get(f"/hilos/{tid}", cookies=cookies)
+    detail = await client.get(f"/threads/{tid}", cookies=cookies)
     assert detail.status_code == 200
     assert "Render hilo" in detail.text
 

@@ -39,8 +39,10 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Instalar dependencias
-        run: pip install -e ".[dev]"
+      - name: Install dependencies (locked runtime + dev extras)
+        run: |
+          pip install -r requirements.lock
+          pip install -e ".[dev]"
 
       - name: Lint (ruff)
         run: ruff check .
@@ -48,12 +50,12 @@ jobs:
       - name: Type check (mypy)
         run: mypy app/ --ignore-missing-imports
 
-      # CI-2 / DM-06: valida que las migraciones aplican Y revierten (round-trip).
-      # env.py lee DATABASE_URL (URL async); el motor async de Alembic la usa directo.
-      # upgrade head → downgrade base → upgrade head: detecta downgrades rotos o no
-      # idempotentes antes de que lleguen a producción. Corre ANTES de pytest (que usa
-      # create_all, no las migraciones) y deja la BD migrada para una inspección eventual.
-      - name: Migraciones Alembic (round-trip)
+      # CI-2 / DM-06: validates that migrations apply AND revert (round-trip).
+      # env.py reads DATABASE_URL (async URL); Alembic's async engine uses it directly.
+      # upgrade head → downgrade base → upgrade head: catches broken or non-idempotent
+      # downgrades before they reach production. Runs BEFORE pytest (which uses
+      # create_all, not migrations) and leaves the DB migrated for eventual inspection.
+      - name: Alembic migrations (round-trip)
         env:
           DATABASE_URL: postgresql+asyncpg://pulso:test@localhost:5432/pulso_test
         run: |
@@ -61,7 +63,7 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
-      - name: Tests + cobertura
+      - name: Tests + coverage
         run: >-
           pytest tests/ -v --tb=short
           --cov=app --cov-report=term-missing --cov-fail-under=90

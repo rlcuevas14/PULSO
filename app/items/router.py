@@ -114,7 +114,7 @@ def _actor(auth) -> str:
 def _require_item(item: "Item | None", pid: uuid.UUID) -> Item:
     """404 unless the item exists and belongs to the request's project (account isolation)."""
     if item is None or item.project_id != pid:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
+        raise HTTPException(status_code=404, detail="Item not found")
     return item
 
 
@@ -326,7 +326,7 @@ async def get_comment(
     )
     comment = result.scalar_one_or_none()
     if comment is None:
-        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+        raise HTTPException(status_code=404, detail="Comment not found")
     return {
         "id": str(comment.id),
         "author": comment.author,
@@ -419,7 +419,7 @@ async def _both_items_in_project(db: AsyncSession, a: uuid.UUID, b: uuid.UUID, p
     for iid in (a, b):
         item = await db.get(Item, iid)
         if item is None or item.project_id != pid:
-            raise HTTPException(status_code=404, detail="Item no encontrado")
+            raise HTTPException(status_code=404, detail="Item not found")
 
 
 @router.post("/relationships", status_code=201)

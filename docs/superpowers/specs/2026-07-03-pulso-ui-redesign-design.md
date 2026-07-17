@@ -103,7 +103,7 @@ Sticky, `surface`-colored, 64px, a **3px `--accent` bar** on its bottom edge.
 - **Mobile (<768):** module links collapse into a `☰` **drawer** (focus-trapped, reuses body-scroll-lock); theme toggle + avatar stay in the bar; project pill collapses to just the color dot.
 
 ### 4.4 Footer (`base.html`; minimal on login/setup)
-`surface-soft` background (warm-light in light mode per template; dark-surface in dark), hairline top border. Left: mark + wordmark + tagline *"The backlog your agent reads and writes."* Right: `¿Ayuda? rcuevas@tidanalytics.com` as a `mailto:` in accent color.
+`surface-soft` background (warm-light in light mode per template; dark-surface in dark), hairline top border. Left: mark + wordmark + tagline *"The backlog your agent reads and writes."* Right: `¿Ayuda? <maintainer-email>` as a `mailto:` in accent color.
 
 ---
 

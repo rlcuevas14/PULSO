@@ -35,7 +35,7 @@ claude mcp add --transport http my-project https://<your-pulso-host>/mcp \
 Claude Code expands `${PULSO_TOKEN}` from the environment (never commit the token).
 Verify with `claude mcp list`. New tools appear only after **restarting** Claude Code.
 
-## 3. Available tools (17)
+## 3. Available tools (26)
 
 | Tool | Scope | Purpose |
 |------|-------|---------|
@@ -56,6 +56,15 @@ Verify with `claude mcp list`. New tools appear only after **restarting** Claude
 | `pulso_thread_create(title, area_name, summary?)` | write | Create a development thread |
 | `pulso_thread_advance(thread_id, artifact_content?)` | write | Advance a thread to its next stage |
 | `pulso_thread_link(thread_id, item_id\|query)` | write | Link an item to a thread |
+| `pulso_doc_list(compartment_id?, status?, q?)` | read | List Management deliverables (metadata only) |
+| `pulso_doc_get(deliverable_id, include_content?)` | read | Deliverable detail + version history (inlines content up to 256 KB) |
+| `pulso_doc_put(compartment, name, doc_type, content\|content_base64, …)` | write | Create a deliverable or append a version (append-only; auto-creates the compartment) |
+| `pulso_pending_list(status?, owner?, overdue?, plan_task_id?)` | read | List project pendings (action items) |
+| `pulso_pending_upsert(pending_id?, title?, status?, due_date?, owner?, …)` | write | Create or update a pending (omit `pending_id` to create) |
+| `pulso_pending_complete(pending_id)` | write | Mark a pending as done |
+| `pulso_gantt_get()` | read | Full project plan: task hierarchy, dates, progress, milestones, deps |
+| `pulso_gantt_task_upsert(task_id?, name?, parent_id?, start_date?, end_date?, progress?, …)` | write | Create or update a Gantt task (max 3 levels; the Gantt is edited only via MCP) |
+| `pulso_gantt_task_remove(task_id)` | write | Delete a Gantt task (children cascade) |
 
 Prompts: `briefing`, `decision`. Resource templates: `pulso://area/{name}`, `pulso://graph/{item_id}`.
 
@@ -77,6 +86,19 @@ public release:
 Enum values were also renamed (statuses, types, origins — e.g. `hecho` → `done`,
 `ia-sesion` → `ai-session`). If an old client sends Spanish values, calls fail validation —
 update the client; there is no compatibility shim.
+
+v0018 completed the rename for threads (same no-shim policy):
+
+| Old (removed) | Current |
+|---------------|---------|
+| stage `investigacion` | `research` |
+| stage `historias` | `stories` |
+| stage `en-desarrollo` | `in-development` |
+| stage `hecho` | `done` |
+| stage `descartado` | `discarded` |
+| artifact kind `investigacion` | `research` |
+| artifact kind `historias` | `stories` |
+| artifact kind `notas` | `notes` |
 
 ## 5. Suggested session protocol
 

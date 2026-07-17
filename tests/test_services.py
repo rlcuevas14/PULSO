@@ -179,8 +179,8 @@ async def test_list_items_orders_and_filters(db):
 async def test_handle_enrich(db, monkeypatch):
     from app.jobs.handlers import handle_enrich
 
-    assert (await handle_enrich(db, None))["status"] == "sin-ref"
-    assert (await handle_enrich(db, uuid.uuid4()))["status"] == "item-no-encontrado"
+    assert (await handle_enrich(db, None))["status"] == "no-ref"
+    assert (await handle_enrich(db, uuid.uuid4()))["status"] == "item-not-found"
 
     proj, _ = await _project(db)
     item = await _item(db, proj)

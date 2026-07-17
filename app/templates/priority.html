@@ -8,17 +8,17 @@
   <form id="pf">
     <select name="scope" aria-label="{{ t('priority.filter_scope') }}"
             class="p-input p-input-sm"
-            hx-get="/prioridad" hx-target="#prioridad-body" hx-swap="innerHTML" hx-push-url="true">
+            hx-get="/priority" hx-target="#priority-body" hx-swap="innerHTML" hx-push-url="true">
       <option value="">{{ t("priority.all_scopes") }}</option>
       {% for s in scopes %}<option value="{{ s.name }}" {% if filters.scope == s.name %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
     </select>
   </form>
 </div>
 
-{{ hint('prioridad', t("priority.hint")|safe) }}
+{{ hint('priority', t("priority.hint")|safe) }}
 
-<div id="prioridad-body">
-  {% include "partials/prioridad_body.html" %}
+<div id="priority-body">
+  {% include "partials/priority_body.html" %}
 </div>
 
 {% endblock %}

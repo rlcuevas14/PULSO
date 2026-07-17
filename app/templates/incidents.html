@@ -12,12 +12,12 @@
   </div>
 </div>
 
-{{ hint('incidentes', t("incidents.hint")|safe) }}
+{{ hint('incidents', t("incidents.hint")|safe) }}
 
 <div class="mb-3 flex items-center justify-between gap-3">
-  <a href="/incidentes{% if not incluir_ignorados %}?incluir_ignorados=true{% endif %}"
+  <a href="/incidents{% if not include_ignored %}?include_ignored=true{% endif %}"
      class="text-sm underline underline-offset-2" style="color:var(--accent)">
-    {% if incluir_ignorados %}{{ t("incidents.hide_ignored") }}{% else %}{{ t("incidents.show_ignored") }}{% endif %}
+    {% if include_ignored %}{{ t("incidents.hide_ignored") }}{% else %}{{ t("incidents.show_ignored") }}{% endif %}
   </a>
   {% if user.account_role == 'owner' %}
   <button onclick="openModal('backfill-modal')" class="p-btn p-btn-ghost p-btn-sm">{{ t("incidents.backfill_title") }}</button>
@@ -32,7 +32,7 @@
     <p class="text-xs text-muted mb-4">
       {{ t("incidents.backfill_desc")|safe }}
     </p>
-    <form hx-post="/ui/incidentes/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
+    <form hx-post="/ui/incidents/backfill" hx-target="#backfill-result" hx-swap="innerHTML"
           hx-indicator="#backfill-submit" class="space-y-3 text-sm">
       <input name="query" value="is:unresolved" aria-label="{{ t('incidents.backfill_query_aria') }}"
              class="p-input"
@@ -76,7 +76,7 @@
       {% if it.status == 'linked' %}
       <a href="/backlog?origen=sentry" class="text-xs text-success">{{ t("incidents.in_backlog") }}</a>
       {% elif it.status != 'ignored' %}
-      <form hx-post="/ui/incidentes/{{ it.id }}/promote" hx-swap="none"
+      <form hx-post="/ui/incidents/{{ it.id }}/promote" hx-swap="none"
             hx-indicator="#promote-spin-{{ it.id }}" class="flex items-center gap-2">
         <select name="priority" aria-label="{{ t('incidents.promote_priority_aria') }}" class="p-input p-input-sm">
           <option value="p0">p0</option><option value="p1" selected>p1</option>
@@ -85,7 +85,7 @@
         <button class="p-btn p-btn-sm p-btn-primary">{{ t("incidents.promote") }}</button>
         <span id="promote-spin-{{ it.id }}" class="htmx-indicator text-xs text-muted">…</span>
       </form>
-      <button hx-post="/ui/incidentes/{{ it.id }}/ignore" hx-swap="none"
+      <button hx-post="/ui/incidents/{{ it.id }}/ignore" hx-swap="none"
               class="p-btn p-btn-sm p-btn-ghost">{{ t("incidents.ignore") }}</button>
       {% endif %}
     </div>

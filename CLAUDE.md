@@ -17,7 +17,7 @@
 All merged to `main`:
 - **OSS multi-project refactor**: standalone docker-compose + `.env.example`, `projects` table + `project_id` FKs, English enums (v0011), 17 English MCP tools with project isolation failsafe, `/projects` UI, setup wizard, public README.
 - **Multi-account**: accounts/users/grants model (`accounts`, `project_members`), `create_account` service + super-admin UI (`/admin/accounts`) + owner member matrix (`/account/members`), per-project `viewer`/`editor`, account isolation across MCP + REST + UI (`projects/access.py` chokepoint). MCP token scope ≤ minter's role.
-- **Backlog redesign + Archive** (spec 2026-07-06, shipped `v2026.07.06-1`): open-only default, FTS search with relevance order, board view, quick-filter chips, close-from-row (lifecycle-aware modal), group-by, `/registro` Archive (ISO-week groups, reason+commit from events, AI weekly summary), SQL ordering.
+- **Backlog redesign + Archive** (spec 2026-07-06, shipped `v2026.07.06-1`): open-only default, FTS search with relevance order, board view, quick-filter chips, close-from-row (lifecycle-aware modal), group-by, `/archive` (ISO-week groups, reason+commit from events, AI weekly summary), SQL ordering. Routes renamed to English slugs 2026-07-16 (`/priority`, `/threads`, `/incidents`, `/archive`) with 301s from the old Spanish paths.
 - **i18n**: full UI in English (default) / Spanish / French — JSON catalogs + `t()`/`tn()`, language selector in navbar/login/setup (see Conventions).
 
 ---
@@ -48,7 +48,7 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 | `jobs/` | `AgentRun`; `worker.py` (poll-and-lease); `handlers.py` (`enrich`, `triage-sentry`) |
 | `ai/` | `llm.py` — isolated/mockable interface to Haiku (enrich/triage/generate_stage) + Gemini (embed). Degrades without API key |
 | `mcp/` | `server.py` (JSON-RPC transport + 26 tool registry + auth/scope + project-id failsafe); `tools.py` (implementations) |
-| `ui/` | `router.py` — screens (`/` card-launcher home, `/backlog`, `/prioridad`, `/hilos`, `/incidentes`, `/ideas`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints; `flash.py` (`flash_success` — pop-once session flash → celebration overlay on completions / green toast) |
+| `ui/` | `router.py` — screens (`/` card-launcher home, `/backlog`, `/priority`, `/threads`, `/incidents`, `/archive`, `/items/{id}`, `/admin`) + `/ui/...` HTMX action endpoints; `flash.py` (`flash_success` — pop-once session flash → celebration overlay on completions / green toast) |
 
 ---
 
@@ -67,9 +67,9 @@ FastAPI + SQLAlchemy async (asyncpg) + Alembic + **Jinja2 + HTMX 2 (CDN) + Tailw
 **Other tables**: `accounts, users, api_tokens, projects, project_members, scopes, item_comments, item_events, ai_enrichments, sentry_issues, agent_runs, item_relationships, threads, thread_artifacts`.
 `item_events(actor, action, payload)` is the **audit primitive** — every mutation must emit one.
 
-**Migrations** (head = `v0017`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006–v0010 (projects + project_id FKs) · v0011 (English enum rename) · v0012 (accounts + project_members + account columns; backfills existing data into one default account, earliest/admin user → owner+superadmin; scopes.name → unique per project) · v0013 (project isolation hardening) · v0014 (accounts layer) · v0015 (relax project_id back to nullable — isolation is code-enforced) · v0016 (management/PMO domain: compartments, deliverables + append-only deliverable_versions, pendings, plan_tasks, management_events) · v0017 (sentry_connections account-level + projects.sentry_project_slug unique-per-account + sentry_issues.account_id; drops the 3 never-read per-project sentry columns).
+**Migrations** (head = `v0018`): v0001 (9 tables) · v0002 (search_vector+GIN) · v0003 (item_relationships) · v0004 (last_touched_at + source_refs→JSONB) · v0005 (threads + items.thread_id) · v0006–v0010 (projects + project_id FKs) · v0011 (English enum rename) · v0012 (accounts + project_members + account columns; backfills existing data into one default account, earliest/admin user → owner+superadmin; scopes.name → unique per project) · v0013 (project isolation hardening) · v0014 (accounts layer) · v0015 (relax project_id back to nullable — isolation is code-enforced) · v0016 (management/PMO domain: compartments, deliverables + append-only deliverable_versions, pendings, plan_tasks, management_events) · v0017 (sentry_connections account-level + projects.sentry_project_slug unique-per-account + sentry_issues.account_id; drops the 3 never-read per-project sentry columns) · v0018 (English thread stages + artifact kinds).
 
-**Thread stages** (NOT renamed — Spanish still): `idea, investigacion, historias, spec, en-desarrollo, review, hecho, descartado`
+**Thread stages** (English since v0018): `idea, research, stories, spec, in-development, review, done, discarded` · artifact kinds: `research, stories, spec, notes, decision`
 
 ---
 
@@ -136,7 +136,7 @@ Triggers `deploy.yml`: multi-platform build (amd64+arm64) → push to GHCR → S
 
 ## Conventions
 
-- **English at the API level**: all enum values, API/MCP error messages, and MCP tool names are English. Thread stage *values* are the only exception (still Spanish — out of scope; display labels ARE translated via `stage.*`).
+- **English at the API level**: all enum values (thread stages included since v0018), API/MCP error messages, and MCP tool names are English. Display labels are translated via the i18n catalogs (`status.*`, `stage.*`, …).
 - **i18n (UI copy)**: NEVER hardcode user-visible strings in templates or UI routers. Templates use the request-scoped Jinja globals `t("domain.key")` / `tn("domain.key", n)`; Python uses `app.i18n.t(key, resolve_lang(request))`. Catalogs: `app/i18n/locales/{en,es,fr}.json` (flat dot-namespaced keys; English is source of truth and fallback). Enum display labels: `t("status." ~ x)` / `type.*` / `origin.*` / `stage.*`. Language selector lives in the navbar (session-based, `GET /ui/lang/{code}`); default English. `tests/test_i18n.py` enforces catalog completeness, placeholder parity, and template coverage — adding a key to one catalog without the other two fails CI. Careful: a Jinja loop variable named `t` shadows the translation global — never use it.
 - **Every feature brings tests**; CI green before tagging.
 - **UI design system**: all tokens + `.p-*` component classes live in `app/templates/partials/_head.html` (Tailwind CDN + CSS variables; `darkMode:'class'`, light=Clay-cream / dark=warm near-black, per-project `--accent` from session). Never hardcode gray/blue palette classes in templates; never use opacity modifiers on semantic tokens (`bg-canvas/50` silently breaks — allowed only on `brand-*`/`success`/`warning`/`error`). Success feedback via `flash_success` (`app/ui/flash.py`); forms hitting handlers that return `204 + HX-Refresh` MUST be `hx-post` (plain forms dead-end on 204).

@@ -40,7 +40,7 @@ def test_reopen_from_terminal_only_to_backlog():
     assert not valid_transition("discarded", "done")
 
 
-def test_non_terminal_targets_excludes_hecho_descartado():
+def test_non_terminal_targets_excludes_done_discarded():
     targets = non_terminal_targets("in-progress")
     assert "done" not in targets
     assert "discarded" not in targets

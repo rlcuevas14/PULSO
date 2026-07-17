@@ -66,8 +66,7 @@
         </div>
         {% endfor %}
       </div>
-      <form hx-post="/api/v1/items/{{ item.id }}/comments"
-            hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); window.location.reload(); }" class="mt-4">
+      <form hx-post="/ui/items/{{ item.id }}/comments" class="mt-4">
         <textarea name="body_md" rows="3" required placeholder="{{ t('item.comment_placeholder') }}" aria-label="{{ t('item.new_comment') }}"
           class="p-input"></textarea>
         <button type="submit" class="mt-2 p-btn p-btn-primary p-btn-sm">{{ t("item.comment_submit") }}</button>

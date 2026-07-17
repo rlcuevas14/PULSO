@@ -388,10 +388,10 @@ async def test_rest_thread_stage_and_artifact(client):
     assert c.status_code == 201
     tid = c.json()["id"]
     s = await client.post(f"/api/v1/threads/{tid}/stage",
-                          json={"stage": "investigacion"}, headers=_h(raw))
+                          json={"stage": "research"}, headers=_h(raw))
     assert s.status_code == 200
     a = await client.post(f"/api/v1/threads/{tid}/artifacts",
-                          json={"kind": "notas", "content": "some notes"}, headers=_h(raw))
+                          json={"kind": "notes", "content": "some notes"}, headers=_h(raw))
     assert a.status_code == 201
 
 

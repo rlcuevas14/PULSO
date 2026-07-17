@@ -60,7 +60,7 @@ async def test_dashboard_and_screens_render(client: AsyncClient):
     await _seed_item(client, pid, title="On the board", impact_ai=5, effort_ai="XS")
     r = await client.get("/")
     assert r.status_code == 200 and 'id="home-cards"' in r.text  # the dashboard, not the login page
-    for path in ("/backlog", "/prioridad", "/hilos", "/incidentes", "/ideas", "/projects"):
+    for path in ("/backlog", "/priority", "/threads", "/incidents", "/projects"):
         rr = await client.get(path)
         assert rr.status_code == 200, path
 
@@ -163,16 +163,16 @@ async def test_thread_create_advance_detail(client: AsyncClient):
         sname = (await db.get(Scope, scope_id)).name
         break
     r = await client.post(
-        "/ui/hilos/create", data={"title": "Big feature x", "scope_name": sname},
+        "/ui/threads/create", data={"title": "Big feature x", "scope_name": sname},
         follow_redirects=False,
     )
     assert r.status_code == 303
     tid = r.headers["location"].split("/")[-1]
-    detail = await client.get(f"/hilos/{tid}")
+    detail = await client.get(f"/threads/{tid}")
     assert detail.status_code == 200 and "Big feature x" in detail.text
-    adv = await client.post(f"/ui/hilos/{tid}/advance", data={"artifact_content": "notes"})
+    adv = await client.post(f"/ui/threads/{tid}/advance", data={"artifact_content": "notes"})
     assert adv.status_code == 204
-    stage = await client.post(f"/ui/hilos/{tid}/stage", data={"stage": "spec"})
+    stage = await client.post(f"/ui/threads/{tid}/stage", data={"stage": "spec"})
     assert stage.status_code == 204
 
 
@@ -210,11 +210,11 @@ async def test_incident_promote_and_ignore(client: AsyncClient):
             ids.append(str(iss.id))
         await db.commit()
         break
-    pr = await client.post(f"/ui/incidentes/{ids[0]}/promote", data={"priority": "p0"})
+    pr = await client.post(f"/ui/incidents/{ids[0]}/promote", data={"priority": "p0"})
     assert pr.status_code == 204
-    ig = await client.post(f"/ui/incidentes/{ids[1]}/ignore")
+    ig = await client.post(f"/ui/incidents/{ids[1]}/ignore")
     assert ig.status_code == 204
-    nf = await client.post(f"/ui/incidentes/{uuid.uuid4()}/ignore")
+    nf = await client.post(f"/ui/incidents/{uuid.uuid4()}/ignore")
     assert nf.status_code == 404
 
 
@@ -228,11 +228,11 @@ async def test_hilo_elaborate_degraded(client: AsyncClient, monkeypatch):
     async for db in client.app.dependency_overrides[get_db]():
         sname = (await db.get(Scope, scope_id)).name
         break
-    cr = await client.post("/ui/hilos/create", data={"title": "Elab", "scope_name": sname},
+    cr = await client.post("/ui/threads/create", data={"title": "Elab", "scope_name": sname},
                            follow_redirects=False)
     tid = cr.headers["location"].split("/")[-1]
     # without an API key, elaborate degrades to a 200 error fragment (never 500)
-    r = await client.post(f"/ui/hilos/{tid}/elaborate")
+    r = await client.post(f"/ui/threads/{tid}/elaborate")
     assert r.status_code == 200
 
 
@@ -276,7 +276,7 @@ async def test_home_cards_stats(client: AsyncClient):
     r = await client.get("/")
     assert r.status_code == 200
     assert 'id="home-cards"' in r.text
-    assert "Backlog" in r.text and "Ideas" in r.text
+    assert "Backlog" in r.text
 
 
 # ---------- Backlog redesign tests ----------
@@ -494,13 +494,13 @@ async def test_registro_groups_by_week(client: AsyncClient):
         await db.commit()
         break
 
-    r = await client.get("/registro")
+    r = await client.get("/archive")
     assert r.status_code == 200
     assert "Closed this week" in r.text
     assert "Old closed item" in r.text
     assert "No date" in r.text  # default EN; es="Sin fecha"
 
-    r2 = await client.get("/registro", headers={"HX-Request": "true"})
+    r2 = await client.get("/archive", headers={"HX-Request": "true"})
     assert r2.status_code == 200
     assert "Closed this week" in r2.text
 
@@ -530,7 +530,7 @@ async def test_registro_close_event_reason(client: AsyncClient):
         await db.commit()
         break
 
-    r = await client.get("/registro")
+    r = await client.get("/archive")
     assert r.status_code == 200
     assert "shipped v2" in r.text
     assert "abc123" in r.text
@@ -559,12 +559,12 @@ async def test_registro_filters_and_load_more(client: AsyncClient):
         await db.commit()
         break
 
-    r = await client.get("/registro?item_type=bug")
+    r = await client.get("/archive?item_type=bug")
     assert r.status_code == 200
     assert "Bug closed item" in r.text
     assert "Feature closed item" not in r.text
 
-    r2 = await client.get("/registro?before=2020-01-01")
+    r2 = await client.get("/archive?before=2020-01-01")
     assert r2.status_code == 200
 
 
@@ -572,7 +572,7 @@ async def test_registro_filters_and_load_more(client: AsyncClient):
 async def test_registro_summary_no_api_key(client: AsyncClient, monkeypatch):
     monkeypatch.setattr("app.config.settings.anthropic_api_key", "")
     _uid, pid = await _login(client)
-    r = await client.get("/ui/registro/summary?week=2026-W27")
+    r = await client.get("/ui/archive/summary?week=2026-W27")
     assert r.status_code == 200
     assert "unavailable" in r.text.lower()  # default EN
 
@@ -582,8 +582,8 @@ async def test_registro_in_nav_and_dashboard_homecard(client: AsyncClient):
     _uid, pid = await _login(client)
     r = await client.get("/")
     assert r.status_code == 200
-    assert "/registro" in r.text
-    r2 = await client.get("/registro")
+    assert "/archive" in r.text
+    r2 = await client.get("/archive")
     assert r2.status_code == 200
 
 
@@ -632,7 +632,7 @@ async def test_all_screens_render_in_all_languages(client: AsyncClient):
     _uid, pid = await _login(client)
     item_id, _ = await _seed_item(client, pid, title="Lang smoke item")
     screens = ("/", "/backlog", "/backlog?view=board", "/backlog?group=status",
-               "/registro", "/prioridad", "/hilos", "/incidentes", "/ideas",
+               "/archive", "/priority", "/threads", "/incidents",
                "/projects", f"/items/{item_id}", "/admin", "/account/members")
     probes = {"es": ("Actividad reciente", "/"), "fr": ("Activité récente", "/")}
     for code in ("en", "es", "fr"):
@@ -644,6 +644,46 @@ async def test_all_screens_render_in_all_languages(client: AsyncClient):
             text, path = probes[code]
             r = await client.get(path)
             assert text in r.text, f"{code}: {text!r} not found in {path}"
+
+
+@pytest.mark.asyncio
+async def test_legacy_spanish_routes_redirect(client: AsyncClient):
+    """Pre-v0018 Spanish slugs 301 to the English routes, query string preserved."""
+    await _login(client)
+    for old, new in [("/prioridad", "/priority"), ("/hilos", "/threads"),
+                     ("/incidentes", "/incidents"), ("/registro", "/archive")]:
+        r = await client.get(old, follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == new, old
+    r = await client.get("/registro?item_type=bug", follow_redirects=False)
+    assert r.headers["location"] == "/archive?item_type=bug"
+    tid = uuid.uuid4()
+    r = await client.get(f"/hilos/{tid}", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == f"/threads/{tid}"
+
+
+# ---------- UX quick wins (2026-07-16 audit) ----------
+
+@pytest.mark.asyncio
+async def test_new_project_seeds_default_scope(client: AsyncClient):
+    """A fresh project must be usable by a human: the new-item modal needs at
+    least one scope option, so create_project seeds a 'General' scope."""
+    _uid, _pid = await _login(client)
+    r = await client.get("/")
+    assert r.status_code == 200
+    assert ">General<" in r.text
+
+
+@pytest.mark.asyncio
+async def test_ui_add_comment_form_encoded(client: AsyncClient):
+    """The item-detail comment form posts form-urlencoded; the UI endpoint must
+    accept it (the REST endpoint only takes JSON — audit finding C1)."""
+    _uid, pid = await _login(client)
+    item_id, _ = await _seed_item(client, pid, title="Commentable")
+    r = await client.post(f"/ui/items/{item_id}/comments", data={"body_md": "hello from the UI"})
+    assert r.status_code == 204
+    assert r.headers.get("HX-Refresh") == "true"
+    detail = await client.get(f"/items/{item_id}")
+    assert "hello from the UI" in detail.text
 
 
 # ---------- Audit regressions (spec 2026-07-06) ----------
@@ -689,7 +729,7 @@ async def test_transition_out_of_terminal_clears_closed_at(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_registro_search_q(client: AsyncClient):
-    """Regresión: /registro?q= pasaba dicts de search_items a Item.id.in_()."""
+    """Regresión: /archive?q= pasaba dicts de search_items a Item.id.in_()."""
     import datetime as _dt
 
     from app.items.models import Item
@@ -711,7 +751,7 @@ async def test_registro_search_q(client: AsyncClient):
         await db.commit()
         break
 
-    r = await client.get("/registro?q=facturacion")
+    r = await client.get("/archive?q=facturacion")
     assert r.status_code == 200
     assert "Facturacion electronica lista" in r.text
     assert "Otro cierre irrelevante" not in r.text
@@ -742,7 +782,7 @@ async def test_registro_commit_links_to_repo_url(client: AsyncClient):
         await db.commit()
         break
 
-    r = await client.get("/registro")
+    r = await client.get("/archive")
     assert r.status_code == 200
     assert 'https://github.com/acme/repo/commit/deadbeef1234567' in r.text
     assert "deadbee" in r.text

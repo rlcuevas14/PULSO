@@ -25,10 +25,10 @@ COMMENT_KINDS: tuple[str, ...] = ("comment", "ai-analysis", "decision", "status-
 
 # --- threads ---
 THREAD_STAGES: tuple[str, ...] = (
-    "idea", "investigacion", "historias", "spec", "en-desarrollo", "review", "hecho", "descartado",
+    "idea", "research", "stories", "spec", "in-development", "review", "done", "discarded",
 )
 THREAD_ARTIFACT_KINDS: tuple[str, ...] = (
-    "investigacion", "historias", "spec", "notas", "decision",
+    "research", "stories", "spec", "notes", "decision",
 )
 
 # --- list ordering (UI / MCP); not a CHECK but a closed domain ---

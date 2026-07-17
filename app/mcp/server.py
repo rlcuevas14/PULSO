@@ -60,7 +60,7 @@ _CONSTRAINT_HELP: dict[str, str] = {
         f"invalid artifact stage; use one of: {', '.join(THREAD_STAGES)}"
     ),
     "thread_artifacts_kind_check": (
-        "invalid artifact kind; use one of: investigacion, historias, spec, notas, decision"
+        "invalid artifact kind; use one of: research, stories, spec, notes, decision"
     ),
     "scopes_name_key": "an area with that name already exists (area names are unique per project)",
     "deliverables_doc_type_check": f"invalid doc_type; use one of: {', '.join(DELIVERABLE_TYPES)}",

@@ -39,7 +39,7 @@ def test_parse_dt():
 
 
 def test_format_stacktrace():
-    assert ws._format_stacktrace({}) == "(sin evento)"
+    assert ws._format_stacktrace({}) == "(no event)"
     event = {
         "culprit": "app.x",
         "entries": [{"type": "exception", "data": {"values": [{

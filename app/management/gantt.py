@@ -1,6 +1,6 @@
 """Pure Gantt geometry — no DB, no ORM, no `now()`. Unit-testable in isolation.
 
-Faithful to the Varajo Gantt template: a dynamic-resolution time axis (first 12 weeks
+Faithful to the original Gantt template: a dynamic-resolution time axis (first 12 weeks
 are weekly columns `S1..S12`, then monthly columns `M4, M5, ...`), a two-level header
 (top = calendar period, bottom = column label), solid bars positioned across columns,
 milestones as points, and phase (level-1) rollups when a parent has no explicit dates.

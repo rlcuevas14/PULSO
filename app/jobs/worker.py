@@ -28,7 +28,7 @@ async def enqueue_job(
 
 
 async def reclaim_expired_leases(db: AsyncSession) -> int:
-    """Devuelve a 'pendiente' los jobs cuya lease expiró."""
+    """Return jobs whose lease has expired back to 'pendiente'."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         update(AgentRun)
@@ -40,7 +40,7 @@ async def reclaim_expired_leases(db: AsyncSession) -> int:
 
 
 async def process_one(db: AsyncSession) -> bool:
-    """Levanta y procesa un job. Retorna True si procesó algo."""
+    """Pick up and process one job. Returns True if something was processed."""
     now = datetime.now(timezone.utc)
     lease_until = now + timedelta(seconds=settings.job_lease_seconds)
 
@@ -64,7 +64,7 @@ async def process_one(db: AsyncSession) -> bool:
         if handler:
             result_data = await handler(db, run.ref_id)
         else:
-            result_data = {"warning": f"Sin handler para kind='{run.kind}'"}
+            result_data = {"warning": f"No handler for kind='{run.kind}'"}
 
         run.status = "ok"
         run.result = result_data
@@ -80,7 +80,7 @@ async def process_one(db: AsyncSession) -> bool:
 
 
 async def worker_loop() -> None:
-    """Loop asyncio que corre en el lifespan de la app. Nunca lanza excepción."""
+    """Asyncio loop that runs in the app's lifespan. Never raises."""
     poll_interval = settings.job_poll_interval_seconds
     async with SessionFactory() as db:
         while True:

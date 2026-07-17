@@ -468,7 +468,7 @@ git commit -m "feat(ui): design-token spine — shared head, dark mode, per-proj
       <span class="font-medium text-body">pulso</span>
       <span class="hidden sm:inline">· The backlog your agent reads and writes.</span>
     </div>
-    <a href="mailto:rcuevas@tidanalytics.com" class="underline underline-offset-2" style="color:var(--accent)">¿Ayuda? rcuevas@tidanalytics.com</a>
+    <a href="mailto:<maintainer-email>" class="underline underline-offset-2" style="color:var(--accent)">¿Ayuda? <maintainer-email></a>
   </div>
 </footer>
 ```

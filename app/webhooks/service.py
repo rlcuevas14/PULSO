@@ -1,4 +1,4 @@
-"""Lógica de webhooks: verificación de firma HMAC + ingesta Sentry + progreso Git."""
+"""Webhook logic: HMAC signature verification + Sentry ingest + Git progress."""
 
 import asyncio
 import hashlib
@@ -48,7 +48,7 @@ def _sanitize(textval: str | None, limit: int = 4000) -> str:
 
 
 def _parse_dt(value: Any) -> datetime | None:
-    """Parsea un timestamp ISO de Sentry (con o sin 'Z'). None si no se puede."""
+    """Parse an ISO timestamp from Sentry (with or without 'Z'). None if unparseable."""
     if not value:
         return None
     try:
@@ -58,8 +58,8 @@ def _parse_dt(value: Any) -> datetime | None:
 
 
 def parse_sentry_payload(payload: dict) -> dict[str, Any]:
-    """Normaliza las tres formas de entrada (issue webhook / event_alert / plugin legacy)
-    en un dict único. ValueError si no hay id de issue (spec 2026-07-10 §4.3)."""
+    """Normalize the three inbound shapes (issue webhook / event_alert / legacy plugin)
+    into a single dict. ValueError when there is no issue id (spec 2026-07-10 §4.3)."""
     data = payload.get("data") or {}
     issue = data.get("issue") or payload.get("issue")
     event = data.get("event")
@@ -70,15 +70,15 @@ def parse_sentry_payload(payload: dict) -> dict[str, Any]:
         web_url = issue.get("web_url") or issue.get("permalink")
     elif event:                     # Internal Integration, resource=event_alert
         src, sentry_id = event, event.get("issue_id")
-        slug = None                 # los payloads de alerta solo traen project id numérico
+        slug = None                 # alert payloads only carry a numeric project id
         web_url = event.get("web_url")
-    else:                           # plugin legacy por proyecto (plano, sin firma)
+    else:                           # legacy per-project plugin (flat, unsigned)
         src, sentry_id = payload, payload.get("id")
         proj = payload.get("project")
         slug = str(proj) if proj else None
         web_url = payload.get("url")
     if not sentry_id:
-        raise ValueError("Falta el id del issue de Sentry")
+        raise ValueError("Missing Sentry issue id")
     title = _sanitize(src.get("title") or src.get("culprit") or src.get("message")
                       or "Sentry issue", 500)
     level = src.get("level", "error")
@@ -101,12 +101,12 @@ async def ingest_sentry(
     account_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
 ) -> dict:
-    """Upsert idempotente en sentry_issues por sentry_issue_id (UNIQUE).
+    """Idempotent upsert into sentry_issues by sentry_issue_id (UNIQUE).
 
-    Política: el error aterriza en el CONTENEDOR sentry_issues (no en el backlog). La
-    promoción al backlog requiere análisis: la hace el triage IA (clasifica el ruido) y/o
-    el owner manualmente desde /incidentes. Dedup: el mismo issue incrementa events_count.
-    account_id/project_id (v0017) los resuelve la ruta tokenizada; la ruta legacy no los tiene.
+    Policy: the error lands in the sentry_issues CONTAINER (not in the backlog). Promotion
+    to the backlog requires analysis: the AI triage does it (classifies noise) and/or the
+    owner does it manually from /incidents. Dedup: the same issue increments events_count.
+    account_id/project_id (v0017) are resolved by the tokened route; the legacy route lacks them.
     """
     parsed = parse_sentry_payload(payload)
     sentry_id = parsed["sentry_id"]
@@ -115,12 +115,12 @@ async def ingest_sentry(
         select(SentryIssue).where(SentryIssue.sentry_issue_id == sentry_id)
     )).scalar_one_or_none()
     now = datetime.now(timezone.utc)
-    # Fechas REALES del error en Sentry (no la hora de ingesta).
+    # The error's REAL timestamps in Sentry (not the ingest time).
     first_seen = parsed["first_seen"] or now
     last_seen = parsed["last_seen"] or now
     if issue is None:
         issue = SentryIssue(
-            sentry_issue_id=sentry_id, project=parsed["slug"] or "desconocido",
+            sentry_issue_id=sentry_id, project=parsed["slug"] or "unknown",
             title=parsed["title"], level=parsed["level"],
             status="new", events_count=parsed["count"],
             first_seen=first_seen, last_seen=last_seen,
@@ -130,13 +130,13 @@ async def ingest_sentry(
         db.add(issue)
         created = True
         await db.flush()
-        # Encolar triage IA (pre-clasifica el ruido; corre cuando hay ANTHROPIC_API_KEY).
+        # Enqueue AI triage (pre-classifies noise; runs when ANTHROPIC_API_KEY is set).
         db.add(AgentRun(kind="triage-sentry", ref_type="sentry_issue",
                         ref_id=issue.id, status="pendiente", project_id=issue.project_id))
     else:
         issue.events_count += 1
         issue.last_seen = last_seen
-        # Sanar filas viejas: si ahora conocemos el ruteo, atarlas (dedup path).
+        # Heal old rows: if we now know the routing, attach them (dedup path).
         if issue.project_id is None and project_id is not None:
             issue.project_id = project_id
         if issue.account_id is None and account_id is not None:
@@ -151,8 +151,8 @@ async def ingest_sentry(
 async def promote_issue(
     db: AsyncSession, issue: SentryIssue, priority: str = "p1", actor: str = "manual"
 ) -> str:
-    """Promueve un issue del contenedor al backlog como ítem bug (decisión con análisis:
-    triage IA o el owner). Idempotente: si ya está linkeado, devuelve el ítem existente."""
+    """Promote an issue from the container to the backlog as a bug item (an analyzed
+    decision: AI triage or the owner). Idempotent: if already linked, returns the existing item."""
     if issue.item_id is not None:
         return str(issue.item_id)
     scope = await resolve_scope(db, issue.project, create=True, source_repo="sentry")
@@ -181,13 +181,13 @@ async def resolve_issue(
     actor: str,
     commit_sha: str | None = None,
 ) -> dict[str, Any]:
-    """Resuelve un incidente: lo marca resuelto en Pulso, opcionalmente en Sentry, y
-    cierra el ítem de backlog ligado (si lo hay y sigue abierto).
+    """Resolve an incident: mark it resolved in Pulso, optionally in Sentry, and
+    close the linked backlog item (if there is one and it is still open).
 
-    Lógica de servicio extraída de la tool MCP pulso_incidente_resolver (ARCH-2) para que
-    UI / REST / MCP la consuman sin duplicar. Solo flush; el commit lo hace el borde.
+    Service logic extracted from the pulso_incidente_resolver MCP tool (ARCH-2) so that
+    UI / REST / MCP consume it without duplication. Flush only; the edge does the commit.
 
-    Devuelve {"id", "status", "resuelto_en_sentry", "item_cerrado"}.
+    Returns {"id", "status", "resuelto_en_sentry", "item_cerrado"}.
     """
     issue.status = "resolved"
     sentry_done = False
@@ -200,9 +200,9 @@ async def resolve_issue(
                 org_slug=conn.org_slug if conn else None,
                 base_url=effective_base_url(conn) if conn else None,
             )
-        except Exception as e:  # error de red / API de Sentry: no debe bloquear el cierre local
+        except Exception as e:  # network / Sentry API error: must not block the local close
             logger.warning(
-                "resolve_issue: fallo al resolver %s en Sentry: %s",
+                "resolve_issue: failed to resolve %s in Sentry: %s",
                 issue.sentry_issue_id, e,
             )
             sentry_done = False
@@ -219,7 +219,7 @@ async def resolve_issue(
                 item_cerrado = True
             except service.TransitionError as e:
                 logger.warning(
-                    "resolve_issue: no se pudo cerrar el ítem %s ligado al incidente %s: %s",
+                    "resolve_issue: could not close item %s linked to incident %s: %s",
                     issue.item_id, issue.id, e,
                 )
 
@@ -233,7 +233,7 @@ async def resolve_issue(
 
 
 async def process_github_push(db: AsyncSession, payload: dict) -> dict:
-    """Marca last_touched_at por scope y autocompleta ítems referenciados por pulso:UUID."""
+    """Stamp last_touched_at per scope and auto-complete items referenced by pulso:UUID."""
     commits = payload.get("commits", [])
     touched_scopes: set[str] = set()
     completed: list[str] = []
@@ -241,11 +241,11 @@ async def process_github_push(db: AsyncSession, payload: dict) -> dict:
     for commit in commits:
         msg = commit.get("message", "")
         sha = commit.get("id", "")
-        # scope del conventional commit: fix(auth): -> auth
+        # conventional-commit scope: fix(auth): -> auth
         m = re.match(r"^\w+\(([\w-]+)\)", msg)
         if m:
             touched_scopes.add(m.group(1))
-        # pulso:UUID -> completar (idempotente, validado)
+        # pulso:UUID -> complete (idempotent, validated)
         for match in _PULSO_RE.finditer(msg):
             item_id = match.group(1)
             done = await _complete_by_ref(db, item_id, sha)
@@ -267,7 +267,7 @@ async def fetch_sentry_issues(
     token: str, org: str, project: str, query: str = "is:unresolved", limit: int = 100,
     base_url: str = DEFAULT_BASE_URL,
 ) -> list[dict[str, Any]]:
-    """Trae issues del proyecto desde la API de Sentry (para backfill del histórico)."""
+    """Fetch the project's issues from the Sentry API (for historical backfill)."""
     url = f"{base_url}/api/0/projects/{org}/{project}/issues/"
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.get(
@@ -283,7 +283,7 @@ async def backfill_issues(
     db: AsyncSession, issues: list[dict], project: str, *,
     account_id: uuid.UUID | None = None, project_id: uuid.UUID | None = None,
 ) -> dict:
-    """Ingiere al contenedor cada issue traído de la API de Sentry (dedup por id)."""
+    """Ingest into the container every issue fetched from the Sentry API (dedup by id)."""
     ingested = 0
     for iss in issues:
         payload = {"data": {"issue": {
@@ -300,14 +300,14 @@ async def backfill_issues(
             await ingest_sentry(db, payload, account_id=account_id, project_id=project_id)
             ingested += 1
         except ValueError:
-            continue  # issue sin id → saltar
+            continue  # issue without an id → skip
     return {"ingested": ingested, "total": len(issues)}
 
 
 def _format_stacktrace(event: dict, max_frames: int = 12) -> str:
-    """Extrae un resumen legible (excepción + frames in-app) del evento de Sentry."""
+    """Extract a readable summary (exception + in-app frames) from the Sentry event."""
     if not event:
-        return "(sin evento)"
+        return "(no event)"
     lines: list[str] = []
     culprit = event.get("culprit")
     if culprit:
@@ -320,7 +320,7 @@ def _format_stacktrace(event: dict, max_frames: int = 12) -> str:
             evalue = val.get("value", "")
             lines.append(f"\n{etype}: {evalue}")
             frames = (val.get("stacktrace") or {}).get("frames") or []
-            # priorizar frames del propio código (in_app)
+            # prioritize frames from our own code (in_app)
             in_app = [f for f in frames if f.get("inApp")] or frames
             for f in in_app[-max_frames:]:
                 fn = f.get("filename") or f.get("module") or "?"
@@ -331,17 +331,17 @@ def _format_stacktrace(event: dict, max_frames: int = 12) -> str:
                 for _, code in ctx:
                     if isinstance(code, str) and code.strip():
                         lines.append(f"      {code.strip()[:160]}")
-    return "\n".join(lines)[:6000] if lines else "(sin stack trace)"
+    return "\n".join(lines)[:6000] if lines else "(no stack trace)"
 
 
 async def fetch_issue_detail(
     issue_id: str, *, api_token: str | None = None, base_url: str | None = None
 ) -> dict[str, Any]:
-    """Trae metadata + stack trace del último evento de un issue de Sentry (para el MCP).
-    Sin api_token explícito cae al modo legacy por env (deprecated)."""
+    """Fetch metadata + stack trace of a Sentry issue's latest event (for the MCP).
+    Without an explicit api_token it falls back to the legacy env-based mode (deprecated)."""
     token = api_token or settings.sentry_api_token
     if not token:
-        raise RuntimeError("SENTRY_API_TOKEN no configurado")
+        raise RuntimeError("SENTRY_API_TOKEN not configured")
     base = base_url or DEFAULT_BASE_URL
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=60) as client:
@@ -368,10 +368,10 @@ async def resolve_in_sentry(
     issue_id: str, *, api_token: str | None = None,
     org_slug: str | None = None, base_url: str | None = None,
 ) -> bool:
-    """Marca el issue como resuelto en Sentry (requiere token con Issue&Event: Write).
-    Endpoint org-scoped (documentado) cuando hay org_slug; sin org cae al legacy
-    /api/0/issues/{id}/. Sin api_token explícito usa el env global (deprecated).
-    Reintenta una vez en 429 honrando Retry-After (cap 5s)."""
+    """Mark the issue as resolved in Sentry (requires a token with Issue&Event: Write).
+    Uses the org-scoped endpoint (the documented one) when org_slug is set; without an
+    org it falls back to the legacy /api/0/issues/{id}/. Without an explicit api_token
+    it uses the global env (deprecated). Retries once on 429, honoring Retry-After (5s cap)."""
     token = api_token or settings.sentry_api_token
     if not token:
         return False
@@ -396,7 +396,7 @@ async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
     try:
         item = await service.get_item(db, uuid.UUID(item_id))
     except (ValueError, AttributeError):
-        logger.warning("_complete_by_ref: item_id inválido en commit %s: %r", sha[:12], item_id)
+        logger.warning("_complete_by_ref: invalid item_id in commit %s: %r", sha[:12], item_id)
         return False
     if item is None:
         return False
@@ -406,6 +406,6 @@ async def _complete_by_ref(db: AsyncSession, item_id: str, sha: str) -> bool:
         await service.close_item(db, item, "done", f"closed by commit {sha[:12]}",
                                  f"github:{sha[:12]}", commit_sha=sha)
     except service.TransitionError as e:
-        logger.warning("_complete_by_ref: transición inválida al cerrar %s: %s", item_id, e)
+        logger.warning("_complete_by_ref: invalid transition closing %s: %s", item_id, e)
         return False
     return True

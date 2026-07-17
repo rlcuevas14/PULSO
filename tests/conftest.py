@@ -38,9 +38,9 @@ async def test_engine(pg_url):
             await conn.rollback()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # search_vector es una columna GENERATED que vive solo en la migración v0002
-    # (no en el ORM); create_all no la crea. La añadimos aquí para que el full-text
-    # funcione en todos los tests (búsqueda, MCP, resolución de relaciones).
+    # search_vector is a GENERATED column that lives only in migration v0002
+    # (not in the ORM); create_all does not create it. We add it here so full-text
+    # works in every test (search, MCP, relationship resolution).
     async with engine.begin() as conn:
         await conn.execute(text("""
             DO $$ BEGIN

@@ -23,8 +23,8 @@ DYNAMIC_PREFIXES = {
     "status.": ITEM_STATUSES,
     "type.": ITEM_TYPES,
     "origin.": ORIGENES,
-    "stage.": ["idea", "investigacion", "historias", "spec",
-               "en-desarrollo", "review", "hecho", "descartado"],
+    "stage.": ["idea", "research", "stories", "spec",
+               "in-development", "review", "done", "discarded"],
     "triage.": ["bug-real", "input-malo", "3rd-party", "ruido"],
     "kind.": ["decision"],  # solo 'decision' se pinta con pill en item_detail
     "month.": [str(n) for n in range(1, 13)],

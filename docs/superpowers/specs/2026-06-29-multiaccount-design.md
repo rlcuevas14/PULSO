@@ -38,7 +38,7 @@ Rejected: **B** (denormalize `account_id` onto every table — redundant tenancy
 | column | type | notes |
 |---|---|---|
 | id | uuid pk | |
-| name | text NOT NULL | e.g. "Tidanalytics" |
+| name | text NOT NULL | e.g. "Acme Inc" |
 | slug | text UNIQUE NOT NULL | for future `pulso.io/{slug}` URLs |
 | is_active | bool default true | super-admin can deactivate |
 | created_at, updated_at | timestamptz | |

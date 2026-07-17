@@ -1,7 +1,7 @@
-"""Interfaz aislada y mockeable a los LLMs (Anthropic Haiku + embeddings Gemini).
+"""Isolated, mockable interface to the LLMs (Anthropic Haiku + Gemini embeddings).
 
-Aislada a propósito: los handlers la llaman a través de estas funciones para que los
-tests las parcheen sin tocar la red ni gastar tokens. Degradan con gracia sin API key.
+Isolated on purpose: handlers call it through these functions so that tests can patch
+them without touching the network or spending tokens. Degrades gracefully without an API key.
 """
 
 import json
@@ -20,7 +20,7 @@ EMBED_DIM = 768
 
 
 class LLMUnavailable(RuntimeError):
-    """No hay API key configurada para el proveedor."""
+    """No API key configured for the provider."""
 
 
 _ENRICH_PROMPT = """You are a product analyst. Evaluate this backlog item and reply ONLY with JSON.
@@ -38,11 +38,11 @@ JSON:"""
 
 
 async def enrich_item(title: str, summary: str | None, item_type: str) -> dict[str, Any]:
-    """Llama a Haiku para estimar impacto/esfuerzo. Lanza LLMUnavailable sin API key."""
+    """Call Haiku to estimate impact/effort. Raises LLMUnavailable without an API key."""
     if not settings.anthropic_api_key:
-        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+        raise LLMUnavailable("ANTHROPIC_API_KEY not configured")
 
-    prompt = _ENRICH_PROMPT.format(title=title, item_type=item_type, summary=summary or "(sin resumen)")
+    prompt = _ENRICH_PROMPT.format(title=title, item_type=item_type, summary=summary or "(no summary)")
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             _ANTHROPIC_URL,
@@ -88,13 +88,13 @@ Generate the "{stage}" stage content:"""
 
 
 async def generate_stage(stage: str, title: str, summary: str | None, artifacts: str) -> dict[str, Any]:
-    """Genera el borrador de un stage de hilo (Sonnet para spec, Haiku para el resto)."""
+    """Generate the draft for a thread stage (Sonnet for spec, Haiku for the rest)."""
     if not settings.anthropic_api_key:
-        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+        raise LLMUnavailable("ANTHROPIC_API_KEY not configured")
     model = _SONNET_MODEL if stage == "spec" else _HAIKU_MODEL
     prompt = _STAGE_PROMPT.format(
-        stage=stage, title=title, summary=summary or "(sin resumen)",
-        artifacts=artifacts or "(ninguno)",
+        stage=stage, title=title, summary=summary or "(no summary)",
+        artifacts=artifacts or "(none)",
     )
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
@@ -129,9 +129,9 @@ JSON:"""
 
 
 async def triage_sentry(title: str, context: str) -> dict[str, Any]:
-    """Clasifica un error de Sentry con Haiku. Lanza LLMUnavailable sin API key."""
+    """Classify a Sentry error with Haiku. Raises LLMUnavailable without an API key."""
     if not settings.anthropic_api_key:
-        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+        raise LLMUnavailable("ANTHROPIC_API_KEY not configured")
     prompt = _TRIAGE_PROMPT.format(title=title, context=context[:2000])
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
@@ -146,7 +146,7 @@ async def triage_sentry(title: str, context: str) -> dict[str, Any]:
     text = "".join(b.get("text", "") for b in data.get("content", []))
     triage = str(_extract_json(text).get("triage", "")).strip()
     if triage not in ("bug-real", "input-malo", "3rd-party", "ruido"):
-        triage = "bug-real"  # default seguro: si dudas, trátalo como bug real
+        triage = "bug-real"  # safe default: when in doubt, treat it as a real bug
     return {"triage": triage}
 
 
@@ -166,13 +166,13 @@ async def summarize_closed(
     items_with_reasons: list[dict[str, Any]],
     lang: str = "en",
 ) -> str:
-    """Genera un resumen IA de ítems cerrados en la semana, en el idioma de la UI.
+    """Generate an AI summary of the items closed during the week, in the UI language.
 
-    items_with_reasons: lista de dicts con keys title, type, status, reason (optional).
-    Lanza LLMUnavailable sin API key.
+    items_with_reasons: list of dicts with keys title, type, status, reason (optional).
+    Raises LLMUnavailable without an API key.
     """
     if not settings.anthropic_api_key:
-        raise LLMUnavailable("ANTHROPIC_API_KEY no configurada")
+        raise LLMUnavailable("ANTHROPIC_API_KEY not configured")
     lines = []
     for i in items_with_reasons:
         reason_text = f" — {i['reason']}" if i.get("reason") else ""
@@ -196,14 +196,14 @@ async def summarize_closed(
 
 
 async def embed_text(content: str) -> list[float] | None:
-    """Embedding Gemini (768 dim). Devuelve None si no hay API key (degradación).
+    """Gemini embedding (768 dim). Returns None when there is no API key (degradation).
 
-    SEC-07: la API key viaja en el header `x-goog-api-key`, no en la query string
-    `?key=`, para que no quede registrada en logs de acceso/proxies (las query strings
-    se loguean por defecto; los headers no).
+    SEC-07: the API key travels in the `x-goog-api-key` header, not in the `?key=`
+    query string, so it never gets recorded in access/proxy logs (query strings are
+    logged by default; headers are not).
 
-    PERF-03: timeout agresivo (8s). El embedding es opcional — si el proveedor tarda,
-    degradamos a None en vez de bloquear el request/worker.
+    PERF-03: aggressive timeout (8s). The embedding is optional — if the provider is
+    slow, we degrade to None instead of blocking the request/worker.
     """
     if not settings.gemini_api_key:
         return None

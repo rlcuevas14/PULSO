@@ -1,7 +1,7 @@
-"""Consultas del grafo de relaciones entre ítems (item_relationships).
+"""Queries over the item relationship graph (item_relationships).
 
-El grafo se traversa en SQL puro (sin recursión: la profundidad es fija = 2).
-El bloqueo es DERIVADO del grafo, no un estado materializado.
+The graph is traversed in pure SQL (no recursion: depth is fixed = 2).
+Blocking is DERIVED from the graph, not a materialized state.
 """
 
 import uuid
@@ -12,17 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import TERMINAL, sql_list
 
-# Relaciones que cuentan como dependencia dura para el orden topológico.
+# Relations that count as hard dependencies for the topological order.
 _PRECEDENCE = ("blocks", "requires")
-# Fragmento SQL reutilizable: estados terminales (cerrados), desde enums (DUP-4).
+# Reusable SQL fragment: terminal (closed) statuses, from enums (DUP-4).
 _TERMINAL_SQL = sql_list(TERMINAL)
 
 
 async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, Any]]:
-    """Vecindad de profundidad 2 de los ítems abiertos de un scope.
+    """Depth-2 neighborhood of a scope's open items.
 
-    Versión NO recursiva (dos hops) — correcta y más rápida que una CTE recursiva.
-    Devuelve cada ítem una vez con su menor profundidad (0 = semilla, 1, 2).
+    NON-recursive version (two hops) — correct and faster than a recursive CTE.
+    Returns each item once, with its smallest depth (0 = seed, 1, 2).
     """
     result = await db.execute(
         text(f"""
@@ -63,7 +63,7 @@ async def neighborhood(db: AsyncSession, scope_id: uuid.UUID) -> list[dict[str, 
 
 
 async def blockers_of(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, Any]]:
-    """Ítems que bloquean EFECTIVAMENTE a item_id: arco `blocks` entrante con source abierto."""
+    """Items that EFFECTIVELY block item_id: incoming `blocks` arc whose source is open."""
     result = await db.execute(
         text(f"""
             SELECT s.id, s.title, s.status
@@ -78,10 +78,10 @@ async def blockers_of(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, An
 
 
 async def unblocked_by(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, Any]]:
-    """Targets que item_id bloquea (arco `blocks` saliente) y que quedan SIN otros bloqueadores abiertos.
+    """Targets that item_id blocks (outgoing `blocks` arc) left WITHOUT any other open blocker.
 
-    Se llama tras cerrar item_id para reportar qué se desbloqueó (el bloqueo es derivado;
-    no se escribe estado en el target, solo se reporta/audita).
+    Called after closing item_id to report what got unblocked (blocking is derived;
+    no state is written on the target, it is only reported/audited).
     """
     result = await db.execute(
         text(f"""
@@ -104,10 +104,10 @@ async def unblocked_by(db: AsyncSession, item_id: uuid.UUID) -> list[dict[str, A
 
 
 async def graph_blocked_ids(db: AsyncSession, project_id: uuid.UUID | None = None) -> set[str]:
-    """Ids de ítems efectivamente bloqueados por el grafo (para badges/filtro).
+    """Ids of items effectively blocked by the graph (for badges/filtering).
 
-    Con ``project_id`` acota a los bloqueados DENTRO de ese proyecto (lo pasan el dashboard
-    y el backlog para no contar el grafo de otras cuentas). Sin él, cuenta global.
+    With ``project_id`` it narrows to items blocked WITHIN that project (the dashboard
+    and the backlog pass it so other accounts' graphs are not counted). Without it, global.
     """
     proj, params = "", {}
     if project_id is not None:
@@ -130,9 +130,9 @@ async def graph_blocked_ids(db: AsyncSession, project_id: uuid.UUID | None = Non
 
 
 async def unblocker_ids(db: AsyncSession, project_id: uuid.UUID | None = None) -> set[str]:
-    """Ids de ítems que bloquean a otros aún abiertos (badge 🔓 = desbloqueador).
+    """Ids of items blocking others that are still open (🔓 badge = unblocker).
 
-    Con ``project_id`` acota a los desbloqueadores DENTRO de ese proyecto.
+    With ``project_id`` it narrows to unblockers WITHIN that project.
     """
     proj, params = "", {}
     if project_id is not None:
@@ -155,7 +155,7 @@ async def unblocker_ids(db: AsyncSession, project_id: uuid.UUID | None = None) -
 
 
 async def subgraph(db: AsyncSession, item_id: uuid.UUID) -> dict[str, Any]:
-    """Subgrafo centrado en un ítem: arcos entrantes y salientes (ambas direcciones)."""
+    """Subgraph centered on an item: incoming and outgoing arcs (both directions)."""
     result = await db.execute(
         text("""
             SELECT r.source_id, r.target_id, r.relation, r.note,
@@ -187,18 +187,18 @@ async def subgraph(db: AsyncSession, item_id: uuid.UUID) -> dict[str, Any]:
 def topological_order(
     node_ids: list[str], edges: list[tuple[str, str, str]], impact: dict[str, int] | None = None
 ) -> dict[str, Any]:
-    """Kahn sobre el DAG de precedencia. Degradación con gracia ante ciclos.
+    """Kahn's algorithm over the precedence DAG. Degrades gracefully on cycles.
 
-    edges: lista de (source, target, relation). Normalización:
-        blocks   A->B  => precedencia A->B (A antes que B)
-        requires A->B  => precedencia B->A (B antes que A)
-        otros          => ignorados
-    Devuelve {order: [...], has_cycle: bool, cycle_nodes: [...]}.
-    Invariante: len(order) == len(node_ids) (nunca se pierde un ítem).
+    edges: list of (source, target, relation). Normalization:
+        blocks   A->B  => precedence A->B (A before B)
+        requires A->B  => precedence B->A (B before A)
+        others         => ignored
+    Returns {order: [...], has_cycle: bool, cycle_nodes: [...]}.
+    Invariant: len(order) == len(node_ids) (no item is ever lost).
     """
     impact = impact or {}
     nodes = set(node_ids)
-    # Construir el DAG de precedencia.
+    # Build the precedence DAG.
     adj: dict[str, set[str]] = {n: set() for n in nodes}
     indeg: dict[str, int] = {n: 0 for n in nodes}
     for source, target, relation in edges:
@@ -212,7 +212,7 @@ def topological_order(
             adj[a].add(b)
             indeg[b] += 1
 
-    # Orden estable: por impacto descendente, luego por id.
+    # Stable order: by descending impact, then by id.
     def _key(n: str) -> tuple[int, str]:
         return (-(impact.get(n) or 0), n)
 

@@ -1,4 +1,4 @@
-"""Handlers de jobs del worker. Sprint 1: enrich real (Haiku + embeddings)."""
+"""Worker job handlers. Sprint 1: real enrich (Haiku + embeddings)."""
 
 import uuid
 
@@ -10,21 +10,21 @@ from app.items.models import AiEnrichment, Item
 
 
 async def handle_enrich(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
-    """Enriquece un ítem con impacto/esfuerzo (Haiku) y embedding (Gemini).
+    """Enrich an item with impact/effort (Haiku) and an embedding (Gemini).
 
-    Degrada con gracia: sin ANTHROPIC_API_KEY no estima; sin GEMINI_API_KEY o sin
-    pgvector no genera embedding. Nunca rompe el worker.
+    Degrades gracefully: without ANTHROPIC_API_KEY it doesn't estimate; without
+    GEMINI_API_KEY or pgvector it doesn't embed. Never breaks the worker.
     """
     if ref_id is None:
-        return {"status": "sin-ref"}
+        return {"status": "no-ref"}
 
     item = (await db.execute(select(Item).where(Item.id == ref_id))).scalar_one_or_none()
     if item is None:
-        return {"status": "item-no-encontrado"}
+        return {"status": "item-not-found"}
 
     out: dict = {"item_id": str(ref_id)}
 
-    # 1) Estimación impacto/esfuerzo con Haiku.
+    # 1) Impact/effort estimation with Haiku.
     try:
         result = await llm.enrich_item(item.title, item.summary_md, item.type)
         item.impact_ai = result["impact"]
@@ -45,7 +45,7 @@ async def handle_enrich(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
         out["enriched"] = False
         out["note"] = "sin ANTHROPIC_API_KEY"
 
-    # 2) Embedding (best-effort: requiere GEMINI_API_KEY + pgvector).
+    # 2) Embedding (best-effort: requires GEMINI_API_KEY + pgvector).
     try:
         vec = await llm.embed_text(f"{item.title}\n{item.summary_md or ''}")
         if vec:
@@ -54,7 +54,7 @@ async def handle_enrich(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
                 {"vec": str(vec), "id": str(item.id)},
             )
             out["embedded"] = True
-    except Exception as exc:  # pgvector ausente o error de red — no romper el job
+    except Exception as exc:  # pgvector missing or network error — don't break the job
         out["embedded"] = False
         out["embed_error"] = str(exc)[:120]
 
@@ -63,13 +63,14 @@ async def handle_enrich(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
 
 
 async def handle_triage_sentry(db: AsyncSession, ref_id: uuid.UUID | None) -> dict:
-    """Pre-clasifica un issue de Sentry con Haiku (bug-real / input-malo / 3rd-party / ruido).
-    El ruido se auto-oculta (status=ignored). NO promueve al backlog — esa decisión es del
-    owner desde /incidentes (informado por el triage). Degrada sin API key (queda pendiente)."""
+    """Pre-classify a Sentry issue with Haiku (bug-real / input-malo / 3rd-party / ruido).
+    Noise auto-hides itself (status=ignored). Does NOT promote to the backlog — that decision
+    belongs to the owner from /incidents (informed by the triage). Degrades without an API key
+    (the issue stays untriaged)."""
     from app.webhooks.models import SentryIssue
 
     if ref_id is None:
-        return {"status": "sin-ref"}
+        return {"status": "no-ref"}
     issue = (await db.execute(select(SentryIssue).where(SentryIssue.id == ref_id))).scalar_one_or_none()
     if issue is None:
         return {"status": "issue-no-encontrado"}
@@ -82,10 +83,10 @@ async def handle_triage_sentry(db: AsyncSession, ref_id: uuid.UUID | None) -> di
     issue.triage = verdict["triage"]
     promoted: str | None = None
     if verdict["triage"] == "ruido" and issue.item_id is None:
-        issue.status = "ignored"  # auto-ocultar el ruido del contenedor
+        issue.status = "ignored"  # auto-hide the noise from the container
     elif verdict["triage"] == "bug-real" and issue.item_id is None:
-        # Bug real clasificado por el triage → directo al TOPE del backlog (p0). El owner
-        # puede bajar la prioridad o descartar desde /incidentes si fuera falso positivo.
+        # A real bug per the triage → straight to the TOP of the backlog (p0). The owner
+        # can lower the priority or discard it from /incidents if it's a false positive.
         from app.webhooks.service import promote_issue
         promoted = await promote_issue(db, issue, priority="p0", actor="triage-auto")
     await db.flush()

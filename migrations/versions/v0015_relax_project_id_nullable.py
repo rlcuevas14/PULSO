@@ -1,8 +1,8 @@
 """v0015: relax project_id back to NULLABLE on the core tables.
 
 PULSO (canonical) enforces project isolation in code (app/projects/access.py resolves and
-filters every request by project), not via a schema NOT NULL. The upstream (now obsolete)
-eduk3 line had hardened project_id to NOT NULL in v0013; this realigns the live schema with
+filters every request by project), not via a schema NOT NULL. The pre-multi-account data
+lineage had hardened project_id to NOT NULL in v0013; this realigns the live schema with
 PULSO's models (nullable project_id). A NULL project_id is simply an orphan row — invisible
 to every project-scoped query, never leaked across accounts. The composite indexes from
 v0013 are kept (harmless perf).

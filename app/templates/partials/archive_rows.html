@@ -23,14 +23,14 @@
     <div class="flex items-center gap-2">
       {% set done_count = week_items | selectattr('status', 'equalto', 'done') | list | length %}
       {% set disc_count = week_items | selectattr('status', 'equalto', 'discarded') | list | length %}
-      {% if done_count %}<span class="p-pill bg-success/15 text-success text-xs">{{ tn("registro.done_count", done_count) }}</span>{% endif %}
-      {% if disc_count %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ tn("registro.discarded_count", disc_count) }}</span>{% endif %}
+      {% if done_count %}<span class="p-pill bg-success/15 text-success text-xs">{{ tn("archive.done_count", done_count) }}</span>{% endif %}
+      {% if disc_count %}<span class="p-pill bg-surface-strong text-muted text-xs">{{ tn("archive.discarded_count", disc_count) }}</span>{% endif %}
       {% if week_key %}
       <button type="button"
-        hx-get="/ui/registro/summary?week={{ week_key }}"
+        hx-get="/ui/archive/summary?week={{ week_key }}"
         hx-target="#summary-{{ week_key }}"
         hx-swap="innerHTML"
-        class="p-btn p-btn-ghost p-btn-sm text-xs">{{ t("registro.ai_summary") }}</button>
+        class="p-btn p-btn-ghost p-btn-sm text-xs">{{ t("archive.ai_summary") }}</button>
       {% endif %}
     </div>
   </div>
@@ -75,16 +75,16 @@
 
 {% if not week_groups and not is_load_more %}
 <div class="py-16 text-center text-sm text-muted">
-  {{ t("registro.empty_filtered") }}
-  <a href="/registro" class="ml-1 text-accent hover:underline">{{ t("common.clear_filters") }}</a>
+  {{ t("archive.empty_filtered") }}
+  <a href="/archive" class="ml-1 text-accent hover:underline">{{ t("common.clear_filters") }}</a>
 </div>
 {% endif %}
 
 {% if next_before %}
 <div class="text-center py-4">
   <button type="button"
-    hx-get="/registro?before={{ next_before }}{% if filters.q %}&amp;q={{ filters.q }}{% endif %}{% if filters.scope %}&amp;scope={{ filters.scope }}{% endif %}{% if filters.item_type %}&amp;item_type={{ filters.item_type }}{% endif %}"
-    hx-target="#registro-rows"
+    hx-get="/archive?before={{ next_before }}{% if filters.q %}&amp;q={{ filters.q }}{% endif %}{% if filters.scope %}&amp;scope={{ filters.scope }}{% endif %}{% if filters.item_type %}&amp;item_type={{ filters.item_type }}{% endif %}"
+    hx-target="#archive-rows"
     hx-swap="beforeend"
     hx-on::after-request="this.parentElement.remove()"
     class="p-btn p-btn-ghost p-btn-sm">{{ t("common.load_more") }}</button>

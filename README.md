@@ -1,5 +1,7 @@
 # Pulso
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Agent-native backlog manager for solo-preneurs.** Manage multiple projects from one self-hosted instance. Claude Code connects via MCP and keeps your backlog up to date as it works — no manual updates.
 
 ---
@@ -33,6 +35,10 @@ DB_PASSWORD=choose-a-password
 docker compose up -d
 ```
 
+The compose file pulls the prebuilt public image
+[`ghcr.io/rlcuevas14/pulso`](https://github.com/rlcuevas14/PULSO/pkgs/container/pulso) —
+no local build needed.
+
 Open **http://localhost:8000** → redirects to `/setup` to create your account, first project, and write token in one step.
 
 ### Connect Claude Code
@@ -48,7 +54,7 @@ Restart Claude Code. Call `pulso_context` at the start of any session to get you
 
 ---
 
-## MCP tools (17)
+## MCP tools (26)
 
 | Tool | What it does |
 |------|--------------|
@@ -69,6 +75,15 @@ Restart Claude Code. Call `pulso_context` at the start of any session to get you
 | `pulso_incidents` | List Sentry errors in the incident container |
 | `pulso_incident` | Incident detail with stack trace fetched from Sentry |
 | `pulso_incident_resolve` | Resolve an incident in Pulso (and optionally in Sentry) |
+| `pulso_doc_list` | List management documents (deliverables) grouped by compartment |
+| `pulso_doc_get` | Read a management document (current or a specific version) |
+| `pulso_doc_put` | Create or update a management document (append-only versioning) |
+| `pulso_pending_list` | List project pendings (action items) with owner and status |
+| `pulso_pending_upsert` | Create or update a pending |
+| `pulso_pending_complete` | Mark a pending as done |
+| `pulso_gantt_get` | Read the project plan (3-level Gantt hierarchy) |
+| `pulso_gantt_task_upsert` | Create or update a plan task (the Gantt is edited only via MCP) |
+| `pulso_gantt_task_remove` | Remove a plan task |
 
 ---
 
@@ -114,6 +129,10 @@ Transitions are validated — the agent can't make illegal moves. Terminal state
 | `SENTRY_API_TOKEN` | No | Fetches stack traces and resolves issues via Sentry API |
 | `SENTRY_ORG` | No | Your Sentry organization slug |
 | `GITHUB_WEBHOOK_SECRET` | No | HMAC secret for GitHub webhook (auto-close on commit) |
+| `DATABASE_URL` | No | Full async DSN; overrides the compose-built URL (needed when running without Docker Compose) |
+| `DEBUG` | No | `true` relaxes cookie security for local HTTP development. Never enable in production |
+| `PORT` | No | Host port published by docker-compose (default `8000`) |
+| `IMAGE_TAG` | No | Image tag pulled by docker-compose (default `latest`) |
 
 See `.env.example` for all defaults.
 
@@ -122,10 +141,12 @@ See `.env.example` for all defaults.
 ## Development
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
-# Run tests (Postgres required — database "pulso_test")
+# Run tests (Postgres required — any empty database works; pgvector NOT required.
+# DEBUG=true is mandatory: without it the session cookie is `secure` and UI tests 303-redirect)
 TEST_DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/pulso_test" \
+  DEBUG=true SECRET_KEY=any-test-secret \
   python -m pytest tests/ -q
 
 # Lint + type check
@@ -151,7 +172,7 @@ git tag -a v2026.MM.DD-1 -m "what changed"
 git push origin v2026.MM.DD-1
 ```
 
-You'll need to configure the workflow secrets (`SSH_HOST`, `SSH_USER`, `SSH_KEY`, `GHCR_TOKEN`) in your repo settings. See `.github/workflows/deploy.yml` for the full spec.
+The build-and-push half works in any fork out of the box (GHCR auth uses the built-in `GITHUB_TOKEN`). The deploy half SSHs into your own server and needs the `VM_HOST`, `VM_USER`, and `VM_SSH_KEY` secrets in your repo settings. See `.github/workflows/deploy.yml` for the full spec.
 
 ---
 
@@ -161,6 +182,11 @@ FastAPI · SQLAlchemy async (asyncpg) · Alembic · Jinja2 · HTMX 2 · Tailwind
 
 ---
 
+## Contributing & security
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). To report a
+security vulnerability privately, see [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Rodolfo Cuevas

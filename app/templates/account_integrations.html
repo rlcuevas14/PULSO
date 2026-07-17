@@ -85,8 +85,11 @@
   </div>
 </form>
 
+{# data-confirm keeps translated strings out of inline JS — an apostrophe (fr) inside
+   confirm('…') is a SyntaxError and the destructive submit would run unconfirmed. #}
 <form method="post" action="/account/integrations/regenerate" class="max-w-2xl mt-3"
-      onsubmit="return confirm('{{ t("sentry.regenerate_confirm") }}')">
+      data-confirm="{{ t('sentry.regenerate_confirm') }}"
+      onsubmit="return confirm(this.dataset.confirm)">
   <button type="submit" class="p-btn p-btn-ghost p-btn-sm">{{ t("sentry.regenerate") }}</button>
 </form>
 {% endblock %}

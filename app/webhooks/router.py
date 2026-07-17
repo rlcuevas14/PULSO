@@ -51,7 +51,7 @@ async def sentry_webhook_tokened(
 @router.post("/sentry")
 async def sentry_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
     if not settings.sentry_client_secret:
-        return JSONResponse({"error": "webhook Sentry no configurado"}, status_code=503)
+        return JSONResponse({"error": "Sentry webhook not configured"}, status_code=503)
     body = await request.body()
     sig = request.headers.get("sentry-hook-signature")
     if not service.verify_sentry_signature(settings.sentry_client_secret, body, sig):
@@ -68,7 +68,7 @@ async def sentry_webhook(request: Request, db: AsyncSession = Depends(get_db)) -
 @router.post("/github")
 async def github_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
     if not settings.github_webhook_secret:
-        return JSONResponse({"error": "webhook GitHub no configurado"}, status_code=503)
+        return JSONResponse({"error": "GitHub webhook not configured"}, status_code=503)
     body = await request.body()
     sig = request.headers.get("x-hub-signature-256")
     if not service.verify_github_signature(settings.github_webhook_secret, body, sig):

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.projects.models import Project
+from app.scopes.models import Scope
 
 
 class ProjectError(ValueError):
@@ -63,6 +64,10 @@ async def create_project(
         name=name, slug=final_slug, description=description, color=color, account_id=account_id
     )
     db.add(project)
+    await db.flush()
+    # A project must be usable by a human from minute one: the new-item modal
+    # requires a scope and the UI has no screen to create one (only MCP/REST do).
+    db.add(Scope(name="General", project_id=project.id))
     await db.flush()
     return project
 

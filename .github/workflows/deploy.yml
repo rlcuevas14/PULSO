@@ -11,7 +11,7 @@ on:
         required: true
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -49,6 +49,15 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
 
+  # Self-hoster-specific half: SSHs into the maintainer's server. Forks get the
+  # build-and-push job out of the box; to enable deploys, set the repository
+  # variable DEPLOY_ENABLED=true and the VM_HOST / VM_USER / VM_SSH_KEY secrets.
+  deploy:
+    needs: build-and-push
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
       - name: Deploy to VM
         uses: appleboy/ssh-action@v1
         env:

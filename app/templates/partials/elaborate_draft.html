@@ -2,8 +2,8 @@
   <div class="text-xs text-warning mb-2">
     {{ t("threads.draft_notice", stage=t("stage." ~ draft.stage), model=draft.model|e) | safe }}
   </div>
-  <form hx-post="/ui/hilos/{{ thread.id }}/advance" hx-swap="none"
-        action="/ui/hilos/{{ thread.id }}/advance" method="post">
+  <form hx-post="/ui/threads/{{ thread.id }}/advance" hx-swap="none"
+        action="/ui/threads/{{ thread.id }}/advance" method="post">
     <textarea name="artifact_content" rows="12" class="p-input font-mono">{{ draft.content }}</textarea>
     <div class="flex justify-end gap-2 mt-2">
       <button type="button" onclick="this.closest('div').parentElement.innerHTML=''"

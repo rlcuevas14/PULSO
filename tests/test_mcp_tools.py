@@ -122,7 +122,7 @@ async def test_pulso_context_rich(client: AsyncClient):
         db.add(SentryIssue(sentry_issue_id=f"c{uuid.uuid4().hex[:8]}", project="x", title="E",
                            level="error", status="new", events_count=1, payload={}, project_id=pid))
         t = await create_thread(db, "core", "Active thread", None, project_id=pid)
-        t.stage = "en-desarrollo"
+        t.stage = "in-development"
         await db.commit()
         break
     ctx = _data(await _call(client, raw, "pulso_context",

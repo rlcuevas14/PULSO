@@ -1,7 +1,7 @@
-"""Lógica de mutación de ítems, compartida por la API JSON, la UI y el MCP.
+"""Item mutation logic, shared by the JSON API, the UI and the MCP.
 
-Centraliza la validación de transiciones (lifecycle) y la auditoría (ItemEvent),
-de modo que UI / REST / MCP nunca diverjan.
+Centralizes transition validation (lifecycle) and auditing (ItemEvent),
+so that UI / REST / MCP never diverge.
 """
 
 import uuid
@@ -17,12 +17,12 @@ from app.items.lifecycle import valid_transition
 from app.items.models import Item, ItemEvent
 from app.scopes.models import Scope
 
-# Rango de prioridad humana para el orden "prioridad" (p0 primero, sin prioridad al final).
+# Human priority rank for the "priority" ordering (p0 first, no priority last).
 _PRIORITY_RANK: dict[str | None, int] = {"p0": 0, "p1": 1, "p2": 2, "p3": 3, None: 9}
 
 
 class TransitionError(ValueError):
-    """Transición de estado inválida."""
+    """Invalid status transition."""
 
 
 async def get_item(db: AsyncSession, item_id: uuid.UUID) -> Item | None:
@@ -31,8 +31,8 @@ async def get_item(db: AsyncSession, item_id: uuid.UUID) -> Item | None:
 
 
 async def apply_transition(db: AsyncSession, item: Item, to_status: str, actor: str) -> Item:
-    """Cambia el status validando la transición. Las transiciones a estados terminales
-    deben pasar por close_item (piden motivo); aquí se rechazan."""
+    """Change the status, validating the transition. Transitions to terminal states
+    must go through close_item (which asks for a reason); they are rejected here."""
     if to_status in TERMINAL:
         raise TransitionError(
             f"'{to_status}' is terminal — use close/discard (with a reason), not a direct transition."
@@ -42,8 +42,8 @@ async def apply_transition(db: AsyncSession, item: Item, to_status: str, actor: 
     old = item.status
     if old != to_status:
         item.status = to_status
-        # Salir de un terminal (done→backlog) es una reapertura: sin limpiar closed_at
-        # el ítem aparecería en el backlog Y en el registro a la vez.
+        # Leaving a terminal state (done→backlog) is a reopen: without clearing closed_at
+        # the item would show up in the backlog AND in the archive at the same time.
         if old in TERMINAL:
             item.closed_at = None
         await db.flush()
@@ -68,8 +68,8 @@ async def close_item(
     actor: str,
     commit_sha: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Cierra un ítem (hecho|descartado). Devuelve la lista de ítems que quedaron
-    desbloqueados por este cierre (bloqueo derivado del grafo)."""
+    """Close an item (done|discarded). Returns the list of items that this closure
+    left unblocked (blocking is derived from the graph)."""
     if status not in TERMINAL:
         raise TransitionError("status must be 'done' or 'discarded'")
     if not valid_transition(item.status, status):
@@ -85,7 +85,7 @@ async def close_item(
     ))
     await db.flush()
 
-    # El bloqueo es derivado: tras cerrar, calcular qué targets quedaron sin bloqueador abierto.
+    # Blocking is derived: after closing, compute which targets are left with no open blocker.
     unblocked = await graph.unblocked_by(db, item.id)
     for t in unblocked:
         db.add(ItemEvent(
@@ -110,8 +110,8 @@ async def reopen_item(db: AsyncSession, item: Item, actor: str) -> Item:
 
 
 async def set_priority(db: AsyncSession, item: Item, priority: str | None, actor: str) -> Item:
-    """Ajusta la prioridad humana. Lo declarado por el humano queda registrado
-    en priority_declared (gana al juicio IA en orden/matriz)."""
+    """Set the human priority. What the human declared is recorded
+    in priority_declared (it wins over the AI judgment in ordering/matrix)."""
     item.priority = priority
     item.priority_declared = priority
     await db.flush()
@@ -123,7 +123,7 @@ async def set_priority(db: AsyncSession, item: Item, priority: str | None, actor
 
 
 async def touch_embedding_available(db: AsyncSession) -> bool:
-    """True si la columna embedding existe y tiene al menos un valor no-NULL (capa semántica)."""
+    """True if the embedding column exists and has at least one non-NULL value (semantic layer)."""
     try:
         result = await db.execute(text("SELECT 1 FROM items WHERE embedding IS NOT NULL LIMIT 1"))
         return result.first() is not None
@@ -131,18 +131,18 @@ async def touch_embedding_available(db: AsyncSession) -> bool:
         return False
 
 
-# ---------- Listado + ordenamiento (DUP-1) ----------
+# ---------- Listing + ordering (DUP-1) ----------
 #
-# Única implementación del listado de ítems con filtros + orden, consumida por REST,
-# UI y MCP. El orden topológico usa el grafo (graph.topological_order).
+# Single implementation of item listing with filters + ordering, consumed by REST,
+# UI and MCP. Topological ordering uses the graph (graph.topological_order).
 
 async def _resolve_scope_id(db: AsyncSession, scope: Any) -> uuid.UUID | None:
-    """Acepta un scope como uuid.UUID o como nombre (str). Devuelve el id o None si no existe."""
+    """Accept a scope as a uuid.UUID or as a name (str). Returns the id, or None if it doesn't exist."""
     if scope is None:
         return None
     if isinstance(scope, uuid.UUID):
         return scope
-    # str: puede ser un UUID en texto o el nombre del scope.
+    # str: can be a UUID as text or the scope name.
     try:
         return uuid.UUID(str(scope))
     except (ValueError, AttributeError):
@@ -151,7 +151,7 @@ async def _resolve_scope_id(db: AsyncSession, scope: Any) -> uuid.UUID | None:
 
 
 def _topo_rank(items: list[Item], edges: list[tuple[str, str, str]]) -> dict[str, int]:
-    """Mapa id→posición según el orden topológico del grafo de precedencia."""
+    """Map id→position according to the topological order of the precedence graph."""
     ids = [str(i.id) for i in items]
     if not ids:
         return {}
@@ -161,7 +161,7 @@ def _topo_rank(items: list[Item], edges: list[tuple[str, str, str]]) -> dict[str
 
 
 async def _topo_order_ids(db: AsyncSession, items: list[Item]) -> dict[str, int]:
-    """Calcula el rango topológico cargando los arcos internos al conjunto de ítems."""
+    """Compute the topological rank, loading the arcs internal to the item set."""
     ids = [str(i.id) for i in items]
     if not ids:
         return {}
@@ -224,22 +224,22 @@ async def list_items(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[Item]:
-    """Lista ítems con filtros + orden. Implementación única (REST/UI/MCP).
+    """List items with filters + ordering. Single implementation (REST/UI/MCP).
 
     Args:
-        scope: uuid.UUID o nombre del scope (str). None = todos los scopes.
-        statuses: lista de estados a incluir. None = todos.
-        type: tipo de ítem (uno solo). None = todos.
+        scope: uuid.UUID or scope name (str). None = all scopes.
+        statuses: list of statuses to include. None = all.
+        type: item type (a single one). None = all.
         order: "impact" | "priority" | "topological" | "recent".
-        quickwins: si True, solo ítems de alto impacto (>=4) y bajo esfuerzo (XS/S).
-        stale_risk: filtra por la bandera de riesgo de obsolescencia.
-        limit / offset: paginación. limit=None trae todo el conjunto filtrado.
+        quickwins: if True, only high-impact (>=4), low-effort (XS/S) items.
+        stale_risk: filter by the staleness-risk flag.
+        limit / offset: pagination. limit=None fetches the whole filtered set.
 
-    El orden se aplica en memoria sobre el conjunto traído (incluido el topológico,
-    que necesita el grafo). Devuelve la lista de Items ordenada.
+    Ordering is applied in memory over the fetched set (including topological,
+    which needs the graph). Returns the ordered list of Items.
     """
     scope_id = await _resolve_scope_id(db, scope)
-    # Si se pidió un scope inexistente por nombre, el resultado es vacío (no "todos").
+    # If a nonexistent scope was requested by name, the result is empty (not "all").
     if scope is not None and scope_id is None:
         return []
 
